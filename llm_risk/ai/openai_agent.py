@@ -1,7 +1,7 @@
 from .base_agent import BaseAIAgent, GAME_RULES_SNIPPET
 import os
 import json
-from openai import OpenAI # Would be used in a real environment
+#from openai import OpenAI # Would be used in a real environment
 import time # For potential retries
 
 class OpenAIAgent(BaseAIAgent):
