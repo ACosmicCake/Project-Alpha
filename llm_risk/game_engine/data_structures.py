@@ -83,6 +83,8 @@ class GameState:
         self.current_game_phase: str = "REINFORCE" # REINFORCE, ATTACK, FORTIFY
         self.deck: list[Card] = []
         self.current_player_index: int = 0
+        self.requires_post_attack_fortify: bool = False
+        self.conquest_context: dict | None = None # Stores {"from_territory_name": str, "to_territory_name": str, "min_movable": int, "max_movable": int, "armies_in_attacking_territory_after_battle": int}
 
     def get_current_player(self) -> Player | None:
         if not self.players:
@@ -97,7 +99,9 @@ class GameState:
             "current_turn_number": self.current_turn_number,
             "current_game_phase": self.current_game_phase,
             "deck_size": len(self.deck), # Don't reveal actual cards in deck
-            "current_player": self.get_current_player().name if self.get_current_player() else None
+            "current_player": self.get_current_player().name if self.get_current_player() else None,
+            "requires_post_attack_fortify": self.requires_post_attack_fortify,
+            "conquest_context": self.conquest_context # This will be None if not active, or a dict if active
         }
 
     def to_json(self) -> str:
