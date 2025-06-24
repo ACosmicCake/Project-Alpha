@@ -142,6 +142,14 @@ class PrivateChatManager:
         print(f"[Private Chat] Conversation between {agent1.player_name} and {agent2.player_name} ended. Log key: {log_key}")
         return conversation_history
 
+    def get_all_conversations(self) -> dict[str, list[dict]]:
+        """Returns all stored private conversation logs."""
+        return self.conversation_logs
+
+    def get_conversation_log(self, conversation_key: str) -> list[dict] | None:
+        """Returns the log for a specific conversation key."""
+        return self.conversation_logs.get(conversation_key)
+
 if __name__ == '__main__':
     # For testing, we need mock AI agents and a GameState
     from ..ai.base_agent import BaseAIAgent, GAME_RULES_SNIPPET # Adjusted import path for testing

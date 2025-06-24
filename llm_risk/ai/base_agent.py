@@ -105,10 +105,12 @@ Game Phases & Key Actions:
      - If you have 5 or more cards, you MUST trade a valid set if possible.
      - A valid set is: (a) 3 cards of the same symbol (e.g., 3 Infantry), (b) 1 of each of the 3 symbols (Infantry, Cavalry, Artillery), (c) Wildcards can substitute for any symbol.
      - Action: {"type": "TRADE_CARDS", "card_indices": [idx1, idx2, idx3], "must_trade": true/false} (Indices are from your hand).
-     - Trading cards gives bonus armies. The bonus increases with each set traded globally. Matching a card's territory to one you own gives +2 armies on that territory.
+     - Trading cards gives bonus armies. The bonus increases with each set traded globally.
+     - Card Trade Bonuses: Initial trades grant 4, 6, 8, 10, 12, 15 armies, with subsequent trades increasing by 5 each time.
+     - Matching a card's territory to one you own gives +2 armies on that specific territory when trading that set.
    - Deployment:
-     - You get armies based on territories owned (min 3), continent bonuses, and card trades.
-     - Action: {"type": "DEPLOY", "territory": "TerritoryName", "max_armies": X} (You will specify the actual number to deploy in the 'num_armies' parameter if you choose this, up to 'max_armies' or your remaining deployable armies). The 'num_armies' in the actual action should be how many to deploy to THIS territory.
+     - You get armies based on territories owned (min 3 per turn from territories), continent bonuses, and card trades.
+     - Action: {"type": "DEPLOY", "territory": "TerritoryName", "max_armies": X} (You will specify the actual 'num_armies' to deploy to THIS territory, up to 'max_armies' or your remaining deployable armies).
    - End Phase:
      - Action: {"type": "END_REINFORCE_PHASE"} (Use when all armies are deployed and no mandatory card trades are left, or if you choose not to trade optional cards).
 
@@ -116,10 +118,12 @@ Game Phases & Key Actions:
    - Goal: Conquer enemy territories to expand, gain cards, and eliminate opponents.
    - Attacking:
      - Action: {"type": "ATTACK", "from": "YourTerritory", "to": "EnemyTerritory", "max_armies_for_attack": X}
-     - When you choose this action, you will then specify 'num_attacking_armies' (1 to X). You must leave at least one army in 'from' territory.
-     - Attackers roll up to 3 dice, defenders up to 2. Highest dice compared. Attacker wins on ties when defending.
-     - If you conquer a territory, you must move in at least the number of dice you rolled, up to all attacking armies that survived. The AI should decide this move optimally.
-     - You can earn ONE card per turn by conquering at least one territory.
+     - When you choose this action, you will then specify 'num_attacking_armies' (from 1 up to X, representing the armies from 'YourTerritory' that will participate in the battle, determining dice rolled). You must leave at least one army in 'from' territory.
+     - Attackers roll up to 3 dice (or number of attacking armies if less than 3, minus one if that's the rule for armies left behind - this detail is handled by the game engine based on 'num_attacking_armies' you send), defenders up to 2. Highest dice are compared. Attacker loses on ties.
+     - If you conquer a territory:
+       - A 'POST_ATTACK_FORTIFY' action will become available immediately. You MUST choose how many armies to move from the attacking territory into the newly conquered one.
+       - Action: {"type": "POST_ATTACK_FORTIFY", "from_territory": "AttackingTerritory", "to_territory": "ConqueredTerritory", "min_armies": M, "max_armies": N} (You specify 'num_armies' to move, between M and N inclusive). M is typically the number of dice you rolled in the last battle.
+     - You can earn ONE card per turn by conquering at least one territory. This card is drawn automatically.
    - End Phase:
      - Action: {"type": "END_ATTACK_PHASE"} (To stop attacking and move to Fortify phase).
 
@@ -134,16 +138,17 @@ Game Phases & Key Actions:
      - Action: {"type": "END_TURN"} (If you choose not to fortify, or after fortifying). This ends your entire turn.
 
 Strategic Considerations:
-- Continents: Holding all territories in a continent gives bonus armies. Some continents are more strategic or easier to defend.
-- Cards: Crucial for reinforcements. Trade them wisely. Eliminating a player grants you their cards.
-- Diplomacy & Chat: Use chat to form alliances, deceive opponents, or coordinate.
+- Continent Bonuses: North America: 5 armies, Asia: 7 armies. (Note: This list may not be exhaustive for the full map). Holding all territories in a continent grants these bonus armies at the start of your reinforcement phase.
+- Cards: Crucial for reinforcements. Trade them wisely. Eliminating a player grants you all their cards.
+- Choke Points: These are territories that control access between larger regions or continents. Holding them can be strategically vital for defense or for blocking an opponent's expansion (e.g., a territory that is the only link between two continents).
+- Blitzing: This is a strategy involving a rapid, concentrated series of attacks, often aimed at quickly capturing a continent or eliminating a weakened player before they can reinforce.
+- Diplomacy & Chat: Use chat to form alliances, deceive opponents, or coordinate. Chats do not consume your main action for a phase (e.g., you can chat and then attack).
   - Global Chat: {"type": "GLOBAL_CHAT", "message": "Your message to all players."}
   - Private Chat Initiation: {"type": "PRIVATE_CHAT", "target_player_name": "PlayerNameToChatWith", "initial_message": "Your opening message."}
-  (Note: Chat actions might take your whole turn or be usable alongside other actions depending on game rules implementation - clarify from context if unsure, or default to it taking a turn if it's one of the valid_actions for a phase).
 
-IMPORTANT:
-- Your 'action' MUST be an exact match (including all parameters like 'type', 'from', 'to', 'card_indices', etc.) to one of the dictionaries provided in the 'Valid Actions' list.
-- Pay close attention to parameters like 'max_armies', 'max_armies_for_attack', 'max_armies_to_move'. Your chosen 'num_armies' in the final action must respect these.
+CRITICAL:
+- Your chosen 'action' in the JSON response MUST be an exact, verbatim copy of one of the action dictionaries provided in the 'Valid Actions' list. Do not modify it in any way.
+- Pay close attention to parameters like 'max_armies', 'max_armies_for_attack', 'max_armies_to_move', 'min_armies'. Your chosen 'num_armies' in the final action must respect these.
 - If an action from the list has specific values (e.g. "territory": "Alaska"), your chosen action must use those exact values.
 - Do not add extra keys to the action dictionary. Only use the keys shown in the valid action.
 """

@@ -394,16 +394,80 @@ class GameEngine:
             # For now, move all `num_attacking_armies` that were specified (minus losses).
             # A minimum of max_attacker_dice must move.
 
-            armies_to_move = max(max_attacker_dice, num_attacking_armies - attacker_losses) # Must move at least num dice, or all attackers if fewer survived
-            armies_to_move = min(armies_to_move, attacker_territory.army_count -1) # Cannot leave attacker territory empty
+            # armies_to_move = max(max_attacker_dice, num_attacking_armies - attacker_losses) # Must move at least num dice, or all attackers if fewer survived
+            # armies_to_move = min(armies_to_move, attacker_territory.army_count -1) # Cannot leave attacker territory empty
 
-            if armies_to_move > 0 :
-                defender_territory.army_count = armies_to_move
-                attacker_territory.army_count -= armies_to_move
-            else: # Should not happen if validation is correct, but as a fallback
-                defender_territory.army_count = 1
-                attacker_territory.army_count -=1
+            # if armies_to_move > 0 :
+            #     defender_territory.army_count = armies_to_move
+            #     attacker_territory.army_count -= armies_to_move
+            # else: # Should not happen if validation is correct, but as a fallback
+            #     defender_territory.army_count = 1 # Move 1 by default if calculation leads to 0
+            #     attacker_territory.army_count -=1
 
+            # Instead of automatic movement, set flag and context for AI decision
+            self.game_state.requires_post_attack_fortify = True
+            # num_attacking_armies_survived is the number of armies from the attacking stack that survived.
+            # It's num_attacking_armies (which came from attacker_territory.army_count -1 or less) minus attacker_losses.
+            # The number of armies available to move into the new territory is num_attacking_armies - attacker_losses.
+            # These armies are currently still conceptually in attacker_territory.
+            # The attacker_territory itself must retain at least 1 army.
+
+            # The number of armies that *actually* participated in the final winning battle round
+            # is effectively `max_attacker_dice` if we consider Risk rules where dice count is crucial.
+            # The player must move at least this many into the conquered territory.
+            min_move = max_attacker_dice # Number of dice rolled by attacker in the last battle
+
+            # Max movable is the total number of armies that were designated for the attack, survived,
+            # and can be moved while leaving at least 1 behind in the attacker_territory.
+
+            available_to_move_from_attacker_stack = num_attacking_armies - attacker_losses
+
+            # The armies in attacker_territory have already been reduced by attacker_losses.
+            # So, attacker_territory.army_count is its current state.
+            # The maximum number of armies that can be moved out of attacker_territory is attacker_territory.army_count - 1.
+            # The actual number of armies that can move is the minimum of what's available from the attacking stack
+            # and what can be physically moved from the territory while leaving one behind.
+            max_move = min(available_to_move_from_attacker_stack, attacker_territory.army_count - 1)
+
+            # Ensure min_move is not more than what's available or more than what can be moved from the territory
+            # And min_move should not be more than max_move.
+            min_move = min(min_move, max_move)
+            # Ensure min_move is at least 1 if max_move is positive. If max_move is 0, min_move must also be 0.
+            min_move = max(1, min_move) if max_move > 0 else 0
+            # If after adjustments, min_move > max_move (e.g. max_move became 0 but min_move was 1 from dice), then set min_move to max_move.
+            if min_move > max_move:
+                min_move = max_move
+
+
+            if max_move <= 0 : # No armies survived the attack to move, or only 1 left in attacking territory to move (which means it becomes 0)
+                # This implies the territory was taken with the last possible army, which is unusual.
+                # Or the num_attacking_armies was 1, and it survived.
+                # Standard rules: must move at least `max_attacker_dice` armies.
+                # If `max_move` is 0, it means `available_to_move_from_attacker_stack` is 0.
+                # This suggests `num_attacking_armies == attacker_losses`. All attacking armies died.
+                # This path should not be taken if `defender_territory.army_count <= 0`
+                # because it means attacker won. So `attacker_losses` must be less than `num_attacking_armies`
+                # if `attacker_dice_rolls[i] > defender_dice_rolls[i]` happened at least once for the final blow.
+                # This case needs careful thought. If all attacking armies died, but territory was conquered,
+                # it implies defender also lost all armies.
+                # For now, if max_move is 0, it's an issue. Default to moving 1 from attacker_territory if possible.
+                # This means the `perform_post_attack_fortify` will handle it.
+                # The conquered territory starts with 0.
+                defender_territory.army_count = 0 # Explicitly set to 0, to be filled by post_attack_fortify
+                log["message_debug"] = f"Conquest occurred, but available_to_move_from_attacker_stack is {available_to_move_from_attacker_stack}. Min_move: {min_move}, Max_move: {max_move}"
+
+            else:
+                 defender_territory.army_count = 0 # Explicitly set to 0, to be filled by post_attack_fortify
+
+            self.game_state.conquest_context = {
+                "from_territory_name": attacker_territory_name,
+                "to_territory_name": defender_territory_name,
+                "min_movable": min_move, # Must move at least this many
+                "max_movable": max_move, # Can move up to this many
+                "armies_in_attacking_territory_after_battle": attacker_territory.army_count
+            }
+            log["post_attack_fortify_required"] = True
+            log["conquest_context"] = self.game_state.conquest_context
 
             # Draw a card if one is available and player hasn't drawn one this turn yet
             # Draw a card if one is available and player hasn't drawn one this turn yet
@@ -471,6 +535,90 @@ class GameEngine:
         log["from_territory"] = from_territory.name
         log["to_territory"] = to_territory.name
         log["num_armies"] = num_armies
+        return log
+
+    def perform_post_attack_fortify(self, player: Player, num_armies_to_move: int) -> dict:
+        """
+        Moves armies into a newly conquered territory based on player's decision.
+        This is called after a conquest when game_state.requires_post_attack_fortify is True.
+        """
+        log = {"event": "post_attack_fortify", "player": player.name, "success": False, "message": ""}
+
+        if not self.game_state.requires_post_attack_fortify or not self.game_state.conquest_context:
+            log["message"] = "No post-attack fortification is currently required or context is missing."
+            return log
+
+        context = self.game_state.conquest_context
+        from_territory_name = context["from_territory_name"]
+        to_territory_name = context["to_territory_name"] # This is the newly conquered one
+        min_movable = context["min_movable"]
+        max_movable = context["max_movable"]
+        # armies_in_attacking_territory_after_battle = context["armies_in_attacking_territory_after_battle"] # Informational
+
+        from_territory = self.game_state.territories.get(from_territory_name)
+        to_territory = self.game_state.territories.get(to_territory_name)
+
+        if not from_territory or not to_territory:
+            log["message"] = f"Invalid territories in conquest context: {from_territory_name}, {to_territory_name}."
+            # This would be an internal error, reset state to be safe
+            self.game_state.requires_post_attack_fortify = False
+            self.game_state.conquest_context = None
+            return log
+
+        if to_territory.owner != player:
+            log["message"] = f"Player {player.name} does not own the conquered territory {to_territory_name} according to current state."
+            # This implies an issue, perhaps state changed. Reset.
+            self.game_state.requires_post_attack_fortify = False
+            self.game_state.conquest_context = None
+            return log
+
+        if from_territory.owner != player:
+            log["message"] = f"Player {player.name} does not own the attacking territory {from_territory_name}."
+            self.game_state.requires_post_attack_fortify = False # Reset to avoid getting stuck
+            self.game_state.conquest_context = None
+            return log
+
+        # Validate num_armies_to_move
+        if not (min_movable <= num_armies_to_move <= max_movable):
+            log["message"] = f"Invalid number of armies to move: {num_armies_to_move}. Must be between {min_movable} and {max_movable}."
+            # Do not reset requires_post_attack_fortify here, let orchestrator call again with valid actions.
+            return log
+
+        # Ensure the attacking territory retains at least 1 army
+        if from_territory.army_count - num_armies_to_move < 1:
+            log["message"] = f"Cannot move {num_armies_to_move} armies from {from_territory.name}. It would leave less than 1 army. (Current: {from_territory.army_count}, Max movable was {max_movable})"
+            # This condition should ideally be caught by max_movable logic derived in perform_attack.
+            # If max_movable was calculated such that (armies_in_attacking_territory_after_battle - max_movable) < 1,
+            # then max_movable should have been capped at armies_in_attacking_territory_after_battle - 1.
+            # The current max_movable is num_attacking_armies - attacker_losses.
+            # The from_territory.army_count is original_army_count - attacker_losses.
+            # If num_attacking_armies was from_territory.army_count - X (where X >= 1 for the one left behind),
+            # then (num_attacking_armies - attacker_losses) should be less than (from_territory.army_count (after losses) -1)
+            # Let's assume max_movable calculation in perform_attack is correct:
+            # max_move = available_to_move_from_attacker_stack
+            # available_to_move_from_attacker_stack = num_attacking_armies - attacker_losses
+            # If AI requests to move N armies, and N <= max_movable:
+            # We need to check: from_territory.army_count (which is original count - losses) - N >= 1
+            # This check is vital.
+            # The max_movable should have already ensured this.
+            # If num_armies_to_move == from_territory.army_count, then it means max_movable was too high.
+            # Max_movable should be min(available_to_move_from_attacker_stack, from_territory.army_count - 1)
+            # This check here is a safeguard.
+            return log # Let AI try again with a valid number based on updated valid actions.
+
+        # Perform the move
+        from_territory.army_count -= num_armies_to_move
+        to_territory.army_count += num_armies_to_move # Conquered territory army count was set to 0
+
+        log["success"] = True
+        log["message"] = f"{player.name} moved {num_armies_to_move} armies from {from_territory.name} to {to_territory.name}."
+        log["from_territory_final_armies"] = from_territory.army_count
+        log["to_territory_final_armies"] = to_territory.army_count
+
+        # Reset the flag and context
+        self.game_state.requires_post_attack_fortify = False
+        self.game_state.conquest_context = None
+
         return log
 
     def _are_territories_connected(self, start_territory: Territory, end_territory: Territory, player: Player) -> bool:
@@ -577,40 +725,102 @@ class GameEngine:
         actions = []
         phase = self.game_state.current_game_phase
 
+        # Check for mandatory post-attack fortification first, as this takes precedence.
+        if self.game_state.requires_post_attack_fortify and self.game_state.conquest_context:
+            context = self.game_state.conquest_context
+            # Only POST_ATTACK_FORTIFY actions are allowed at this point.
+            # The AI needs to decide how many armies to move, from min_movable to max_movable.
+            # The action should allow specifying any number in this range.
+            if context["max_movable"] > 0 : # Only if there are armies that *can* be moved
+                actions.append({
+                    "type": "POST_ATTACK_FORTIFY",
+                    "from_territory": context["from_territory_name"], # Attacking territory
+                    "to_territory": context["to_territory_name"],     # Newly conquered territory
+                    "min_armies": context["min_movable"],
+                    "max_armies": context["max_movable"],
+                    # The AI will select "num_armies" in its chosen action.
+                })
+            else: # No armies can be moved (e.g. attacking territory has only 1 after battle, or all attackers died but somehow still won)
+                  # This case implies something might be off, or it's an edge case where 0 armies are moved.
+                  # The perform_post_attack_fortify will still be called (with 0 armies if AI chooses that).
+                  # Or we can force it to "complete" by providing a "skip" or "confirm_zero_move" type action.
+                  # For now, if max_movable is 0, min_movable will also be 0.
+                  # The AI should choose to move 0 armies.
+                actions.append({
+                    "type": "POST_ATTACK_FORTIFY",
+                    "from_territory": context["from_territory_name"],
+                    "to_territory": context["to_territory_name"],
+                    "min_armies": 0,
+                    "max_armies": 0,
+                })
+
+            # If no valid POST_ATTACK_FORTIFY actions could be generated (e.g. max_movable is 0 and we didn't add the above)
+            # OR if the only option is to move 0, the game should proceed.
+            # The current logic will provide an action for 0 move. The orchestrator will call perform_post_attack_fortify.
+            # That method will then clear requires_post_attack_fortify.
+            return actions # Return immediately, no other actions are valid.
+
         if phase == "REINFORCE":
             # Valid deploy actions: (territory_name, num_armies)
-            if player.armies_to_deploy > 0:
-                for territory in player.territories:
-                    actions.append({"type": "DEPLOY", "territory": territory.name, "max_armies": player.armies_to_deploy})
-
             # Option to trade cards
             # Player must trade cards if they have 5 or more.
             # Otherwise, they can choose to trade if they have a valid set.
+
+            must_trade = len(player.hand) >= 5
             valid_card_sets = self.find_valid_card_sets(player)
-            if len(player.hand) >= 5: # Must trade
-                if valid_card_sets: # Should always be true if 5+ cards, but check anyway
-                    for i, card_set in enumerate(valid_card_sets):
-                        # Provide indices of cards in hand for the action
-                        card_indices_in_hand = [player.hand.index(c) for c in card_set if c in player.hand]
-                        if len(card_indices_in_hand) == 3: # Ensure all cards are found
-                             actions.append({"type": "TRADE_CARDS", "card_indices": sorted(card_indices_in_hand), "must_trade": True})
-                else:
-                    # This case (5+ cards but no valid set) should ideally not happen with wildcards.
-                    # If it does, it's a game state error or complex hand that needs specific handling.
-                    # For now, we assume find_valid_card_sets is robust.
-                    pass # No TRADE_CARDS action if no sets, even if must_trade is true (game stuck?)
-            elif valid_card_sets: # Can choose to trade
-                 for i, card_set in enumerate(valid_card_sets):
+            trade_actions = []
+
+            if valid_card_sets:
+                for card_set in valid_card_sets:
                     card_indices_in_hand = [player.hand.index(c) for c in card_set if c in player.hand]
-                    if len(card_indices_in_hand) == 3:
-                        actions.append({"type": "TRADE_CARDS", "card_indices": sorted(card_indices_in_hand), "must_trade": False})
+                    if len(card_indices_in_hand) == 3: # Ensure all cards are found
+                        trade_actions.append({
+                            "type": "TRADE_CARDS",
+                            "card_indices": sorted(card_indices_in_hand),
+                            "must_trade": must_trade # Correctly reflects if the trade is mandatory
+                        })
 
-            # Can only end reinforce phase if no armies to deploy AND (not forced to trade cards OR no valid sets to trade)
-            must_trade_condition_met = len(player.hand) >= 5 and not any(a["type"] == "TRADE_CARDS" and a.get("must_trade") for a in actions)
+            if must_trade:
+                if trade_actions: # If player must trade and has valid sets
+                    actions.extend(trade_actions)
+                    # If must_trade is true, only TRADE_CARDS actions should be available.
+                    # No DEPLOY or END_REINFORCE_PHASE until card situation is resolved.
+                else:
+                    # Player must trade but has no valid sets. This is a problematic state.
+                    # For now, the player will have no valid actions in reinforce phase.
+                    # This might need a specific game rule (e.g., discard cards, lose turn phase).
+                    # Current behavior: no actions, AI might be stuck or orchestrator handles it.
+                    pass # No actions available
+            else:
+                # Player does not have to trade (less than 5 cards)
+                # Add deployment actions if any armies to deploy
+                if player.armies_to_deploy > 0:
+                    for territory in player.territories:
+                        actions.append({"type": "DEPLOY", "territory": territory.name, "max_armies": player.armies_to_deploy})
 
-            if player.armies_to_deploy == 0 and not must_trade_condition_met :
-                 actions.append({"type": "END_REINFORCE_PHASE"})
-            elif not actions: # If no other actions possible (e.g. no armies, no cards to trade)
+                # Add optional card trade actions
+                if trade_actions: # These will have must_trade: False
+                    actions.extend(trade_actions)
+
+                # Add END_REINFORCE_PHASE if no armies to deploy
+                # Or if there are armies but player might want to end reinforcement without deploying all
+                # (though current Risk rules usually mean deploy all reinforcements from territories/continents)
+                # For card trade armies, they are added, then deployment continues.
+                # END_REINFORCE_PHASE is valid if not in a must_trade situation and (armies_to_deploy == 0 OR has deploy options)
+                if player.armies_to_deploy == 0:
+                    actions.append({"type": "END_REINFORCE_PHASE"})
+                elif any(action["type"] == "DEPLOY" for action in actions): # If there are deployment options, allow ending too.
+                    # This allows AI to end phase even if it has armies but no territories (edge case)
+                    # or if it simply wants to (though not standard Risk for initial reinforcements)
+                    actions.append({"type": "END_REINFORCE_PHASE"})
+
+
+            # If after all logic, no actions are available (e.g. must_trade but no sets, or no armies and no cards)
+            # and END_REINFORCE_PHASE wasn't added, add it.
+            # Exception: if must_trade is active and trade_actions were available, don't add END_REINFORCE_PHASE.
+            # The only way to proceed is to trade.
+            is_must_trade_with_options = must_trade and any(a["type"] == "TRADE_CARDS" for a in actions)
+            if not actions and not is_must_trade_with_options :
                  actions.append({"type": "END_REINFORCE_PHASE"})
 
 
