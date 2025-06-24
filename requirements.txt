@@ -1,5 +1,5 @@
 # For running the game and making API calls
-google-genai
+google-generativeai
 openai
 anthropic
 # deepseek-python # Assuming they have a library, otherwise we'll use requests
