@@ -3,7 +3,7 @@ from .game_engine.data_structures import Player as GamePlayer # To avoid confusi
 from .ai.base_agent import BaseAIAgent, GAME_RULES_SNIPPET
 from .communication.global_chat import GlobalChat
 from .communication.private_chat_manager import PrivateChatManager
-# from .ui.gui import GameGUI # Import for GUI updates later
+from .ui.gui import GameGUI # Import for GUI updates later
 
 # Import specific AI agents - for now, we might use placeholders or a factory
 from .ai.gemini_agent import GeminiAgent
@@ -13,6 +13,8 @@ from .ai.deepseek_agent import DeepSeekAgent
 
 import json # For loading player configs if any
 import time # For potential delays
+from datetime import datetime # For logging timestamp
+import os # For log directory creation
 
 class GameOrchestrator:
     def __init__(self, map_file: str = "map_config.json", player_setup_file: str = "player_config.json"):
@@ -20,7 +22,8 @@ class GameOrchestrator:
         self.global_chat = GlobalChat()
         self.private_chat_manager = PrivateChatManager(max_exchanges_per_conversation=3) # Default 3 exchanges
 
-        # self.gui = None # Initialize GUI later if used: self.gui = GameGUI(self.engine)
+        self.gui = None # Initialize GUI later if used: self.gui = GameGUI(self.engine)
+        self.setup_gui() # Call setup_gui here
 
         self.ai_agents: dict[str, BaseAIAgent] = {} # Maps player name to AI agent instance
         self.player_map: dict[GamePlayer, BaseAIAgent] = {} # Maps GamePlayer object to AI agent
@@ -130,10 +133,16 @@ class GameOrchestrator:
                  return
 
         print("Starting LLM Risk Game!")
-        # if self.gui: self.gui.update(self.engine.game_state)
+        if self.gui: self.gui.update(self.engine.game_state)
 
         game_turn = 0 # For safety break
-        while not self.engine.is_game_over() and game_turn < 200: # Max 200 turns for now
+        running = True
+        while running and not self.engine.is_game_over() and game_turn < 200: # Max 200 turns for now
+            if self.gui:
+                if not self.gui.handle_input(): # Process GUI events and check for quit
+                    running = False
+                    break
+
             game_turn +=1
             self.turn_action_log.clear() # Clear log for the new turn
 
@@ -153,28 +162,32 @@ class GameOrchestrator:
 
             # --- 1. REINFORCE PHASE ---
             self.handle_reinforce_phase(current_player_obj, current_player_agent)
-            if self.engine.is_game_over(): break
+            if self.gui: self.gui.update(self.engine.game_state)
+            if self.engine.is_game_over() or not running : break
 
             # --- 2. ATTACK/COMMUNICATE PHASE ---
             self.engine.game_state.current_game_phase = "ATTACK"
             self.log_turn_info(f"{current_player_obj.name} starting ATTACK phase.")
-            # if self.gui: self.gui.update(self.engine.game_state)
+            if self.gui: self.gui.update(self.engine.game_state)
             self.handle_attack_communicate_phase(current_player_obj, current_player_agent)
-            if self.engine.is_game_over(): break
+            if self.gui: self.gui.update(self.engine.game_state)
+            if self.engine.is_game_over() or not running : break
 
             # --- 3. FORTIFY PHASE ---
-            # Player can only fortify if they conquered a territory OR if they chose not to attack.
-            # The 'has_attacked_this_turn' flag is not explicitly in the plan, but useful.
-            # For now, always allow fortify attempt.
             self.engine.game_state.current_game_phase = "FORTIFY"
             self.log_turn_info(f"{current_player_obj.name} starting FORTIFY phase.")
-            # if self.gui: self.gui.update(self.engine.game_state)
+            if self.gui: self.gui.update(self.engine.game_state)
             self.handle_fortify_phase(current_player_obj, current_player_agent)
-            if self.engine.is_game_over(): break
+            if self.gui: self.gui.update(self.engine.game_state)
+            if self.engine.is_game_over() or not running : break
 
-            self.engine.next_turn()
-            # if self.gui: self.gui.update(self.engine.game_state)
-            # time.sleep(1) # Small delay between turns
+            if running: # Only proceed to next turn if GUI hasn't quit
+                self.engine.next_turn()
+                if self.gui: self.gui.update(self.engine.game_state)
+                # time.sleep(1) # Small delay between turns
+            else: # If GUI quit during a phase
+                break
+
 
         # Game Over
         winner = self.engine.is_game_over()
@@ -188,11 +201,19 @@ class GameOrchestrator:
             print(timeout_msg)
             self.log_turn_info(timeout_msg)
             self.global_chat.broadcast("GameSystem", timeout_msg)
-        else:
+        elif running: # Game ended unexpectedly but GUI was still running
             print("\n--- GAME ENDED UNEXPECTEDLY ---")
             self.log_turn_info("Game ended unexpectedly.")
+        else: # Game ended because GUI quit
+            print("\n--- GAME EXITED VIA GUI ---")
+            self.log_turn_info("Game exited via GUI.")
 
-        # if self.gui: self.gui.show_game_over_screen(winner.name if winner else "Draw/Timeout")
+
+        if self.gui and running: # Only show game over if GUI didn't cause the exit
+            self.gui.show_game_over_screen(winner.name if winner else "Draw/Timeout")
+        elif not running and self.gui: # If GUI quit, ensure pygame is cleaned up if not already by show_game_over_screen
+            pygame.quit()
+
 
     def handle_reinforce_phase(self, player: GamePlayer, agent: BaseAIAgent):
         print(f"{player.name} has {player.armies_to_deploy} reinforcements to deploy.")
@@ -232,7 +253,7 @@ class GameOrchestrator:
                     deploy_msg = f"{player.name} deployed {deployable} armies to {terr_name} (New total: {territory_to_deploy.army_count}). Remaining: {player.armies_to_deploy}"
                     print(deploy_msg)
                     self.log_turn_info(deploy_msg)
-                    # if self.gui: self.gui.update(self.engine.game_state)
+                    if self.gui: self.gui.update(self.engine.game_state)
                 else:
                     err_msg = f"{player.name} provided invalid DEPLOY action: {action}. armies_to_deploy: {player.armies_to_deploy}."
                     print(err_msg)
@@ -272,10 +293,10 @@ class GameOrchestrator:
             territory.army_count += 1
             armies_to_distribute -= 1
             dist_msg = f"Auto-distributed 1 army to {territory.name} for {player.name}."
-            print(dist_msg)
+            # print(dist_msg) # Can be noisy, log_turn_info will handle GUI
             self.log_turn_info(dist_msg)
             idx += 1
-        # if self.gui: self.gui.update(self.engine.game_state)
+        if self.gui: self.gui.update(self.engine.game_state)
 
 
     def handle_attack_communicate_phase(self, player: GamePlayer, agent: BaseAIAgent):
@@ -350,9 +371,10 @@ class GameOrchestrator:
                             self.global_chat.broadcast("GameSystem", elim_msg)
                             # Remove player from game (engine.game_state.players and self.ai_agents, self.player_map)
                             self.handle_player_elimination(eliminated_player_name)
+                            if self.gui: self.gui.update(self.engine.game_state) # Update after player list changes
 
 
-                    # if self.gui: self.gui.update(self.engine.game_state) # Update GUI after attack
+                    if self.gui: self.gui.update(self.engine.game_state) # Update GUI after attack
                     # if self.gui: self.gui.show_battle_animation(attack_log) # Optional animation
 
                 attacks_this_turn += 1
@@ -374,10 +396,10 @@ class GameOrchestrator:
                     self.log_turn_info(f"{player.name} initiating private chat with {target_name}.")
                     # Run conversation
                     conversation_log = self.private_chat_manager.run_conversation(
-                        agent, target_agent, initial_msg, self.engine.game_state, self.game_rules
+                        agent, target_agent, initial_msg, self.engine.game_state.to_json(), self.game_rules # Pass game_state_json
                     )
                     # Log conversation to main action log or specific chat panel
-                    # if self.gui: self.gui.log_private_chat(conversation_log)
+                    if self.gui: self.gui.log_private_chat(conversation_log) # Orchestrator passes full log
                     self.log_turn_info(f"Private chat ended between {player.name} and {target_name}. Log stored.")
                 else:
                     err_msg = f"{player.name} private chat failed: Invalid target or message. Target: {target_name}"
@@ -446,7 +468,7 @@ class GameOrchestrator:
             if fortify_result.get("success"):
                 print(f"Fortify successful: {fortify_result['message']}")
                 self.log_turn_info(f"Fortify successful: {fortify_result['message']}")
-                # if self.gui: self.gui.update(self.engine.game_state)
+                if self.gui: self.gui.update(self.engine.game_state)
             else:
                 print(f"Fortify Error: {fortify_result['message']}")
                 self.log_turn_info(f"Fortify Error: {fortify_result['message']}")
@@ -500,21 +522,44 @@ class GameOrchestrator:
 
     def log_ai_thought(self, player_name: str, thought: str):
         """Logs AI's thought process. Could be to console, file, or GUI."""
-        print(f"--- {player_name}'s Thought --- \n{thought}\n--------------------")
-        # if self.gui: self.gui.update_thought_panel(player_name, thought)
-        self.turn_action_log.append({"type": "thought", "player": player_name, "content": thought})
+        print(f"--- {player_name}'s Thought --- \n{thought[:300]}...\n--------------------") # Print truncated thought
+        if self.gui: self.gui.update_thought_panel(player_name, thought)
+
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "player": player_name,
+            "thought": thought
+        }
+        self.turn_action_log.append({"type": "thought", "player": player_name, "content": thought}) # Keep for existing GUI logic if it uses this
+
+        # File logging for AI thoughts
+        # Ensure LOG_DIR exists (it's created by chat loggers, but good to be safe)
+        # Similar log directory logic as in chat modules
+        log_dir = "logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        thought_log_file = os.path.join(log_dir, "ai_thoughts.jsonl")
+        try:
+            with open(thought_log_file, 'a') as f:
+                f.write(json.dumps(log_entry) + "\n")
+        except IOError as e:
+            print(f"Error writing to AI thought log file {thought_log_file}: {e}")
+
 
     def log_turn_info(self, message: str):
         """Logs general turn information."""
-        # For now, just print. Could also go to a file or GUI panel.
-        # print(f"[Orchestrator Log] {message}")
+        # print(f"[Orchestrator Log] {message}") # Console print can be verbose
+        if self.gui:
+            self.gui.log_action(message) # Send to GUI's action log
         self.turn_action_log.append({"type": "info", "content": message, "timestamp": time.time()})
 
     def setup_gui(self):
-        # from .ui.gui import GameGUI # Local import to avoid circular dependency if GUI imports orchestrator
-        # self.gui = GameGUI(self.engine, self) # Pass engine and orchestrator for callbacks
-        # print("GUI setup initiated.")
-        pass
+        # GameGUI is already imported at the top
+        if not self.gui: # Initialize only once
+            self.gui = GameGUI(self.engine, self) # Pass engine and orchestrator for callbacks
+            print("GUI setup complete. GUI is active.")
+        else:
+            print("GUI already setup.")
 
 
 if __name__ == '__main__':

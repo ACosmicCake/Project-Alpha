@@ -1,10 +1,13 @@
-from ..ai.base_agent import BaseAIAgent # Using relative import
-from ..game_engine.data_structures import GameState # To pass game_state_json
+from ..ai.base_agent import BaseAIAgent
+from ..game_engine.data_structures import GameState
 from datetime import datetime
-import json # For game_state.to_json() if needed, or passing game_state_json directly
+import json
+import os
+
+LOG_DIR = "logs" # Defined in global_chat.py, ensure consistency or pass around
 
 class PrivateChatManager:
-    def __init__(self, max_exchanges_per_conversation: int = 3):
+    def __init__(self, max_exchanges_per_conversation: int = 3, log_file_name: str = "private_chats.jsonl"):
         """
         Manages private conversations between two AI agents.
 
@@ -14,6 +17,12 @@ class PrivateChatManager:
         """
         self.max_exchanges = max_exchanges_per_conversation
         self.conversation_logs: dict[str, list[dict]] = {} # Stores logs, key could be "PlayerA_PlayerB_timestamp"
+        self.log_file = None
+        if log_file_name:
+            if not os.path.exists(LOG_DIR):
+                os.makedirs(LOG_DIR)
+            self.log_file = os.path.join(LOG_DIR, log_file_name)
+
 
     def run_conversation(self,
                          agent1: BaseAIAgent,
@@ -114,9 +123,21 @@ class PrivateChatManager:
             # Total messages: 1 (initial) + 5 (replies) = 6 messages = 3 exchanges.
             # The loop should run (max_exchanges * 2 - 1) times.
 
-        # Store the conversation log (optional)
+        # Store the conversation log (optional) in memory
         log_key = f"{agent1.player_name}_vs_{agent2.player_name}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
         self.conversation_logs[log_key] = list(conversation_history) # Store a copy
+
+        # Log the entire conversation to a file
+        if self.log_file:
+            try:
+                with open(self.log_file, 'a') as f:
+                    # Log a header for the conversation for readability in the file
+                    f.write(f"# Conversation Start: {log_key}\n")
+                    for entry in conversation_history:
+                        f.write(json.dumps(entry) + "\n")
+                    f.write(f"# Conversation End: {log_key}\n\n")
+            except IOError as e:
+                print(f"Error writing to private chat log file {self.log_file}: {e}")
 
         print(f"[Private Chat] Conversation between {agent1.player_name} and {agent2.player_name} ended. Log key: {log_key}")
         return conversation_history

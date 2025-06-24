@@ -6,7 +6,8 @@ class GameEngine:
     def __init__(self, map_file_path: str = "map_config.json"):
         self.game_state = GameState()
         self.map_file_path = map_file_path
-        # self.initialize_board() # Will be called by orchestrator typically
+        self.card_trade_bonus_index = 0 # For escalating card bonuses
+        self.card_trade_bonuses = [4, 6, 8, 10, 12, 15] # Standard escalation
 
     def initialize_board(self, players_data: list[dict]):
         """
@@ -151,9 +152,168 @@ class GameEngine:
         # and handle the increasing value of sets.
         # This logic should ideally be separate and called when a player chooses to trade cards.
         # For now, this part is just a placeholder for where card logic would influence reinforcements.
+        # Card trade-in reinforcements are handled by `perform_card_trade` now.
 
-        # player.armies_to_deploy += reinforcements # This should be done by the caller
+        # player.armies_to_deploy += reinforcements # This is done by the caller
         return reinforcements
+
+    def _get_card_trade_bonus(self) -> int:
+        """Gets the current bonus for trading cards, and escalates for next time."""
+        if self.card_trade_bonus_index < len(self.card_trade_bonuses):
+            bonus = self.card_trade_bonuses[self.card_trade_bonus_index]
+        else:
+            # After the defined list, bonus increases by 5 each time
+            bonus = self.card_trade_bonuses[-1] + (self.card_trade_bonus_index - len(self.card_trade_bonuses) + 1) * 5
+        return bonus
+
+    def _increment_card_trade_bonus(self):
+        self.card_trade_bonus_index += 1
+
+    def find_valid_card_sets(self, player: Player) -> list[list[Card]]:
+        """
+        Finds all valid sets of cards a player can trade.
+        A set is:
+        - 3 cards of the same symbol (e.g., 3 Infantry)
+        - 1 card of each of the 3 symbols (e.g., 1 Infantry, 1 Cavalry, 1 Artillery)
+        - Wildcards can substitute for any symbol.
+        Returns a list of sets, where each set is a list of 3 Card objects.
+        """
+        valid_sets = []
+        hand = player.hand
+        if len(hand) < 3:
+            return []
+
+        from collections import Counter
+        import itertools
+
+        # Iterate through all combinations of 3 cards
+        for combo_indices in itertools.combinations(range(len(hand)), 3):
+            combo = [hand[i] for i in combo_indices]
+
+            symbols_in_combo = [c.symbol for c in combo]
+            num_wildcards = symbols_in_combo.count("Wildcard")
+            non_wild_symbols = [s for s in symbols_in_combo if s != "Wildcard"]
+
+            # Check for 3 of a kind (possibly with wildcards)
+            if num_wildcards == 3: # 3 wildcards is a valid set
+                valid_sets.append(list(combo))
+                continue
+            if num_wildcards == 2 and len(non_wild_symbols) == 1: # 2 wildcards + 1 other is 3 of that kind
+                valid_sets.append(list(combo))
+                continue
+            if num_wildcards == 1 and len(non_wild_symbols) == 2:
+                if non_wild_symbols[0] == non_wild_symbols[1]: # 1 wildcard + 2 same symbols is 3 of that kind
+                    valid_sets.append(list(combo))
+                    continue
+            if num_wildcards == 0 and len(set(non_wild_symbols)) == 1: # 3 same non-wild symbols
+                 valid_sets.append(list(combo))
+                 continue
+
+            # Check for 1 of each unique symbol (possibly with wildcards)
+            # The symbols are Infantry, Cavalry, Artillery
+            unique_symbols = {"Infantry", "Cavalry", "Artillery"}
+            present_symbols = set(non_wild_symbols)
+
+            if num_wildcards == 0:
+                if len(present_symbols) == 3: # All 3 unique symbols present, no wildcards
+                    valid_sets.append(list(combo))
+            elif num_wildcards == 1:
+                if len(present_symbols) == 2: # 1 wildcard can complete a set of 3 unique if 2 are already present
+                    valid_sets.append(list(combo))
+            elif num_wildcards == 2:
+                if len(present_symbols) == 1: # 2 wildcards can complete a set of 3 unique if 1 is already present
+                    valid_sets.append(list(combo))
+            # 3 wildcards already handled by "3 of a kind" logic (counts as any set)
+
+        # Ensure we don't return duplicate sets if multiple card objects are identical but different instances
+        # This current implementation identifies sets by card objects, so if cards are unique, sets will be too.
+        # If card objects could be identical, further deduplication by card content might be needed.
+        return valid_sets
+
+
+    def perform_card_trade(self, player: Player, cards_to_trade_indices: list[int]) -> dict:
+        """
+        Performs a card trade for a player.
+        - Validates the set.
+        - Removes cards from hand.
+        - Adds cards to discard pile (or back to deck, depending on rules).
+        - Grants reinforcement bonus.
+        - Updates player's armies_to_deploy.
+        Returns a log of the trade.
+        """
+        log = {"event": "card_trade", "player": player.name, "success": False, "message": "", "armies_gained": 0}
+
+        if len(cards_to_trade_indices) != 3:
+            log["message"] = "Exactly 3 cards must be selected for a trade."
+            return log
+
+        # Ensure indices are valid and unique
+        if len(set(cards_to_trade_indices)) != 3:
+            log["message"] = "Card indices must be unique."
+            return log
+
+        cards_to_trade = []
+        for i in sorted(cards_to_trade_indices, reverse=True): # Sort reverse to pop correctly
+            if i < 0 or i >= len(player.hand):
+                log["message"] = "Invalid card index provided."
+                return log
+            cards_to_trade.append(player.hand[i])
+        cards_to_trade.reverse() # Get them back in original order for set checking
+
+        # Validate the set (re-using find_valid_card_sets logic on the selected cards)
+        # This is a bit inefficient but ensures the selected cards form a valid set among themselves.
+        # A more direct validation of the specific 3 cards would be better.
+
+        # Direct validation of the 3 chosen cards:
+        symbols_in_trade = [c.symbol for c in cards_to_trade]
+        num_wildcards = symbols_in_trade.count("Wildcard")
+        non_wild_symbols = [s for s in symbols_in_trade if s != "Wildcard"]
+        is_valid_set = False
+
+        # Check 3 of a kind
+        if num_wildcards == 3: is_valid_set = True
+        elif num_wildcards == 2 and len(non_wild_symbols) == 1: is_valid_set = True
+        elif num_wildcards == 1 and len(non_wild_symbols) == 2 and non_wild_symbols[0] == non_wild_symbols[1]: is_valid_set = True
+        elif num_wildcards == 0 and len(set(non_wild_symbols)) == 1: is_valid_set = True
+
+        # Check 1 of each unique
+        if not is_valid_set:
+            expected_unique = {"Infantry", "Cavalry", "Artillery"}
+            present_unique = set(non_wild_symbols)
+            if num_wildcards == 0 and len(present_unique) == 3: is_valid_set = True
+            elif num_wildcards == 1 and len(present_unique) == 2: is_valid_set = True # Wildcard completes the set
+            elif num_wildcards == 2 and len(present_unique) == 1: is_valid_set = True # 2 Wildcards complete the set
+            # 3 wildcards is already covered by "3 of a kind"
+
+        if not is_valid_set:
+            log["message"] = "The selected cards do not form a valid set."
+            log["selected_cards_symbols"] = symbols_in_trade
+            return log
+
+        # If valid, remove cards, grant bonus
+        for i in sorted(cards_to_trade_indices, reverse=True):
+            card_removed = player.hand.pop(i)
+            self.game_state.deck.append(card_removed) # Add to bottom of deck (or a discard pile)
+        random.shuffle(self.game_state.deck) # Shuffle after adding back
+
+        bonus_armies = self._get_card_trade_bonus()
+        player.armies_to_deploy += bonus_armies
+        self._increment_card_trade_bonus()
+
+        # Check for territory bonus (if any card matches an owned territory)
+        for card in cards_to_trade:
+            if card.territory_name: # Wildcards don't have territory names
+                territory = self.game_state.territories.get(card.territory_name)
+                if territory and territory.owner == player:
+                    territory.army_count += 2 # Add 2 armies to that specific territory
+                    log["territory_bonus"] = f"Player {player.name} received +2 armies on {card.territory_name} for matching card."
+                    break # Only one such bonus per trade
+
+        log["success"] = True
+        log["message"] = f"{player.name} traded cards for {bonus_armies} armies."
+        log["armies_gained"] = bonus_armies
+        log["traded_card_symbols"] = symbols_in_trade
+        return log
 
     def perform_attack(self, attacker_territory_name: str, defender_territory_name: str, num_attacking_armies: int) -> dict:
         """
@@ -246,12 +406,17 @@ class GameEngine:
 
 
             # Draw a card if one is available and player hasn't drawn one this turn yet
-            # (This "has_drawn_card_this_turn" flag needs to be managed at player or turn level)
-            # For now, assume they can draw if deck is not empty.
-            if self.game_state.deck:
+            # Draw a card if one is available and player hasn't drawn one this turn yet
+            if not new_owner.has_conquered_territory_this_turn and self.game_state.deck:
                 card = self.game_state.deck.pop(0)
                 new_owner.hand.append(card)
+                new_owner.has_conquered_territory_this_turn = True # Mark that they've received a card for conquest this turn
                 log["card_drawn"] = card.to_dict()
+            elif new_owner.has_conquered_territory_this_turn:
+                log["card_skipped_reason"] = "Player already received a card this turn for conquest."
+            elif not self.game_state.deck:
+                log["card_skipped_reason"] = "Deck is empty."
+
 
             # Check if the old owner is eliminated
             if old_owner and not old_owner.territories:
@@ -296,6 +461,10 @@ class GameEngine:
 
         from_territory.army_count -= num_armies
         to_territory.army_count += num_armies
+
+        current_player = from_territory.owner # Should be same as to_territory.owner
+        if current_player:
+            current_player.has_fortified_this_turn = True
 
         log["success"] = True
         log["message"] = f"Successfully moved {num_armies} armies from {from_territory.name} to {to_territory.name}."
@@ -351,7 +520,11 @@ class GameEngine:
             return
 
         current_player = self.game_state.get_current_player()
-        # Reset any turn-specific flags for current_player if necessary (e.g., has_drawn_card_this_turn)
+        if current_player:
+            # Reset turn-specific flags for the player whose turn is ending
+            current_player.has_fortified_this_turn = False
+            current_player.has_conquered_territory_this_turn = False
+            # armies_to_deploy is reset when new reinforcements are calculated for the next player
 
         active_players = [p for p in self.game_state.players if p.territories] # Only consider players with territories
         if not active_players:
@@ -406,13 +579,38 @@ class GameEngine:
 
         if phase == "REINFORCE":
             # Valid deploy actions: (territory_name, num_armies)
-            # Must have armies_to_deploy > 0
             if player.armies_to_deploy > 0:
                 for territory in player.territories:
                     actions.append({"type": "DEPLOY", "territory": territory.name, "max_armies": player.armies_to_deploy})
-            # Option to trade cards if conditions met (e.g., 3+ cards, valid set)
-            # actions.append({"type": "TRADE_CARDS", "cards_to_trade": [...]})
-            if player.armies_to_deploy == 0 : # or if no valid deploy moves left
+
+            # Option to trade cards
+            # Player must trade cards if they have 5 or more.
+            # Otherwise, they can choose to trade if they have a valid set.
+            valid_card_sets = self.find_valid_card_sets(player)
+            if len(player.hand) >= 5: # Must trade
+                if valid_card_sets: # Should always be true if 5+ cards, but check anyway
+                    for i, card_set in enumerate(valid_card_sets):
+                        # Provide indices of cards in hand for the action
+                        card_indices_in_hand = [player.hand.index(c) for c in card_set if c in player.hand]
+                        if len(card_indices_in_hand) == 3: # Ensure all cards are found
+                             actions.append({"type": "TRADE_CARDS", "card_indices": sorted(card_indices_in_hand), "must_trade": True})
+                else:
+                    # This case (5+ cards but no valid set) should ideally not happen with wildcards.
+                    # If it does, it's a game state error or complex hand that needs specific handling.
+                    # For now, we assume find_valid_card_sets is robust.
+                    pass # No TRADE_CARDS action if no sets, even if must_trade is true (game stuck?)
+            elif valid_card_sets: # Can choose to trade
+                 for i, card_set in enumerate(valid_card_sets):
+                    card_indices_in_hand = [player.hand.index(c) for c in card_set if c in player.hand]
+                    if len(card_indices_in_hand) == 3:
+                        actions.append({"type": "TRADE_CARDS", "card_indices": sorted(card_indices_in_hand), "must_trade": False})
+
+            # Can only end reinforce phase if no armies to deploy AND (not forced to trade cards OR no valid sets to trade)
+            must_trade_condition_met = len(player.hand) >= 5 and not any(a["type"] == "TRADE_CARDS" and a.get("must_trade") for a in actions)
+
+            if player.armies_to_deploy == 0 and not must_trade_condition_met :
+                 actions.append({"type": "END_REINFORCE_PHASE"})
+            elif not actions: # If no other actions possible (e.g. no armies, no cards to trade)
                  actions.append({"type": "END_REINFORCE_PHASE"})
 
 
@@ -434,23 +632,23 @@ class GameEngine:
             # Add CHAT actions later
 
         elif phase == "FORTIFY":
-            # Valid fortify actions: (from_territory, to_territory, num_armies)
-            # Can only fortify once per turn. This state needs to be tracked.
-            # For now, assume it's always possible if connected territories exist.
-            owned_territories = player.territories
-            for i in range(len(owned_territories)):
-                for j in range(len(owned_territories)):
-                    if i == j: continue
-                    from_t = owned_territories[i]
-                    to_t = owned_territories[j]
-                    if from_t.army_count > 1 and self._are_territories_connected(from_t, to_t, player):
-                        actions.append({
-                            "type": "FORTIFY",
-                            "from": from_t.name,
-                            "to": to_t.name,
-                            "max_armies_to_move": from_t.army_count - 1
-                        })
-            actions.append({"type": "END_TURN"}) # Or "SKIP_FORTIFY"
+            if not player.has_fortified_this_turn:
+                owned_territories = player.territories
+                for i in range(len(owned_territories)):
+                    for j in range(len(owned_territories)):
+                        if i == j: continue
+                        from_t = owned_territories[i]
+                        to_t = owned_territories[j]
+                        if from_t.army_count > 1 and self._are_territories_connected(from_t, to_t, player):
+                            actions.append({
+                                "type": "FORTIFY",
+                                "from": from_t.name,
+                                "to": to_t.name,
+                                "max_armies_to_move": from_t.army_count - 1
+                            })
+
+            # Always possible to end the turn (which skips fortification if not done)
+            actions.append({"type": "END_TURN"})
 
         # Global actions (available in some phases)
         # actions.append({"type": "GLOBAL_CHAT", "message": "..."})

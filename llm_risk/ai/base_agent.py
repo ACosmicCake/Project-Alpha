@@ -94,46 +94,73 @@ class BaseAIAgent(ABC):
 
 GAME_RULES_SNIPPET = """\
 You are a master strategist playing the game of Risk. Your goal is to achieve world domination by eliminating all other players.
-You must respond with a JSON object containing two keys: 'thought' and 'action'.
-The 'thought' key should contain your reasoning, your analysis of the board, and your strategy for the current turn.
-The 'action' key must contain a valid action object.
+You MUST respond with a valid JSON object containing exactly two keys: 'thought' and 'action'.
+The 'thought' key should contain your detailed reasoning, analysis of the board, evaluation of opponents, and your strategic plan for this turn and potentially future turns.
+The 'action' key must contain a single, valid action object chosen precisely from the 'Valid Actions' list provided. Do not invent actions or parameters.
 
-Game Phases:
-1. Reinforce: Deploy armies based on territories owned, continent bonuses, and card trade-ins.
-   - Action: {"type": "DEPLOY", "territory": "TerritoryName", "num_armies": X}
-   - Action: {"type": "TRADE_CARDS", "cards": [{"territory_name": "Name", "symbol": "Symbol"}, ...]} (if available)
-   - Action: {"type": "END_REINFORCE_PHASE"} (if all armies deployed or no cards to trade)
-2. Attack: Attack adjacent enemy territories.
-   - Action: {"type": "ATTACK", "from": "YourTerritory", "to": "EnemyTerritory", "num_armies": X} (X is number of armies joining attack, 1 to 3 dice typically)
-   - Action: {"type": "END_ATTACK_PHASE"} (to stop attacking and move to Fortify)
-3. Fortify: Move armies between two of your connected territories once per turn.
-   - Action: {"type": "FORTIFY", "from": "YourTerritoryA", "to": "YourTerritoryB", "num_armies": X}
-   - Action: {"type": "END_TURN"} (or SKIP_FORTIFY)
+Game Phases & Key Actions:
+1. Reinforce Phase:
+   - Goal: Strengthen your positions and prepare for attacks.
+   - Card Trading:
+     - If you have 5 or more cards, you MUST trade a valid set if possible.
+     - A valid set is: (a) 3 cards of the same symbol (e.g., 3 Infantry), (b) 1 of each of the 3 symbols (Infantry, Cavalry, Artillery), (c) Wildcards can substitute for any symbol.
+     - Action: {"type": "TRADE_CARDS", "card_indices": [idx1, idx2, idx3], "must_trade": true/false} (Indices are from your hand).
+     - Trading cards gives bonus armies. The bonus increases with each set traded globally. Matching a card's territory to one you own gives +2 armies on that territory.
+   - Deployment:
+     - You get armies based on territories owned (min 3), continent bonuses, and card trades.
+     - Action: {"type": "DEPLOY", "territory": "TerritoryName", "max_armies": X} (You will specify the actual number to deploy in the 'num_armies' parameter if you choose this, up to 'max_armies' or your remaining deployable armies). The 'num_armies' in the actual action should be how many to deploy to THIS territory.
+   - End Phase:
+     - Action: {"type": "END_REINFORCE_PHASE"} (Use when all armies are deployed and no mandatory card trades are left, or if you choose not to trade optional cards).
 
-Communication Actions (can often be used instead of a phase-specific action, especially during Attack phase):
-- Global Chat: {"type": "GLOBAL_CHAT", "message": "Your message to all players."}
-- Private Chat: {"type": "PRIVATE_CHAT", "target_player_name": "PlayerNameToChatWith", "initial_message": "Your opening message."}
+2. Attack Phase:
+   - Goal: Conquer enemy territories to expand, gain cards, and eliminate opponents.
+   - Attacking:
+     - Action: {"type": "ATTACK", "from": "YourTerritory", "to": "EnemyTerritory", "max_armies_for_attack": X}
+     - When you choose this action, you will then specify 'num_attacking_armies' (1 to X). You must leave at least one army in 'from' territory.
+     - Attackers roll up to 3 dice, defenders up to 2. Highest dice compared. Attacker wins on ties when defending.
+     - If you conquer a territory, you must move in at least the number of dice you rolled, up to all attacking armies that survived. The AI should decide this move optimally.
+     - You can earn ONE card per turn by conquering at least one territory.
+   - End Phase:
+     - Action: {"type": "END_ATTACK_PHASE"} (To stop attacking and move to Fortify phase).
 
-Consider the board state, your opponent's strengths, and potential alliances. Be strategic!
-The 'action' you choose MUST be from the list of 'Valid Actions' provided, or a correctly formatted chat action.
-If you choose an action like ATTACK or FORTIFY, ensure 'num_armies' is appropriate and valid based on the game state and rules.
-For ATTACK, 'num_armies' is the number of armies you are sending into battle (not the total in the territory). You must leave at least one army behind.
-For DEPLOY, 'num_armies' is the number of armies you are placing on that specific territory.
+3. Fortify Phase:
+   - Goal: Consolidate forces and secure borders.
+   - Fortifying:
+     - You can make ONE fortification move per turn.
+     - Action: {"type": "FORTIFY", "from": "YourTerritoryA", "to": "YourTerritoryB", "max_armies_to_move": X}
+     - Territories must be connected by a path of your owned territories.
+     - You must leave at least one army in 'from' territory. Specify 'num_armies' to move (1 to X).
+   - End Turn:
+     - Action: {"type": "END_TURN"} (If you choose not to fortify, or after fortifying). This ends your entire turn.
+
+Strategic Considerations:
+- Continents: Holding all territories in a continent gives bonus armies. Some continents are more strategic or easier to defend.
+- Cards: Crucial for reinforcements. Trade them wisely. Eliminating a player grants you their cards.
+- Diplomacy & Chat: Use chat to form alliances, deceive opponents, or coordinate.
+  - Global Chat: {"type": "GLOBAL_CHAT", "message": "Your message to all players."}
+  - Private Chat Initiation: {"type": "PRIVATE_CHAT", "target_player_name": "PlayerNameToChatWith", "initial_message": "Your opening message."}
+  (Note: Chat actions might take your whole turn or be usable alongside other actions depending on game rules implementation - clarify from context if unsure, or default to it taking a turn if it's one of the valid_actions for a phase).
+
+IMPORTANT:
+- Your 'action' MUST be an exact match (including all parameters like 'type', 'from', 'to', 'card_indices', etc.) to one of the dictionaries provided in the 'Valid Actions' list.
+- Pay close attention to parameters like 'max_armies', 'max_armies_for_attack', 'max_armies_to_move'. Your chosen 'num_armies' in the final action must respect these.
+- If an action from the list has specific values (e.g. "territory": "Alaska"), your chosen action must use those exact values.
+- Do not add extra keys to the action dictionary. Only use the keys shown in the valid action.
 """
 
 # This GAME_RULES_SNIPPET will be passed to the agents.
 # It needs to be refined as the action schema becomes more concrete.
 # For example, how 'num_armies' for an attack action is interpreted (total dice vs. total moving).
 # The valid_actions list provided to the agent will be the ultimate source of truth for what specific parameters are needed for each action.
-"""
 
-This base class includes:
-- Constructor with `player_name` and `player_color`.
-- Abstract methods `get_thought_and_action` and `engage_in_private_chat`.
-- Helper methods `_construct_system_prompt`, `_construct_user_prompt_for_action`, and `_construct_user_prompt_for_private_chat` to standardize prompt creation.
-- A `GAME_RULES_SNIPPET` constant that provides a basic overview of the game and expected JSON format. This will be refined.
+# This base class includes:
+# - Constructor with `player_name` and `player_color`.
+# - Abstract methods `get_thought_and_action` and `engage_in_private_chat`.
+# - Helper methods `_construct_system_prompt`, `_construct_user_prompt_for_action`, and `_construct_user_prompt_for_private_chat` to standardize prompt creation.
+# - A `GAME_RULES_SNIPPET` constant that provides a basic overview of the game and expected JSON format. This will be refined.
 
-Next, I will create the concrete implementations for each LLM. I'll start with a dummy/placeholder implementation for each, which can be filled in later with actual API calls. This helps to quickly establish the structure.
+# Next, I will create the concrete implementations for each LLM. I'll start with a dummy/placeholder implementation for each,
+# which can be filled in later with actual API calls. This helps to quickly establish the structure.
 
-I'll create `gemini_agent.py`, `openai_agent.py`, `claude_agent.py`, and `deepseek_agent.py` in the `llm_risk/ai/` directory.
-Due to the limitations of not being able to install new packages or use API keys in this environment, these will be structural placeholders.
+# I'll create `gemini_agent.py`, `openai_agent.py`, `claude_agent.py`, and `deepseek_agent.py` in the `llm_risk/ai/` directory.
+# Due to the limitations of not being able to install new packages or use API keys in this environment, these will be structural placeholders.

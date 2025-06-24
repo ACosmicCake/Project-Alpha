@@ -1,0 +1,10 @@
+# For running the game and making API calls
+google-generativeai
+openai
+anthropic
+# deepseek-python # Assuming they have a library, otherwise we'll use requests
+requests # A fallback for APIs without a dedicated library
+python-dotenv # To load the .env file
+
+# For the GUI
+pygame

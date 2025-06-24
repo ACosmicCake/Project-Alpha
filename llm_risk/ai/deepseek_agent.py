@@ -1,23 +1,54 @@
 from .base_agent import BaseAIAgent, GAME_RULES_SNIPPET
 import os
 import json
-# import requests # Would be used in a real environment
+import requests # Would be used in a real environment
+import time # For potential retries
 
 class DeepSeekAgent(BaseAIAgent):
-    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "deepseek-chat"): # Or specific model version
+    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "deepseek-chat"): # Or specific model version like deepseek-coder
         super().__init__(player_name, player_color)
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
         if not self.api_key:
-            print(f"Warning: DeepSeekAgent for {player_name} initialized without an API key.")
+            print(f"Warning: DeepSeekAgent for {player_name} initialized without an API key. Live calls will fail.")
         self.model_name = model_name
-        self.api_base_url = "https://api.deepseek.com/v1" # Verify correct endpoint
+        self.api_base_url = "https://api.deepseek.com/v1" # Standard endpoint
 
-        self.base_system_prompt = f"You are an exceptionally intelligent AI player in the game of Risk, known as {self.player_name}. You are playing with the {self.player_color} pieces. Your goal is world conquest. Think step-by-step and make bold, calculated moves."
+        # Deepseek API is OpenAI compatible, so system prompt should ask for JSON.
+        self.base_system_prompt = f"You are an exceptionally intelligent AI player in the game of Risk, known as {self.player_name}. You are playing with the {self.player_color} pieces. Your goal is world conquest. Think step-by-step and make bold, calculated moves. Respond in JSON format with 'thought' and 'action' keys."
 
-    def _make_api_request(self, messages: list, stream: bool = False) -> dict | str :
+    def _get_default_action(self, valid_actions: list) -> dict:
+        """Returns a safe default action, prioritizing phase ends or the first valid action."""
+        if any(action['type'] == 'END_ATTACK_PHASE' for action in valid_actions):
+            return {"type": "END_ATTACK_PHASE"}
+        if any(action['type'] == 'END_FORTIFY_PHASE' for action in valid_actions):
+            return {"type": "END_FORTIFY_PHASE"}
+        if any(action['type'] == 'END_REINFORCE_PHASE' for action in valid_actions):
+            return {"type": "END_REINFORCE_PHASE"}
+        if any(action['type'] == 'END_TURN' for action in valid_actions):
+            return {"type": "END_TURN"}
+        return valid_actions[0] if valid_actions else {"type": "END_TURN"}
+
+    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 1) -> dict:
+        default_fallback_action = self._get_default_action(valid_actions)
+
         if not self.api_key:
-            # This case is handled by the calling methods to return placeholder actions/chat
-            raise ValueError("DeepSeek API key not configured.")
+            print(f"DeepSeekAgent ({self.player_name}): API key missing. Returning a default valid action.")
+            return {"thought": "No API key. Defaulting to a safe action.", "action": default_fallback_action}
+
+        if not valid_actions:
+            print(f"DeepSeekAgent ({self.player_name}): No valid actions provided. Returning END_TURN.")
+            return {"thought": "No valid actions were provided to choose from.", "action": {"type": "END_TURN"}}
+
+        system_prompt = self._construct_system_prompt(self.base_system_prompt, game_rules, system_prompt_addition)
+        if "Respond in JSON format" not in system_prompt: # Ensure JSON instruction
+             system_prompt += " You MUST respond with a single valid JSON object containing two keys: 'thought' (your reasoning) and 'action' (one of the provided valid actions)."
+
+        user_prompt = self._construct_user_prompt_for_action(game_state_json, valid_actions)
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -26,90 +57,74 @@ class DeepSeekAgent(BaseAIAgent):
         payload = {
             "model": self.model_name,
             "messages": messages,
-            "stream": stream # Stream might not be ideal for structured JSON, but API supports it
-            # Add other parameters like temperature, max_tokens as needed
+            # Deepseek supports response_format for JSON like OpenAI
+            "response_format": {"type": "json_object"}
+            # "temperature": 0.7, # Optional: Adjust creativity
+            # "max_tokens": 1000, # Optional: Limit response length
         }
 
-        # In a real scenario:
-        # response = requests.post(f"{self.api_base_url}/chat/completions", headers=headers, json=payload)
-        # response.raise_for_status() # Raise an exception for HTTP errors
-        # return response.json() # If not streaming
-        # If streaming, response handling would be different.
+        for attempt in range(max_retries + 1):
+            try:
+                print(f"DeepSeekAgent ({self.player_name}) attempt {attempt + 1}: Sending request to API. Model: {self.model_name}")
+                response = requests.post(f"{self.api_base_url}/chat/completions", headers=headers, json=payload, timeout=30)
+                response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
 
-        # Placeholder for when requests library is not available
-        print(f"DeepSeekAgent ({self.player_name}) would make HTTP POST to {self.api_base_url}/chat/completions with payload: {json.dumps(payload, indent=2)[:500]}...")
+                response_data = response.json()
+                action_data_str = response_data["choices"][0]["message"]["content"]
+                action_data = json.loads(action_data_str)
 
-        # Simulate a successful response structure for get_thought_and_action
-        if not stream: # Assuming get_thought_and_action does not stream
-            action_to_return = {"type": "END_ATTACK_PHASE"} # Default fallback
-            # Try to find a valid action from the user prompt to make the placeholder more realistic
-            # This is a bit of a hack since we don't have the valid_actions list here
-            # The calling methods (get_thought_and_action, engage_in_private_chat) will provide better placeholders
+                if "thought" not in action_data or "action" not in action_data:
+                    raise ValueError("Response JSON must contain 'thought' and 'action' keys.")
 
-            # For get_thought_and_action, it expects a JSON with 'thought' and 'action'
-            simulated_llm_response_content = json.dumps({
-                "thought": f"DeepSeekAgent ({self.player_name}) placeholder: Considering options...",
-                "action": action_to_return # This will be overridden by the calling method's placeholder logic
-            })
-            return {
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": simulated_llm_response_content
-                    }
-                }]
-            }
-        else: # For engage_in_private_chat, if it were to stream (it doesn't in current design)
-            return f"DeepSeek placeholder stream response part 1 for {self.player_name}"
+                action_type_and_params = {k: v for k, v in action_data["action"].items()}
+                is_valid = any(action_type_and_params == {k:v for k,v in va.items()} for va in valid_actions)
 
+                if not is_valid:
+                    is_type_valid = any(action_data["action"]["type"] == va["type"] for va in valid_actions)
+                    if is_type_valid:
+                        print(f"DeepSeekAgent ({self.player_name}): Action {action_data['action']['type']} is a valid type, but params mismatch or not found in: {valid_actions}. Falling back.")
+                        raise ValueError(f"Action {action_data['action']} params mismatch or not found in valid_actions list: {valid_actions}")
+                    else:
+                        raise ValueError(f"Action type {action_data['action']['type']} not found in valid_actions list: {valid_actions}")
 
-    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "") -> dict:
-        if not self.api_key:
-            print(f"DeepSeekAgent ({self.player_name}): API key missing. Returning a default valid action.")
-            action_to_return = valid_actions[0] if valid_actions else {"type": "END_TURN"}
-            return {"thought": "No API key. Defaulting to first valid action or END_TURN.", "action": action_to_return}
+                print(f"DeepSeekAgent ({self.player_name}): Successfully received and validated action: {action_data['action']}")
+                return action_data
 
-        system_prompt = self._construct_system_prompt(self.base_system_prompt, game_rules, system_prompt_addition)
-        user_prompt = self._construct_user_prompt_for_action(game_state_json, valid_actions)
+            except requests.exceptions.Timeout:
+                error_message = "Request timed out."
+                print(f"DeepSeekAgent ({self.player_name}): {error_message}")
+                if attempt >= max_retries:
+                    return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
+            except requests.exceptions.RequestException as e:
+                error_message = f"HTTP Request Error: {e}"
+                print(f"DeepSeekAgent ({self.player_name}): {error_message}")
+                if attempt >= max_retries:
+                    return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
+            except json.JSONDecodeError as e:
+                error_message = f"JSONDecodeError: {e}. Response: {action_data_str if 'action_data_str' in locals() else (response.text if 'response' in locals() else 'No response content')}"
+                print(f"DeepSeekAgent ({self.player_name}): {error_message}")
+                if attempt >= max_retries:
+                    return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
+            except (KeyError, IndexError, ValueError) as e: # For issues with response structure or validation
+                error_message = f"API Response/Validation Error: {e.__class__.__name__}: {e}"
+                print(f"DeepSeekAgent ({self.player_name}): {error_message}")
+                if attempt >= max_retries:
+                    return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
+            print(f"DeepSeekAgent ({self.player_name}): Retrying in 1 second...")
+            time.sleep(1)
 
-        try:
-            # response_data = self._make_api_request(messages) # Real call
-            # # Parse response_data - structure depends on DeepSeek's API
-            # # Example assumes a similar structure to OpenAI for choices[0].message.content
-            # content_str = response_data["choices"][0]["message"]["content"]
-            # action_data = json.loads(content_str)
-            # return action_data
-
-            # Placeholder logic since _make_api_request is stubbed:
-            print(f"DeepSeekAgent ({self.player_name}) get_thought_and_action: Using placeholder response.")
-            action_to_return = valid_actions[0] if valid_actions else {"type": "END_ATTACK_PHASE"}
-            if any(action['type'] == 'END_ATTACK_PHASE' for action in valid_actions):
-                action_to_return = {"type": "END_ATTACK_PHASE"}
-            elif any(action['type'] == 'END_REINFORCE_PHASE' for action in valid_actions):
-                action_to_return = {"type": "END_REINFORCE_PHASE"}
-            elif any(action['type'] == 'END_TURN' for action in valid_actions):
-                action_to_return = {"type": "END_TURN"}
-
-            return {"thought": f"DeepSeekAgent ({self.player_name}) placeholder: Choosing first valid action or phase end.", "action": action_to_return}
-
-        except Exception as e: # Catch requests.exceptions.RequestException, json.JSONDecodeError, KeyError etc.
-            print(f"DeepSeekAgent ({self.player_name}) error during API call or processing: {e}")
-            action_to_return = valid_actions[0] if valid_actions else {"type": "END_TURN"}
-            return {"thought": f"Error processing LLM response: {e}", "action": action_to_return}
+        return {"thought": "Reached end of get_thought_and_action unexpectedly after retries.", "action": default_fallback_action}
 
 
-    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "") -> str:
+    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 1) -> str:
+        default_fallback_message = f"My apologies to {recipient_name}, I seem to be having technical difficulties. (DeepSeek fallback)"
         if not self.api_key:
             print(f"DeepSeekAgent ({self.player_name}): API key missing for chat. Returning default message.")
-            return "Hello. (DeepSeek placeholder due to no API key)"
+            return default_fallback_message
 
         system_prompt_chat = self._construct_system_prompt(
-             f"{self.base_system_prompt} You are in a private dialogue with {recipient_name}.",
+             f"{self.base_system_prompt.split(' Respond in JSON format')[0]} You are in a private dialogue with {recipient_name}. Current game state is provided for context.", # Remove JSON part for chat
              game_rules,
              system_prompt_addition
         )
@@ -117,30 +132,57 @@ class DeepSeekAgent(BaseAIAgent):
         messages = [{"role": "system", "content": system_prompt_chat}]
         for msg in history:
             role = "user" if msg["sender"] == recipient_name else "assistant"
-            if msg["sender"] == self.player_name: role = "assistant"
-            else: role = "user"
-            messages.append({"role": role, "content": msg["message"]})
+            content = msg["message"] if msg["message"] and msg["message"].strip() else "(empty message)"
+            messages.append({"role": role, "content": content})
 
-        # Add the final user message that prompts the LLM for its turn in the conversation.
-        # This includes context like the game state.
         final_user_message_content = f"Current game state for your information:\n{game_state_json}\n\nIt's your turn to speak to {recipient_name}. What do you say?"
         messages.append({"role": "user", "content": final_user_message_content})
 
-        try:
-            # response_data = self._make_api_request(messages) # Real call
-            # # Parse response_data - structure depends on DeepSeek's API
-            # # Example assumes a similar structure to OpenAI for choices[0].message.content
-            # chat_response = response_data["choices"][0]["message"]["content"]
-            # return chat_response
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": self.model_name,
+            "messages": messages,
+            # "temperature": 0.8, # Chat can be more creative
+            # "max_tokens": 500,
+        }
 
-            # Placeholder logic:
-            print(f"DeepSeekAgent ({self.player_name}) engage_in_private_chat: Using placeholder response.")
-            return f"Indeed, {recipient_name}. Your proposition is intriguing. (DeepSeek placeholder response)"
+        for attempt in range(max_retries + 1):
+            try:
+                print(f"DeepSeekAgent ({self.player_name}) attempt {attempt + 1}: Sending chat request to API. Model: {self.model_name}")
+                response = requests.post(f"{self.api_base_url}/chat/completions", headers=headers, json=payload, timeout=20)
+                response.raise_for_status()
 
-        except Exception as e: # Catch requests.exceptions.RequestException, KeyError etc.
-            print(f"DeepSeekAgent ({self.player_name}) error during chat API call or processing: {e}")
-            return f"My apologies, {recipient_name}, I encountered a momentary lapse in communication. (DeepSeek error placeholder)"
+                response_data = response.json()
+                chat_response_content = response_data["choices"][0]["message"]["content"]
 
+                if not chat_response_content.strip():
+                    raise ValueError("Received empty chat response from API.")
+                print(f"DeepSeekAgent ({self.player_name}): Successfully received chat response.")
+                return chat_response_content
+
+            except requests.exceptions.Timeout:
+                error_message = "Chat request timed out."
+                print(f"DeepSeekAgent ({self.player_name}): {error_message}")
+                if attempt >= max_retries:
+                    return f"Error after {max_retries + 1} attempts in chat. {error_message}. {default_fallback_message}"
+            except requests.exceptions.RequestException as e:
+                error_message = f"Chat HTTP Request Error: {e}"
+                print(f"DeepSeekAgent ({self.player_name}): {error_message}")
+                if attempt >= max_retries:
+                    return f"Error after {max_retries + 1} attempts in chat. {error_message}. {default_fallback_message}"
+            except (KeyError, IndexError, ValueError) as e: # For issues with response structure or validation
+                error_message = f"Chat API Response/Validation Error: {e.__class__.__name__}: {e}"
+                print(f"DeepSeekAgent ({self.player_name}): {error_message}")
+                if attempt >= max_retries:
+                    return f"Error after {max_retries + 1} attempts in chat. {error_message}. {default_fallback_message}"
+
+            print(f"DeepSeekAgent ({self.player_name}): Retrying chat in 1 second...")
+            time.sleep(1)
+
+        return default_fallback_message
 
 if __name__ == '__main__':
     # from dotenv import load_dotenv

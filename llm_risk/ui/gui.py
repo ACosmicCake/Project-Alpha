@@ -1,4 +1,4 @@
-# import pygame # Would be imported in a real Pygame environment
+import pygame # Would be imported in a real Pygame environment
 from ..game_engine.engine import GameEngine
 from ..game_engine.data_structures import GameState, Territory, Player as GamePlayer
 # from ..game_orchestrator import GameOrchestrator # Avoid circular import if orchestrator imports GUI
@@ -31,14 +31,14 @@ CHAT_PANEL_HEIGHT = SCREEN_HEIGHT - ACTION_LOG_HEIGHT - THOUGHT_PANEL_HEIGHT
 
 class GameGUI:
     def __init__(self, engine: GameEngine, orchestrator): # Orchestrator for callbacks/data
-        # Pygame specific initialization (commented out)
-        # pygame.init()
-        # self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        # pygame.display.set_caption("LLM Risk Game")
-        # self.font = pygame.font.SysFont(None, 24)
-        # self.map_image = None # Will hold the loaded map image
-        # self.clock = pygame.time.Clock()
-        print("Pygame GUI Initialized (Placeholder - No graphics will be shown)")
+        pygame.init()
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption("LLM Risk Game")
+        self.font = pygame.font.SysFont(None, 24) # Default font
+        self.large_font = pygame.font.SysFont(None, 36) # For titles
+        self.map_image = None # Will hold the loaded map image
+        self.clock = pygame.time.Clock()
+        print("Pygame GUI Initialized")
 
         self.engine = engine
         self.orchestrator = orchestrator # To access chat logs, AI thoughts etc.
@@ -59,15 +59,15 @@ class GameGUI:
         """
         Loads territory coordinates from a config file and the map background image.
         """
-        # Load map image (placeholder)
-        # try:
-        #     self.map_image = pygame.image.load(map_image_path)
-        #     self.map_image = pygame.transform.scale(self.map_image, (MAP_AREA_WIDTH, SCREEN_HEIGHT))
-        # except pygame.error as e:
-        #     print(f"Warning: Could not load map image '{map_image_path}': {e}. Using blank background.")
-        #     self.map_image = pygame.Surface((MAP_AREA_WIDTH, SCREEN_HEIGHT))
-        #     self.map_image.fill(GREY)
-        print(f"GUI: Would load map image from '{map_image_path}'")
+        # Load map image
+        try:
+            self.map_image = pygame.image.load(map_image_path)
+            self.map_image = pygame.transform.scale(self.map_image, (MAP_AREA_WIDTH, SCREEN_HEIGHT))
+            print(f"GUI: Successfully loaded and scaled map image from '{map_image_path}'.")
+        except pygame.error as e:
+            print(f"Warning: Could not load map image '{map_image_path}': {e}. Using blank background.")
+            self.map_image = pygame.Surface((MAP_AREA_WIDTH, SCREEN_HEIGHT))
+            self.map_image.fill(GREY)
 
         # Load territory coordinates
         try:
@@ -113,123 +113,171 @@ class GameGUI:
             return
 
         # In a real Pygame app, this is the main drawing loop per frame.
-        # For placeholder, we just print that an update is happening.
-        # self.screen.fill(BLACK) # Clear screen
+        self.screen.fill(BLACK) # Clear screen
 
         # 1. Draw Map Area
-        # self.draw_map(current_game_state)
+        self.draw_map(current_game_state)
 
         # 2. Draw Side Panels
-        # self.draw_action_log_panel()
-        # self.draw_ai_thought_panel()
-        # self.draw_chat_panel()
+        self.draw_action_log_panel()
+        self.draw_ai_thought_panel()
+        self.draw_chat_panel()
 
-        # pygame.display.flip() # Update the full display
-        # self.clock.tick(30) # Limit to 30 FPS
+        pygame.display.flip() # Update the full display
+        self.clock.tick(30) # Limit to 30 FPS
 
-        print(f"GUI: Update called. Current Turn: {current_game_state.current_turn_number}, Phase: {current_game_state.current_game_phase}, Player: {current_game_state.get_current_player().name if current_game_state.get_current_player() else 'N/A'}")
-        # For demonstration, print some territory info
-        # for name, terr in current_game_state.territories.items():
-        #     owner_name = terr.owner.name if terr.owner else "None"
-        #     print(f"  Territory: {name}, Owner: {owner_name}, Armies: {terr.army_count}")
+        # print(f"GUI: Update called. Current Turn: {current_game_state.current_turn_number}, Phase: {current_game_state.current_game_phase}, Player: {current_game_state.get_current_player().name if current_game_state.get_current_player() else 'N/A'}")
 
 
     def draw_map(self, game_state: GameState):
         """Renders the game map with territories, owners, and army counts."""
-        # self.screen.blit(self.map_image, (0,0)) # Draw background map
-        print("GUI: Drawing map (placeholder)...")
+        if self.map_image:
+            self.screen.blit(self.map_image, (0,0)) # Draw background map
+        else: # Fallback if map image failed to load
+            pygame.draw.rect(self.screen, GREY, (0,0, MAP_AREA_WIDTH, SCREEN_HEIGHT))
+
 
         for terr_name, territory in game_state.territories.items():
             coords = self.territory_coordinates.get(terr_name)
             if not coords:
-                # print(f"GUI Warning: No coordinates for territory '{terr_name}'.")
                 continue
 
             owner_color = GREY # Default for unowned
             if territory.owner and territory.owner.color:
                 owner_color = DEFAULT_PLAYER_COLORS.get(territory.owner.color, GREY)
 
-            # Pygame drawing calls (commented out)
-            # pygame.draw.circle(self.screen, owner_color, coords, 15) # Circle for territory
-            # army_text = self.font.render(str(territory.army_count), True, BLACK)
-            # text_rect = army_text.get_rect(center=coords)
-            # self.screen.blit(army_text, text_rect)
-            # name_text = self.font.render(terr_name, True, WHITE) # Basic name label
-            # self.screen.blit(name_text, (coords[0] + 20, coords[1] - 10))
-            owner_name = territory.owner.name if territory.owner else "None"
-            print(f"  Drawing Territory: {terr_name} at {coords}, Owner: {owner_name} ({territory.owner.color if territory.owner else 'N/A'}), Armies: {territory.army_count}")
+            pygame.draw.circle(self.screen, owner_color, coords, 20) # Circle for territory
+            pygame.draw.circle(self.screen, BLACK, coords, 20, 2) # Border for circle
+
+            army_text = self.font.render(str(territory.army_count), True, BLACK)
+            text_rect = army_text.get_rect(center=coords)
+            self.screen.blit(army_text, text_rect)
+
+            # Slightly offset territory name for readability
+            name_text_surface = self.font.render(terr_name, True, WHITE)
+            name_text_rect = name_text_surface.get_rect(center=(coords[0], coords[1] - 25))
+            self.screen.blit(name_text_surface, name_text_rect)
 
 
     def draw_action_log_panel(self):
         """Displays a scrolling list of game actions."""
-        # panel_rect = pygame.Rect(MAP_AREA_WIDTH, 0, SIDE_PANEL_WIDTH, ACTION_LOG_HEIGHT)
-        # pygame.draw.rect(self.screen, (50,50,50), panel_rect) # Background for panel
-        # title_text = self.font.render("Action Log", True, WHITE)
-        # self.screen.blit(title_text, (panel_rect.x + 5, panel_rect.y + 5))
-        print("GUI: Drawing Action Log Panel...")
+        panel_rect = pygame.Rect(MAP_AREA_WIDTH, 0, SIDE_PANEL_WIDTH, ACTION_LOG_HEIGHT)
+        pygame.draw.rect(self.screen, (30,30,30), panel_rect) # Darker background for panel
+        pygame.draw.rect(self.screen, WHITE, panel_rect, 1) # Border
 
-        y_offset = 30
+        title_text = self.large_font.render("Action Log", True, WHITE)
+        self.screen.blit(title_text, (panel_rect.x + 10, panel_rect.y + 10))
+
+        y_offset = 40 # Start below title
         for i, log_entry in enumerate(reversed(self.action_log[-10:])): # Show last 10 actions
-            # entry_surface = self.font.render(log_entry, True, WHITE)
-            # self.screen.blit(entry_surface, (panel_rect.x + 10, panel_rect.y + y_offset + i * 20))
-            print(f"  Log: {log_entry}")
+            entry_surface = self.font.render(log_entry, True, WHITE)
+            self.screen.blit(entry_surface, (panel_rect.x + 10, panel_rect.y + y_offset + i * 20))
 
 
     def draw_ai_thought_panel(self):
         """Displays the latest 'thought' from the selected AI."""
-        # panel_rect = pygame.Rect(MAP_AREA_WIDTH, ACTION_LOG_HEIGHT, SIDE_PANEL_WIDTH, THOUGHT_PANEL_HEIGHT)
-        # pygame.draw.rect(self.screen, (60,60,60), panel_rect)
-        # title_text = self.font.render("AI Thoughts", True, WHITE)
-        # self.screen.blit(title_text, (panel_rect.x + 5, panel_rect.y + 5))
-        print("GUI: Drawing AI Thought Panel...")
+        panel_rect = pygame.Rect(MAP_AREA_WIDTH, ACTION_LOG_HEIGHT, SIDE_PANEL_WIDTH, THOUGHT_PANEL_HEIGHT)
+        pygame.draw.rect(self.screen, (40,40,40), panel_rect)
+        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
 
-        # Placeholder: Show thoughts for the first AI if no active tab, or current player
-        if not self.active_tab_thought_panel and self.orchestrator.ai_agents:
-            self.active_tab_thought_panel = list(self.orchestrator.ai_agents.keys())[0]
+        title_text = self.large_font.render("AI Thoughts", True, WHITE)
+        self.screen.blit(title_text, (panel_rect.x + 10, panel_rect.y + 10))
 
+        # Determine whose thoughts to show - default to current player if available
+        player_to_show_thoughts = self.active_tab_thought_panel
         current_player = self.engine.game_state.get_current_player()
-        if current_player: # Default to current player's thoughts
-            self.active_tab_thought_panel = current_player.name
+        if not player_to_show_thoughts and current_player:
+            player_to_show_thoughts = current_player.name
+        elif not player_to_show_thoughts and self.orchestrator.ai_agents: # Fallback to first AI
+             player_to_show_thoughts = list(self.orchestrator.ai_agents.keys())[0]
 
 
-        if self.active_tab_thought_panel in self.ai_thoughts:
-            thought = self.ai_thoughts[self.active_tab_thought_panel]
+        if player_to_show_thoughts and player_to_show_thoughts in self.ai_thoughts:
+            thought = self.ai_thoughts[player_to_show_thoughts]
             # Render thought text (potentially multi-line)
-            # y_offset = 30
-            # for line in thought.split('\n'): # Basic multi-line
-            #     line_surface = self.font.render(line, True, WHITE)
-            #     self.screen.blit(line_surface, (panel_rect.x + 10, panel_rect.y + y_offset))
-            #     y_offset += 20
-            print(f"  Thoughts for {self.active_tab_thought_panel}: {thought[:100]}...")
+            y_offset = 40
+            # Basic text wrapping
+            words = thought.split(' ')
+            lines = []
+            current_line = ""
+            for word in words:
+                if self.font.size(current_line + word)[0] < panel_rect.width - 20 : # Check width
+                    current_line += word + " "
+                else:
+                    lines.append(current_line)
+                    current_line = word + " "
+            lines.append(current_line) # Add last line
+
+            for line_text in lines[:7]: # Show max 7 lines of thought
+                line_surface = self.font.render(line_text.strip(), True, WHITE)
+                self.screen.blit(line_surface, (panel_rect.x + 10, panel_rect.y + y_offset))
+                y_offset += 20
         else:
-            # no_thought_text = self.font.render(f"No thoughts yet for {self.active_tab_thought_panel}.", True, GREY)
-            # self.screen.blit(no_thought_text, (panel_rect.x + 10, panel_rect.y + 30))
-            print(f"  No thoughts yet for {self.active_tab_thought_panel}.")
+            no_thought_text_str = f"No thoughts for {player_to_show_thoughts if player_to_show_thoughts else 'N/A'}."
+            no_thought_text = self.font.render(no_thought_text_str, True, GREY)
+            self.screen.blit(no_thought_text, (panel_rect.x + 10, panel_rect.y + 40))
 
 
     def draw_chat_panel(self):
         """Displays global chat and private chat logs."""
-        # panel_rect = pygame.Rect(MAP_AREA_WIDTH, ACTION_LOG_HEIGHT + THOUGHT_PANEL_HEIGHT, SIDE_PANEL_WIDTH, CHAT_PANEL_HEIGHT)
-        # pygame.draw.rect(self.screen, (70,70,70), panel_rect)
-        # title_text = self.font.render(f"Chat ({self.active_tab_chat_panel})", True, WHITE)
-        # self.screen.blit(title_text, (panel_rect.x + 5, panel_rect.y + 5))
-        print(f"GUI: Drawing Chat Panel (Active: {self.active_tab_chat_panel})...")
+        panel_rect = pygame.Rect(MAP_AREA_WIDTH, ACTION_LOG_HEIGHT + THOUGHT_PANEL_HEIGHT, SIDE_PANEL_WIDTH, CHAT_PANEL_HEIGHT)
+        pygame.draw.rect(self.screen, (50,50,50), panel_rect)
+        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
 
+        title_text_str = f"Chat ({self.active_tab_chat_panel})"
+        title_text = self.large_font.render(title_text_str, True, WHITE)
+        self.screen.blit(title_text, (panel_rect.x + 10, panel_rect.y + 10))
+
+        y_offset = 40
         if self.active_tab_chat_panel == "global":
             chat_messages = self.orchestrator.global_chat.get_log(limit=10) # Last 10 global messages
-            y_offset = 30
             for msg_data in reversed(chat_messages):
-                # msg_render = f"{msg_data['sender']}: {msg_data['message']}"
-                # msg_surface = self.font.render(msg_render, True, WHITE)
-                # self.screen.blit(msg_surface, (panel_rect.x + 10, panel_rect.y + y_offset + (len(chat_messages) - 1 - chat_messages.index(msg_data)) * 20))
-                print(f"  Global Chat - {msg_data['sender']}: {msg_data['message']}")
+                msg_render = f"{msg_data['sender']}: {msg_data['message']}"
+                # Basic text wrapping for chat messages
+                words = msg_render.split(' ')
+                lines = []
+                current_line = ""
+                for word in words:
+                    if self.font.size(current_line + word)[0] < panel_rect.width - 20:
+                        current_line += word + " "
+                    else:
+                        lines.append(current_line)
+                        current_line = word + " "
+                lines.append(current_line)
+
+                for line_text in lines:
+                    if y_offset + 20 > panel_rect.height - 10: break # Don't overflow panel
+                    msg_surface = self.font.render(line_text.strip(), True, WHITE)
+                    self.screen.blit(msg_surface, (panel_rect.x + 10, panel_rect.y + y_offset ))
+                    y_offset += 20
+                if y_offset + 20 > panel_rect.height - 10: break
         else:
-            # Placeholder for private chat logs
-            # private_log = self.orchestrator.private_chat_manager.conversation_logs.get(self.active_tab_chat_panel)
-            # if private_log:
-            #     # Render private_log
-            #     pass
-            print(f"  Displaying private chat for {self.active_tab_chat_panel} (not fully implemented in placeholder GUI).")
+            # Placeholder for private chat logs - this would need more sophisticated state management
+            private_log = self.orchestrator.private_chat_manager.get_conversation_log(self.active_tab_chat_panel)
+            if private_log:
+                for msg_data in reversed(private_log[-10:]): # Show last 10 messages of this private chat
+                    msg_render = f"{msg_data['sender']}: {msg_data['message']}"
+                    # Basic text wrapping
+                    words = msg_render.split(' ')
+                    lines = []
+                    current_line = ""
+                    for word in words:
+                        if self.font.size(current_line + word)[0] < panel_rect.width - 20:
+                            current_line += word + " "
+                        else:
+                            lines.append(current_line)
+                            current_line = word + " "
+                    lines.append(current_line)
+
+                    for line_text in lines:
+                        if y_offset + 20 > panel_rect.height - 10: break
+                        msg_surface = self.font.render(line_text.strip(), True, WHITE)
+                        self.screen.blit(msg_surface, (panel_rect.x + 10, panel_rect.y + y_offset))
+                        y_offset += 20
+                    if y_offset + 20 > panel_rect.height - 10: break
+            else:
+                no_chat_text = self.font.render(f"No messages in chat '{self.active_tab_chat_panel}'.", True, GREY)
+                self.screen.blit(no_chat_text, (panel_rect.x + 10, panel_rect.y + y_offset))
 
 
     def log_action(self, action_string: str):
@@ -276,36 +324,46 @@ class GameGUI:
         # This would involve more complex Pygame drawing and timing in a real GUI
 
     def show_game_over_screen(self, winner_name: str | None):
-        """(Placeholder) Displays a game over message."""
-        # self.screen.fill(BLACK)
+        """Displays a game over message."""
+        self.screen.fill(BLACK)
         message = f"Game Over! Winner: {winner_name}" if winner_name else "Game Over! It's a draw or timeout."
-        # text_surface = self.font.render(message, True, WHITE)
-        # text_rect = text_surface.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
-        # self.screen.blit(text_surface, text_rect)
-        # pygame.display.flip()
+        text_surface = self.large_font.render(message, True, WHITE)
+        text_rect = text_surface.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+        self.screen.blit(text_surface, text_rect)
+        pygame.display.flip()
         print(f"GUI: Displaying Game Over Screen: {message}")
-        # Wait for a bit or for user to close
-        # running = True
-        # while running:
-        #     for event in pygame.event.get():
-        #         if event.type == pygame.QUIT:
-        #             running = False
-        #     self.clock.tick(10)
-        # pygame.quit()
+
+        # Keep window open until user closes it
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+            self.clock.tick(10)
+        pygame.quit() # Quit pygame when done
 
 
-    def handle_input(self):
-        """Handles user input (e.g., clicking on UI elements, keyboard shortcuts). Placeholder."""
-        # for event in pygame.event.get():
-        #     if event.type == pygame.QUIT:
-        #         return False # Signal to close the game
-        #     if event.type == pygame.MOUSEBUTTONDOWN:
-        #         # Check for clicks on tabs, buttons, etc.
-        #         # e.g., if event.pos is within thought_panel_tab_playerA_rect:
-        #         #    self.active_tab_thought_panel = "PlayerA"
-        #         #    self.update()
-        #         print(f"GUI: Mouse click at {event.pos} (Placeholder input handling)")
-        #         pass
+    def handle_input(self) -> bool:
+        """Handles user input (e.g., clicking on UI elements, keyboard shortcuts)."""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                print("GUI: Quit event received. Signaling to close.")
+                return False # Signal to close the game
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                # Placeholder for tab switching logic etc.
+                # This will be expanded in a later step.
+                print(f"GUI: Mouse click at {event.pos}")
+                # Example: Check if click is on AI thought tabs (if they were drawn as rects)
+                # For now, just cycles through available AI agents for thought panel
+                if self.orchestrator and self.orchestrator.ai_agents:
+                    agent_names = list(self.orchestrator.ai_agents.keys())
+                    if self.active_tab_thought_panel in agent_names:
+                        current_idx = agent_names.index(self.active_tab_thought_panel)
+                        next_idx = (current_idx + 1) % len(agent_names)
+                        self.active_tab_thought_panel = agent_names[next_idx]
+                    elif agent_names:
+                        self.active_tab_thought_panel = agent_names[0]
+                    print(f"GUI: Switched thought panel to {self.active_tab_thought_panel}")
         return True # Game continues
 
 # Example of how the Orchestrator might interact with the GUI (in Orchestrator file)

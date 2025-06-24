@@ -57,9 +57,11 @@ class Player:
         self.armies_to_deploy: int = 0
         self.territories: list[Territory] = []
         self.hand: list[Card] = []
+        self.has_fortified_this_turn: bool = False # Added for tracking fortification
+        self.has_conquered_territory_this_turn: bool = False # Added for tracking card eligibility
 
     def __repr__(self):
-        return f"Player({self.name}, Color: {self.color}, Territories: {len(self.territories)}, Cards: {len(self.hand)})"
+        return f"Player({self.name}, Color: {self.color}, Territories: {len(self.territories)}, Cards: {len(self.hand)}, Fortified: {self.has_fortified_this_turn}, Conquered: {self.has_conquered_territory_this_turn})"
 
     def to_dict(self):
         return {
@@ -67,7 +69,9 @@ class Player:
             "color": self.color,
             "armies_to_deploy": self.armies_to_deploy,
             "territories": [t.name for t in self.territories],
-            "hand": [card.to_dict() for card in self.hand]
+            "hand": [card.to_dict() for card in self.hand],
+            "has_fortified_this_turn": self.has_fortified_this_turn,
+            "has_conquered_territory_this_turn": self.has_conquered_territory_this_turn
         }
 
 class GameState:

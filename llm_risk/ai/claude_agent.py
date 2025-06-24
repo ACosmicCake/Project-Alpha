@@ -1,124 +1,172 @@
 from .base_agent import BaseAIAgent, GAME_RULES_SNIPPET
 import os
 import json
-# import anthropic # Would be used in a real environment
+import anthropic # Would be used in a real environment
+import time # For potential retries
 
 class ClaudeAgent(BaseAIAgent):
-    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "claude-3-opus-20240229"): # Or claude-3-sonnet, claude-2.1 etc.
+    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "claude-3-haiku-20240307"): # Using Haiku for speed/cost effectiveness
         super().__init__(player_name, player_color)
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not self.api_key:
-            print(f"Warning: ClaudeAgent for {player_name} initialized without an API key.")
-        # self.client = anthropic.Anthropic(api_key=self.api_key) # Real setup
-        self.client = None # Placeholder
+            print(f"Warning: ClaudeAgent for {player_name} initialized without an API key. Live calls will fail.")
+            self.client = None
+        else:
+            self.client = anthropic.Anthropic(api_key=self.api_key)
         self.model_name = model_name
-        self.base_system_prompt = f"You are a masterful and cunning AI player in the game of Risk, known as {self.player_name} ({self.player_color}). Your objective is total domination. You are highly analytical and articulate your thoughts clearly before deciding on an action."
+        self.base_system_prompt = f"You are a masterful and cunning AI player in the game of Risk, known as {self.player_name} ({self.player_color}). Your objective is total domination. You are highly analytical and articulate your thoughts clearly before deciding on an action. Respond in JSON format with 'thought' and 'action' keys."
 
-    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "") -> dict:
+    def _get_default_action(self, valid_actions: list) -> dict:
+        """Returns a safe default action, prioritizing phase ends or the first valid action."""
+        if any(action['type'] == 'END_ATTACK_PHASE' for action in valid_actions):
+            return {"type": "END_ATTACK_PHASE"}
+        if any(action['type'] == 'END_FORTIFY_PHASE' for action in valid_actions):
+            return {"type": "END_FORTIFY_PHASE"}
+        if any(action['type'] == 'END_REINFORCE_PHASE' for action in valid_actions):
+            return {"type": "END_REINFORCE_PHASE"}
+        if any(action['type'] == 'END_TURN' for action in valid_actions):
+            return {"type": "END_TURN"}
+        return valid_actions[0] if valid_actions else {"type": "END_TURN"} # Absolute fallback
+
+    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 1) -> dict:
+        default_fallback_action = self._get_default_action(valid_actions)
+
         if not self.client:
             print(f"ClaudeAgent ({self.player_name}): Client not initialized (API key likely missing). Returning a default valid action.")
-            action_to_return = valid_actions[0] if valid_actions else {"type": "END_TURN"}
-            return {"thought": "No client available. Defaulting to first valid action or END_TURN.", "action": action_to_return}
+            return {"thought": "No client available. Defaulting to a safe action.", "action": default_fallback_action}
 
+        if not valid_actions:
+            print(f"ClaudeAgent ({self.player_name}): No valid actions provided. Returning END_TURN.")
+            return {"thought": "No valid actions were provided to choose from.", "action": {"type": "END_TURN"}}
+
+        # Ensure the system prompt explicitly asks for JSON.
         system_p = self._construct_system_prompt(self.base_system_prompt, game_rules, system_prompt_addition)
+        if "Respond in JSON format" not in system_p: # Double check
+             system_p += " You MUST respond with a single valid JSON object containing two keys: 'thought' (your reasoning) and 'action' (one of the provided valid actions)."
+
         user_p = self._construct_user_prompt_for_action(game_state_json, valid_actions)
+        # Anthropic expects the last message to be 'user' to generate an 'assistant' response.
+        # The user_p already contains the request for action.
 
-        # Anthropic API uses a slightly different format for messages (system prompt + list of user/assistant turns)
-        # For a single turn action, it's simpler:
+        for attempt in range(max_retries + 1):
+            try:
+                print(f"ClaudeAgent ({self.player_name}) attempt {attempt + 1}: Sending request to API. Model: {self.model_name}")
+                response = self.client.messages.create(
+                    model=self.model_name,
+                    max_tokens=1024, # Adjust as needed
+                    system=system_p,
+                    messages=[
+                        {"role": "user", "content": user_p}
+                    ]
+                )
 
-        # In a real scenario:
-        # response = self.client.messages.create(
-        #     model=self.model_name,
-        #     max_tokens=1024,
-        #     system=system_p, # System prompt
-        #     messages=[
-        #         {"role": "user", "content": user_p}
-        #     ]
-        # )
-        # try:
-        #     # Claude's response is typically in response.content[0].text
-        #     # It's expected to be a JSON string.
-        #     action_data_str = response.content[0].text
-        #     action_data = json.loads(action_data_str)
-        # except (json.JSONDecodeError, AttributeError, IndexError) as e:
-        #     print(f"ClaudeAgent ({self.player_name}) error decoding JSON: {e}\nResponse was: {action_data_str if 'action_data_str' in locals() else 'No response content'}")
-        #     return {"thought": f"Error processing LLM response: {action_data_str if 'action_data_str' in locals() else 'No response content'}", "action": valid_actions[0] if valid_actions else {"type": "END_TURN"}}
-        # return action_data
+                # Ensure response.content is a list and has at least one item
+                if not response.content or not isinstance(response.content, list) or not hasattr(response.content[0], 'text'):
+                    raise ValueError("Invalid response structure from Claude API.")
 
-        print(f"ClaudeAgent ({self.player_name}) would send to API: \nSYSTEM: {system_p}\nUSER_PROMPT (messages format): {user_p[:500]}...\n")
-        action_to_return = valid_actions[0] if valid_actions else {"type": "END_ATTACK_PHASE"}
-        if any(action['type'] == 'END_ATTACK_PHASE' for action in valid_actions):
-            action_to_return = {"type": "END_ATTACK_PHASE"}
-        elif any(action['type'] == 'END_REINFORCE_PHASE' for action in valid_actions):
-            action_to_return = {"type": "END_REINFORCE_PHASE"}
-        elif any(action['type'] == 'END_TURN' for action in valid_actions):
-            action_to_return = {"type": "END_TURN"}
+                action_data_str = response.content[0].text
+                # Claude might sometimes wrap JSON in ```json ... ```, try to strip it
+                if action_data_str.strip().startswith("```json"):
+                    action_data_str = action_data_str.strip()[7:-3].strip()
+                elif action_data_str.strip().startswith("```"): # More generic ``` stripping
+                    action_data_str = action_data_str.strip()[3:-3].strip()
 
-        return {"thought": f"ClaudeAgent ({self.player_name}) placeholder: Choosing first valid action or phase end.", "action": action_to_return}
+                action_data = json.loads(action_data_str)
 
-    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "") -> str:
+                if "thought" not in action_data or "action" not in action_data:
+                    raise ValueError("Response JSON must contain 'thought' and 'action' keys.")
+
+                action_type_and_params = {k: v for k, v in action_data["action"].items()}
+                is_valid = any(action_type_and_params == {k:v for k,v in va.items()} for va in valid_actions)
+
+                if not is_valid:
+                    is_type_valid = any(action_data["action"]["type"] == va["type"] for va in valid_actions)
+                    if is_type_valid:
+                        print(f"ClaudeAgent ({self.player_name}): Action {action_data['action']['type']} is a valid type, but params mismatch or not found in: {valid_actions}. Trying to find closest match or falling back.")
+                        # Attempt to find a valid action of the same type, if params are missing but type is okay.
+                        # This is a bit lenient, might need adjustment.
+                        potential_matches = [va for va in valid_actions if va["type"] == action_data["action"]["type"]]
+                        if potential_matches:
+                            action_data["action"] = potential_matches[0] # Take the first match of this type
+                            print(f"ClaudeAgent ({self.player_name}): Using first valid action of type {action_data['action']['type']}: {action_data['action']}")
+                        else: # Should not happen if is_type_valid is true
+                             raise ValueError(f"Action type {action_data['action']['type']} was deemed valid, but no such action found in valid_actions.")
+                    else:
+                        raise ValueError(f"Action {action_data['action']} (type: {action_data['action'].get('type')}) not found in valid_actions list: {valid_actions}")
+
+                print(f"ClaudeAgent ({self.player_name}): Successfully received and validated action: {action_data['action']}")
+                return action_data
+
+            except json.JSONDecodeError as e:
+                error_message = f"JSONDecodeError: {e}. Response: '{action_data_str if 'action_data_str' in locals() else 'No response content yet'}'"
+                print(f"ClaudeAgent ({self.player_name}): {error_message}")
+                if attempt >= max_retries:
+                    return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
+            except (anthropic.APIError, ValueError, AttributeError, IndexError) as e: # Catch Anthropic specific and other errors
+                error_message = f"API/Validation Error: {e.__class__.__name__}: {e}"
+                print(f"ClaudeAgent ({self.player_name}): {error_message}")
+                if attempt >= max_retries:
+                    return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
+
+            print(f"ClaudeAgent ({self.player_name}): Retrying in 1 second...")
+            time.sleep(1)
+
+        return {"thought": "Reached end of get_thought_and_action unexpectedly after retries.", "action": default_fallback_action}
+
+
+    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 1) -> str:
+        default_fallback_message = f"My apologies, I am currently unable to respond. (Claude fallback) - to {recipient_name}"
         if not self.client:
             print(f"ClaudeAgent ({self.player_name}): Client not initialized for chat. Returning default message.")
-            return "Greetings. (Claude placeholder due to no client)"
+            return default_fallback_message
 
         system_p = self._construct_system_prompt(
-            f"{self.base_system_prompt} You are in a private text-based negotiation with {recipient_name}.",
-            game_rules,
+            f"{self.base_system_prompt} You are in a private text-based negotiation with {recipient_name}. Be strategic and try to achieve your goals. The game state is provided for context.",
+            game_rules, # Game rules might be less relevant for chat, but can be included
             system_prompt_addition
         )
 
-        # Construct messages list for Anthropic API
         anthropic_messages = []
         for msg in history:
-            # Convert sender/recipient to user/assistant roles
-            # 'user' is the one who is NOT us (the LLM). 'assistant' IS us.
             role = "user" if msg["sender"] == recipient_name else "assistant"
-            anthropic_messages.append({"role": role, "content": msg["message"]})
+            # Ensure no empty content messages, as Claude API might reject them.
+            content = msg["message"] if msg["message"] and msg["message"].strip() else "(empty message)"
+            anthropic_messages.append({"role": role, "content": content})
 
-        # Add the current context and prompt for a response. This is the latest "user" turn.
-        # Effectively, we are asking Claude to respond to the last message in history, or initiate if history is empty.
-        # The _construct_user_prompt_for_private_chat is not directly used here due to message list format.
-        # We can append a final user message that tells Claude it's its turn.
-        # If history's last message was from us (assistant), we might not need to add another user message before calling API.
-        # However, it's usually a user message that prompts an assistant response.
-        # Let's assume the history leads up to Claude needing to speak.
+        # Add a final "user" message to prompt Claude for its response in the conversation.
+        # This message should make it clear it's Claude's turn to speak.
+        # We include game_state_json here as part of the context for the current turn.
+        final_user_prompt = f"Current game state for context:\n{game_state_json}\n\nIt's your turn to speak to {recipient_name}. What do you say?"
+        anthropic_messages.append({"role": "user", "content": final_user_prompt})
 
-        # The prompt to Claude is essentially the history. We can add context.
-        # For Claude, the prompt for its response is the last message in the `messages` list, which should be from the "user" (the other player).
-        # If we need to add context like game_state, it can be part of the last user message or system prompt.
-        # The _construct_user_prompt_for_private_chat can be adapted.
+        for attempt in range(max_retries + 1):
+            try:
+                print(f"ClaudeAgent ({self.player_name}) attempt {attempt + 1}: Sending chat request to API. Model: {self.model_name}")
+                response = self.client.messages.create(
+                    model=self.model_name,
+                    max_tokens=1000, # Max tokens for chat
+                    system=system_p,
+                    messages=anthropic_messages
+                )
+                if not response.content or not isinstance(response.content, list) or not hasattr(response.content[0], 'text'):
+                    raise ValueError("Invalid response structure from Claude API for chat.")
 
-        # For simplicity, let's ensure the last message is from the "user" perspective to prompt Claude.
-        # If the history is empty or the last message was from us, we craft a "user" message.
-        # For Claude, the conversation history IS the prompt.
-        # The user_prompt from helper is for the content of the last "user" message.
+                chat_response_content = response.content[0].text
+                if not chat_response_content.strip():
+                    raise ValueError("Received empty chat response from API.")
+                print(f"ClaudeAgent ({self.player_name}): Successfully received chat response.")
+                return chat_response_content
 
-        # Here, we'll just pass the history. The last message in history is what Claude responds to.
-        # If history is empty, Claude should generate an opening based on the system prompt.
-        # The prompt is implicitly: "Based on this history and your persona, what do you say next?"
+            except (anthropic.APIError, ValueError, AttributeError, IndexError) as e:
+                error_message = f"API/Validation Error in chat: {e.__class__.__name__}: {e}"
+                print(f"ClaudeAgent ({self.player_name}): {error_message}")
+                if attempt >= max_retries:
+                    return f"Error after {max_retries + 1} attempts in chat. {error_message}. {default_fallback_message}"
 
-        # We can add a final "user" message to guide the response if needed:
-        # anthropic_messages.append({"role": "user", "content": f"Game state for context: {game_state_json}. Your turn, {self.player_name}."})
+            print(f"ClaudeAgent ({self.player_name}): Retrying chat in 1 second...")
+            time.sleep(1)
 
-
-        # In a real scenario:
-        # response = self.client.messages.create(
-        #     model=self.model_name,
-        #     max_tokens=500,
-        #     system=system_p,
-        #     messages=anthropic_messages # history is already in the correct format
-        # )
-        # return response.content[0].text
-
-        # For placeholder:
-        chat_context_for_claude = f"Game state for context: {game_state_json[:200]}...\nConversation with {recipient_name} so far:\n"
-        for msg in history:
-            chat_context_for_claude += f"- {msg['sender']}: {msg['message']}\n"
-        chat_context_for_claude += f"\nYour response as {self.player_name}:"
-
-
-        print(f"ClaudeAgent ({self.player_name}) would send to API for chat: \nSYSTEM: {system_p}\nMESSAGES (history): {anthropic_messages}\n(Implicitly asking for next message based on history and system prompt)\n")
-        return f"A fascinating proposal, {recipient_name}. Let me consider... (Claude placeholder response)"
+        return default_fallback_message
 
 if __name__ == '__main__':
     # from dotenv import load_dotenv
