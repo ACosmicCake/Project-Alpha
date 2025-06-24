@@ -140,7 +140,10 @@ class GameGUI:
                 # print(f"Warning: No coordinates for territory {terr_name} for adjacency lines.")
                 continue
 
-            for adj_name in territory_obj.adjacent_to:
+            # Correctly access the list of adjacent Territory objects and then their names
+            for adj_territory_object in territory_obj.adjacent_territories:
+                adj_name = adj_territory_object.name # Get name from the Territory object
+
                 # Ensure pair is unique (e.g. (A,B) is same as (B,A))
                 adj_pair = tuple(sorted((terr_name, adj_name)))
                 if adj_pair in drawn_adjacencies:
