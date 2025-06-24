@@ -17,7 +17,10 @@ from datetime import datetime # For logging timestamp
 import os # For log directory creation
 
 class GameOrchestrator:
-    def __init__(self, map_file: str = "map_config.json", player_setup_file: str = "player_config.json"):
+    def __init__(self,
+                 map_file: str = "map_config.json",
+                 player_configs_override: list | None = None,
+                 default_player_setup_file: str = "player_config.json"):
         self.engine = GameEngine(map_file_path=map_file)
         self.global_chat = GlobalChat()
         self.private_chat_manager = PrivateChatManager(max_exchanges_per_conversation=3)
@@ -28,7 +31,17 @@ class GameOrchestrator:
         self.ai_agents: dict[str, BaseAIAgent] = {}
         self.player_map: dict[GamePlayer, BaseAIAgent] = {}
 
-        self._load_player_setup(player_setup_file)
+        # Load player configurations: either from override or from file
+        self._load_player_setup(player_configs_override, default_player_setup_file)
+
+        # Ensure players list is populated before initializing the board
+        if not self.engine.game_state.players:
+            print("Critical Error: No players were loaded or configured. Cannot initialize board.")
+            # Potentially raise an error here or handle more gracefully
+            # For now, if _load_player_setup failed to populate, this will be an issue.
+            # The _load_player_setup should ideally raise an error if it ends with no players.
+            raise ValueError("Player setup resulted in no players.")
+
 
         players_data_for_engine = [{"name": p.name, "color": p.color} for p in self.engine.game_state.players]
         self.engine.initialize_board(players_data=players_data_for_engine)
@@ -37,54 +50,113 @@ class GameOrchestrator:
 
         self.game_rules = GAME_RULES_SNIPPET
         self.turn_action_log = []
-        self.max_turns = 200
+        self.max_turns = 200 # Default, could be configurable
         self.game_running_via_gui = False
 
-    def _load_player_setup(self, player_setup_file: str):
-        try:
-            with open(player_setup_file, 'r') as f:
-                player_configs = json.load(f)
-        except FileNotFoundError:
-            print(f"Warning: Player setup file '{player_setup_file}' not found. Using default AI setup.")
-            player_configs = [
-                {"name": "PlayerA (Gemini)", "color": "Red", "ai_type": "Gemini"},
-                {"name": "PlayerB (OpenAI)", "color": "Blue", "ai_type": "OpenAI"},
-                {"name": "PlayerC (Claude)", "color": "Green", "ai_type": "Claude"},
-                {"name": "PlayerD (DeepSeek)", "color": "Yellow", "ai_type": "DeepSeek"}
-            ]
+    def _load_player_setup(self, player_configs_override: list | None, default_player_setup_file: str):
+        final_player_configs = []
+        if player_configs_override is not None and isinstance(player_configs_override, list) and player_configs_override:
+            print(f"Using player configurations provided by override (e.g., console input). Count: {len(player_configs_override)}")
+            final_player_configs = player_configs_override
+        else:
+            print(f"No valid player override. Attempting to load from default setup file: '{default_player_setup_file}'")
             try:
-                with open(player_setup_file, 'w') as f:
-                    json.dump(player_configs, f, indent=2)
-                print(f"Created default player_config.json.")
-            except IOError:
-                print(f"Could not write default player_config.json.")
+                with open(default_player_setup_file, 'r') as f:
+                    final_player_configs = json.load(f)
+                print(f"Successfully loaded player configurations from '{default_player_setup_file}'. Count: {len(final_player_configs)}")
+            except FileNotFoundError:
+                print(f"Warning: Default player setup file '{default_player_setup_file}' not found. Using hardcoded default AI setup.")
+                final_player_configs = [
+                    {"name": "PlayerA (Gemini)", "color": "Red", "ai_type": "Gemini"},
+                    {"name": "PlayerB (OpenAI)", "color": "Blue", "ai_type": "OpenAI"}
+                ] # Simplified default for when file is missing
+                # Optionally, try to write this default back to default_player_setup_file
+                try:
+                    with open(default_player_setup_file, 'w') as f:
+                        json.dump(final_player_configs, f, indent=2)
+                    print(f"Created default player setup file '{default_player_setup_file}' with 2 players.")
+                except IOError:
+                    print(f"Could not write default player setup file '{default_player_setup_file}'.")
+            except json.JSONDecodeError:
+                print(f"Error: Could not decode JSON from '{default_player_setup_file}'. Using hardcoded default.")
+                final_player_configs = [ # Fallback if JSON is corrupt
+                    {"name": "PlayerX (Gemini)", "color": "Red", "ai_type": "Gemini"},
+                    {"name": "PlayerY (OpenAI)", "color": "Blue", "ai_type": "OpenAI"}
+                ]
 
-        for config in player_configs:
-            player_name = config["name"]
-            player_color = config["color"]
-            ai_type = config.get("ai_type", "Gemini")
+
+        if not final_player_configs: # Should not happen if defaults are set, but as a safeguard
+            print("Critical: No player configurations loaded or defined. Cannot proceed.")
+            raise ValueError("Player configurations are empty.")
+
+        # Clear existing players before loading new ones, if any (e.g. re-init)
+        self.engine.game_state.players.clear()
+        self.ai_agents.clear()
+
+        for config in final_player_configs:
+            player_name = config.get("name")
+            if not player_name:
+                print(f"Warning: Player config missing 'name': {config}. Skipping.")
+                continue
+            player_color = config.get("color")
+            if not player_color:
+                print(f"Warning: Player config for '{player_name}' missing 'color': {config}. Assigning default or skipping.")
+                # Potentially assign a default color or skip this player
+                continue # For now, skip if color is missing
+
+            ai_type = config.get("ai_type", "Gemini") # Default to Gemini if not specified
+
+            # Check for duplicate player names before adding
+            if any(p.name == player_name for p in self.engine.game_state.players):
+                print(f"Warning: Duplicate player name '{player_name}' found. Skipping this configuration.")
+                continue
+
             game_player_obj = GamePlayer(name=player_name, color=player_color)
             self.engine.game_state.players.append(game_player_obj)
+
             agent: BaseAIAgent | None = None
             if ai_type == "Gemini": agent = GeminiAgent(player_name, player_color)
             elif ai_type == "OpenAI": agent = OpenAIAgent(player_name, player_color)
             elif ai_type == "Claude": agent = ClaudeAgent(player_name, player_color)
             elif ai_type == "DeepSeek": agent = DeepSeekAgent(player_name, player_color)
+            # Add "Human" type here if you have a HumanAgent class
+            # elif ai_type == "Human": agent = HumanAgent(player_name, player_color)
             else:
                 print(f"Warning: Unknown AI type '{ai_type}' for player {player_name}. Defaulting to Gemini.")
-                agent = GeminiAgent(player_name, player_color)
-            if agent: self.ai_agents[player_name] = agent
+                agent = GeminiAgent(player_name, player_color) # Fallback
+
+            if agent:
+                self.ai_agents[player_name] = agent
+            else: # Should not happen with current logic unless agent creation fails for other reasons
+                print(f"Critical: Could not create agent for {player_name} with type {ai_type}.")
+
+
         if len(self.engine.game_state.players) < 2 :
-            print("Error: At least two players are required to start the game.")
-            raise ValueError("Insufficient players configured.")
+            # This check is important. If after all loading, we don't have enough players.
+            print(f"Error: At least two players are required to start the game. Loaded {len(self.engine.game_state.players)} players.")
+            # Consider what to do here - raise error, or try to add default players again?
+            # For now, raising an error is probably best to indicate a setup problem.
+            raise ValueError(f"Insufficient players configured. Need at least 2, got {len(self.engine.game_state.players)}.")
+
+        print(f"Player setup complete. Loaded {len(self.engine.game_state.players)} players.")
 
     def _map_game_players_to_ai_agents(self):
         self.player_map.clear()
+        if not self.engine.game_state.players:
+            print("Warning: No players in game_state to map to AI agents.")
+            return
+
         for gp in self.engine.game_state.players:
             if gp.name in self.ai_agents:
                 self.player_map[gp] = self.ai_agents[gp.name]
             else:
-                print(f"Critical Error: GamePlayer {gp.name} from engine does not have a corresponding AI agent.")
+                # This indicates a mismatch between players defined in game_state and AI agents created.
+                # This should ideally not happen if _load_player_setup and subsequent logic is correct.
+                print(f"Critical Error: GamePlayer {gp.name} from engine does not have a corresponding AI agent. AI Agents: {list(self.ai_agents.keys())}")
+                # Potentially raise an error or try to create a default agent for robustness,
+                # but this points to a deeper setup issue.
+                # For now, just print error. The game might fail later if an agent is None.
+                # raise ValueError(f"Mismatch: GamePlayer {gp.name} has no AI agent.")
 
     def get_agent_for_current_player(self) -> BaseAIAgent | None:
         current_game_player = self.engine.game_state.get_current_player()
@@ -447,7 +519,7 @@ if __name__ == '__main__':
         with open(config_path, 'w') as f: json.dump(dummy_player_config, f, indent=2)
         print(f"Created dummy {config_path} for testing.")
     except IOError: print(f"Could not create dummy {config_path}.")
-    orchestrator = GameOrchestrator(player_setup_file=config_path)
+    orchestrator = GameOrchestrator(default_player_setup_file=config_path) # Using new parameter name
     print("Starting game run...")
     orchestrator.run_game()
     print("\nGame run finished.")

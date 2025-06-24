@@ -18,6 +18,15 @@ DARK_GREY = (50, 50, 50)
 TAB_COLOR_ACTIVE = GREEN
 TAB_COLOR_INACTIVE = GREY
 
+# Define a new color for the ocean
+OCEAN_BLUE = (60, 100, 180) # A pleasant blue for the ocean background
+CONTINENT_COLORS = { # Example colors, can be expanded
+    "North America": (200, 180, 150), # Tan-ish
+    "Asia": (150, 200, 150), # Light green-ish
+    "Default": (100, 100, 100) # Fallback continent color
+}
+ADJACENCY_LINE_COLOR = (50, 50, 50) # Dark grey for lines
+
 DEFAULT_PLAYER_COLORS = {
     "Red": RED, "Blue": BLUE, "Green": GREEN, "Yellow": YELLOW,
     "Purple": (128, 0, 128), "Orange": (255, 165, 0), "Black": BLACK, "White": WHITE # White might be hard to see
@@ -44,9 +53,10 @@ class GameGUI:
         self.font = pygame.font.SysFont(None, 24)
         self.large_font = pygame.font.SysFont(None, 36)
         self.tab_font = pygame.font.SysFont(None, TAB_FONT_SIZE)
-        self.map_image = None
+        # self.map_image = None # No longer using map_image
+        self.ocean_color = OCEAN_BLUE # Set ocean color
         self.clock = pygame.time.Clock()
-        print("Pygame GUI Initialized")
+        print("Pygame GUI Initialized for procedural map")
 
         self.engine = engine
         self.orchestrator = orchestrator
@@ -71,17 +81,16 @@ class GameGUI:
         self.running = False
         self.colors = DEFAULT_PLAYER_COLORS
 
-    def _load_map_config(self, config_file: str = "map_display_config.json", map_image_path: str = "risk_map_image.png"):
-        try:
-            self.map_image = pygame.image.load(map_image_path)
-            self.map_image = pygame.transform.scale(self.map_image, (MAP_AREA_WIDTH, SCREEN_HEIGHT))
-        except pygame.error as e:
-            print(f"Warning: Could not load map image '{map_image_path}': {e}. Using blank background.")
-            self.map_image = pygame.Surface((MAP_AREA_WIDTH, SCREEN_HEIGHT))
-            self.map_image.fill(GREY)
+    def _load_map_config(self, config_file: str = "map_display_config.json"): # Removed map_image_path
+        # No longer loading a map image. The background will be drawn procedurally.
+        # self.map_image is no longer used.
+        print(f"Attempting to load territory coordinates from '{config_file}'")
         try:
             with open(config_file, 'r') as f: self.territory_coordinates = json.load(f)
-        except FileNotFoundError: self._create_dummy_coordinates(config_file)
+            print(f"Successfully loaded territory coordinates from '{config_file}'.")
+        except FileNotFoundError:
+            print(f"Warning: Map display config file '{config_file}' not found. Creating dummy coordinates.")
+            self._create_dummy_coordinates(config_file)
         except json.JSONDecodeError: print(f"Error decoding JSON from '{config_file}'.")
 
     def _create_dummy_coordinates(self, config_file: str):
@@ -113,22 +122,65 @@ class GameGUI:
         gs_to_draw = game_state
         if not gs_to_draw: gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
 
-        if self.map_image: self.screen.blit(self.map_image, (0,0))
-        else: pygame.draw.rect(self.screen, GREY, (0,0, MAP_AREA_WIDTH, SCREEN_HEIGHT))
-        if not gs_to_draw: return
+        # Draw the ocean background for the map area
+        map_area_rect = pygame.Rect(0, 0, MAP_AREA_WIDTH, SCREEN_HEIGHT)
+        self.screen.fill(self.ocean_color, map_area_rect)
 
-        for terr_name, territory in gs_to_draw.territories.items():
+        if not gs_to_draw or not gs_to_draw.territories:
+            # Optionally draw a message if no game state or territories
+            no_map_text = self.large_font.render("Map Data Unavailable", True, WHITE)
+            self.screen.blit(no_map_text, no_map_text.get_rect(center=map_area_rect.center))
+            return
+
+        # Draw adjacency lines first, so they are behind territories
+        drawn_adjacencies = set() # To avoid drawing a line from A to B and then B to A
+        for terr_name, territory_obj in gs_to_draw.territories.items():
+            coords1 = self.territory_coordinates.get(terr_name)
+            if not coords1:
+                # print(f"Warning: No coordinates for territory {terr_name} for adjacency lines.")
+                continue
+
+            for adj_name in territory_obj.adjacent_to:
+                # Ensure pair is unique (e.g. (A,B) is same as (B,A))
+                adj_pair = tuple(sorted((terr_name, adj_name)))
+                if adj_pair in drawn_adjacencies:
+                    continue
+
+                coords2 = self.territory_coordinates.get(adj_name)
+                if not coords2:
+                    # print(f"Warning: No coordinates for adjacent territory {adj_name} (from {terr_name}).")
+                    continue
+
+                pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 2)
+                drawn_adjacencies.add(adj_pair)
+
+        # Draw territories
+        for terr_name, territory_obj in gs_to_draw.territories.items():
             coords = self.territory_coordinates.get(terr_name)
-            if not coords: continue
-            owner_color = GREY
-            if territory.owner and territory.owner.color:
-                owner_color = DEFAULT_PLAYER_COLORS.get(territory.owner.color, GREY)
-            pygame.draw.circle(self.screen, owner_color, coords, 20)
-            pygame.draw.circle(self.screen, BLACK, coords, 20, 2)
-            army_text = self.font.render(str(territory.army_count), True, BLACK)
+            if not coords:
+                # print(f"Warning: No coordinates for territory {terr_name}. Skipping draw.")
+                continue # Skip if no coordinates
+
+            owner_color = GREY # Default color if no owner or owner color not found
+            if territory_obj.owner and territory_obj.owner.color:
+                owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
+
+            # Draw territory circle
+            pygame.draw.circle(self.screen, owner_color, coords, 20) # Main color
+            pygame.draw.circle(self.screen, BLACK, coords, 20, 2)    # Black border
+
+            # Draw army count
+            army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE # Contrast for text
+            army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
             self.screen.blit(army_text, army_text.get_rect(center=coords))
-            name_surf = self.font.render(terr_name, True, WHITE)
-            self.screen.blit(name_surf, name_surf.get_rect(center=(coords[0], coords[1] - 25)))
+
+            # Draw territory name slightly above the circle
+            name_surf = self.font.render(terr_name, True, WHITE) # White name for visibility on blue
+            name_rect = name_surf.get_rect(center=(coords[0], coords[1] - 30)) # Adjusted y-offset
+            # Simple background for name text for better readability
+            name_bg_rect = name_rect.inflate(4, 4)
+            pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
+            self.screen.blit(name_surf, name_rect)
 
     def draw_player_info_panel(self, game_state: GameState):
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, SCREEN_HEIGHT - PLAYER_INFO_PANEL_HEIGHT, SIDE_PANEL_WIDTH, PLAYER_INFO_PANEL_HEIGHT)
