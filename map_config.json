@@ -1,0 +1,56 @@
+{
+  "continents": [
+    {
+      "name": "North America",
+      "bonus_armies": 5,
+      "territories": [
+        "Alaska",
+        "Alberta",
+        "Western US"
+      ]
+    },
+    {
+      "name": "Asia",
+      "bonus_armies": 7,
+      "territories": [
+        "Kamchatka",
+        "Japan"
+      ]
+    }
+  ],
+  "territories": {
+    "Alaska": {
+      "continent": "North America",
+      "adjacent_to": [
+        "Alberta",
+        "Kamchatka"
+      ]
+    },
+    "Alberta": {
+      "continent": "North America",
+      "adjacent_to": [
+        "Alaska",
+        "Western US"
+      ]
+    },
+    "Western US": {
+      "continent": "North America",
+      "adjacent_to": [
+        "Alberta"
+      ]
+    },
+    "Kamchatka": {
+      "continent": "Asia",
+      "adjacent_to": [
+        "Alaska",
+        "Japan"
+      ]
+    },
+    "Japan": {
+      "continent": "Asia",
+      "adjacent_to": [
+        "Kamchatka"
+      ]
+    }
+  }
+}
