@@ -1018,13 +1018,26 @@ class GameOrchestrator:
             elif player.armies_to_deploy == 0:
                  self.log_turn_info(f"{player.name} attempted DEPLOY but has no armies to deploy. AI will be prompted again (may need to END_REINFORCE_PHASE or TRADE_CARDS).")
             else:
-                # Call engine to perform deploy. Engine handles validation of territory ownership and army count.
-                deploy_result = self.engine.perform_deploy(player, terr_name, num_armies_to_deploy)
-                log_message = deploy_result.get('message', f"Deploy attempt by {player.name} to {terr_name} with {num_armies_to_deploy} armies.")
-                self.log_turn_info(log_message)
-                if deploy_result.get("success"):
-                    self.log_turn_info(f"{player.name} deployed {deploy_result['deployed_amount']} to {terr_name}. Armies left to deploy: {player.armies_to_deploy}.")
-            # After deploying, AI needs to make another decision.
+                territory_obj = self.engine.game_state.territories.get(terr_name)
+                if not territory_obj:
+                    self.log_turn_info(f"{player.name} attempted DEPLOY to non-existent territory: {terr_name}. AI will be prompted again.")
+                elif territory_obj.owner != player:
+                    self.log_turn_info(f"{player.name} attempted DEPLOY to territory '{terr_name}' not owned by them. Owner: {territory_obj.owner.name if territory_obj.owner else 'None'}. AI will be prompted again.")
+                else:
+                    # Validations passed, proceed with deployment logic directly here
+                    actual_armies_to_deploy_on_territory = min(num_armies_to_deploy, player.armies_to_deploy)
+
+                    if actual_armies_to_deploy_on_territory > 0 :
+                        territory_obj.army_count += actual_armies_to_deploy_on_territory
+                        player.armies_to_deploy -= actual_armies_to_deploy_on_territory
+                        self.log_turn_info(f"{player.name} deployed {actual_armies_to_deploy_on_territory} armies to {terr_name} (new total: {territory_obj.army_count}). Armies left to deploy: {player.armies_to_deploy}.")
+                    else:
+                        # This case implies num_armies_to_deploy from AI was <=0, or player.armies_to_deploy was already 0.
+                        # The num_armies_to_deploy <= 0 is already checked above.
+                        # So this means player.armies_to_deploy was 0, which is also checked above.
+                        # This specific else should ideally not be reached if prior checks are comprehensive.
+                        self.log_turn_info(f"{player.name} DEPLOY action for {terr_name} resulted in no armies deployed (requested: {num_armies_to_deploy}, available: {player.armies_to_deploy}). AI will be prompted again.")
+            # After deploying (or attempting to), AI needs to make another decision.
             self.ai_is_thinking = False
 
         elif action_type == "END_REINFORCE_PHASE":
