@@ -56,38 +56,31 @@ class OpenAIAgent(BaseAIAgent):
                     response_format={"type": "json_object"} # For newer models that support JSON mode
                 )
                 action_data_str = response.choices[0].message.content
-                action_data = json.loads(action_data_str)
+                action_data_str = response.choices[0].message.content
+                action_data = json.loads(action_data_str) # This should be a dict with 'thought' and 'action'
 
                 if "thought" not in action_data or "action" not in action_data:
                     raise ValueError("Response JSON must contain 'thought' and 'action' keys.")
 
-                # Validate action against valid_actions
-                # This is a simple check; more sophisticated validation might be needed
-                # (e.g. checking parameters of the action)
-                action_type_and_params = {k: v for k, v in action_data["action"].items()}
-                is_valid = any(action_type_and_params == {k:v for k,v in va.items()} for va in valid_actions)
+                action_dict_from_llm = action_data["action"]
+                if not isinstance(action_dict_from_llm, dict): # Ensure 'action' itself is a dictionary
+                    raise ValueError(f"The 'action' field in the LLM response is not a valid dictionary. Received: {action_dict_from_llm}")
 
-                if not is_valid:
-                    # More detailed check for common action types to allow flexibility if only type is matched
-                    is_type_valid = any(action_data["action"]["type"] == va["type"] for va in valid_actions)
-                    if is_type_valid:
-                         print(f"OpenAIAgent ({self.player_name}): Action {action_data['action']['type']} is a valid type, but params mismatch or not found in: {valid_actions}. Attempting to use if strategically sound or falling back.")
-                         # Potentially allow if type matches and other params are "reasonable" or not security critical
-                         # For now, we will be strict.
-                         raise ValueError(f"Action {action_data['action']} not found in valid_actions list: {valid_actions}")
-                    else:
-                        raise ValueError(f"Action type {action_data['action']['type']} not found in valid_actions list: {valid_actions}")
+                # Use the validation method from BaseAIAgent
+                if not self._validate_chosen_action(action_dict_from_llm, valid_actions):
+                    # _validate_chosen_action already prints detailed error, so just raise to trigger retry/fallback
+                    raise ValueError(f"Action validation failed for {action_dict_from_llm}.")
 
-
-                print(f"OpenAIAgent ({self.player_name}): Successfully received and validated action: {action_data['action']}")
-                return action_data
+                print(f"OpenAIAgent ({self.player_name}): Successfully received and validated action: {action_dict_from_llm}")
+                # Return the full structure including thought
+                return {"thought": action_data["thought"], "action": action_dict_from_llm}
 
             except json.JSONDecodeError as e:
                 error_message = f"JSONDecodeError: {e}. Response: {action_data_str if 'action_data_str' in locals() else 'No response content'}"
                 print(f"OpenAIAgent ({self.player_name}): {error_message}")
                 if attempt >= max_retries:
                     return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
-            except (AttributeError, IndexError, ValueError, Exception) as e: # Broader OpenAI API errors or custom errors
+            except (AttributeError, IndexError, ValueError) as e: # Catch specific validation/parsing errors
                 error_message = f"API/Validation Error: {e.__class__.__name__}: {e}"
                 print(f"OpenAIAgent ({self.player_name}): {error_message}")
                 if attempt >= max_retries:

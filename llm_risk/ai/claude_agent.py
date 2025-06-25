@@ -71,38 +71,33 @@ class ClaudeAgent(BaseAIAgent):
                 elif action_data_str.strip().startswith("```"): # More generic ``` stripping
                     action_data_str = action_data_str.strip()[3:-3].strip()
 
-                action_data = json.loads(action_data_str)
+                    action_data_str = action_data_str.strip()[7:-3].strip()
+                elif action_data_str.strip().startswith("```"): # More generic ``` stripping
+                    action_data_str = action_data_str.strip()[3:-3].strip()
+
+                action_data = json.loads(action_data_str) # This should be a dict with 'thought' and 'action'
 
                 if "thought" not in action_data or "action" not in action_data:
                     raise ValueError("Response JSON must contain 'thought' and 'action' keys.")
 
-                action_type_and_params = {k: v for k, v in action_data["action"].items()}
-                is_valid = any(action_type_and_params == {k:v for k,v in va.items()} for va in valid_actions)
+                action_dict_from_llm = action_data["action"]
+                if not isinstance(action_dict_from_llm, dict):
+                     raise ValueError(f"The 'action' field in the LLM response is not a valid dictionary. Received: {action_dict_from_llm}")
 
-                if not is_valid:
-                    is_type_valid = any(action_data["action"]["type"] == va["type"] for va in valid_actions)
-                    if is_type_valid:
-                        print(f"ClaudeAgent ({self.player_name}): Action {action_data['action']['type']} is a valid type, but params mismatch or not found in: {valid_actions}. Trying to find closest match or falling back.")
-                        # Attempt to find a valid action of the same type, if params are missing but type is okay.
-                        # This is a bit lenient, might need adjustment.
-                        potential_matches = [va for va in valid_actions if va["type"] == action_data["action"]["type"]]
-                        if potential_matches:
-                            action_data["action"] = potential_matches[0] # Take the first match of this type
-                            print(f"ClaudeAgent ({self.player_name}): Using first valid action of type {action_data['action']['type']}: {action_data['action']}")
-                        else: # Should not happen if is_type_valid is true
-                             raise ValueError(f"Action type {action_data['action']['type']} was deemed valid, but no such action found in valid_actions.")
-                    else:
-                        raise ValueError(f"Action {action_data['action']} (type: {action_data['action'].get('type')}) not found in valid_actions list: {valid_actions}")
+                # Use the validation method from BaseAIAgent
+                if not self._validate_chosen_action(action_dict_from_llm, valid_actions):
+                    # _validate_chosen_action already prints detailed error
+                    raise ValueError(f"Action validation failed for {action_dict_from_llm}.")
 
-                print(f"ClaudeAgent ({self.player_name}): Successfully received and validated action: {action_data['action']}")
-                return action_data
+                print(f"ClaudeAgent ({self.player_name}): Successfully received and validated action: {action_dict_from_llm}")
+                return {"thought": action_data["thought"], "action": action_dict_from_llm}
 
             except json.JSONDecodeError as e:
                 error_message = f"JSONDecodeError: {e}. Response: '{action_data_str if 'action_data_str' in locals() else 'No response content yet'}'"
                 print(f"ClaudeAgent ({self.player_name}): {error_message}")
                 if attempt >= max_retries:
                     return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
-            except (anthropic.APIError, ValueError, AttributeError, IndexError) as e: # Catch Anthropic specific and other errors
+            except (anthropic.APIError, ValueError, AttributeError, IndexError) as e: # Catch Anthropic specific and other validation/parsing errors
                 error_message = f"API/Validation Error: {e.__class__.__name__}: {e}"
                 print(f"ClaudeAgent ({self.player_name}): {error_message}")
                 if attempt >= max_retries:

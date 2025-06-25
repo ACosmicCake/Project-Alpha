@@ -88,6 +88,66 @@ class BaseAIAgent(ABC):
         prompt += "\nRespond with a JSON object containing 'thought' and 'action' keys. "
         return prompt
 
+    def _validate_chosen_action(self, action_dict: dict, valid_actions: list) -> bool:
+        """
+        Validates the LLM's chosen action_dict against the list of valid_actions templates.
+        - Checks if the action type is valid.
+        - For complex actions (DEPLOY, ATTACK, FORTIFY), verifies that non-numeric parameters
+          (like territory, from, to) match an existing template in valid_actions.
+        - Numeric parameters chosen by the LLM (e.g., num_armies) are not validated here for range,
+          as that's the engine's responsibility, but their presence might be implied by the template.
+        """
+        if not action_dict or not isinstance(action_dict, dict) or "type" not in action_dict:
+            print(f"Validation Error: Action dictionary is malformed or missing 'type'. Action: {action_dict}")
+            return False
+
+        llm_action_type = action_dict.get("type")
+        matching_type_actions = [va for va in valid_actions if va.get("type") == llm_action_type]
+
+        if not matching_type_actions:
+            print(f"Validation Error: Action type '{llm_action_type}' not found in valid_actions. Action: {action_dict}")
+            return False
+
+        # For simple actions (e.g., END_TURN, often only has 'type'), type match is sufficient.
+        # A simple action template typically only has the "type" key.
+        # Check if ALL templates for this action type are simple (i.e. only have 'type' key)
+        is_simple_action_type = all(len(va_template) == 1 and "type" in va_template for va_template in matching_type_actions)
+        if is_simple_action_type:
+            # If it's a simple action type, and the LLM's action also only contains 'type' (or matches a simple template)
+            if len(action_dict) == 1:
+                return True
+            # It could also be that the LLM picked a simple action template that had more keys (e.g. descriptive ones not meant for logic)
+            # and copied it exactly. So, we check if the action_dict exactly matches any of the simple templates.
+            for template in matching_type_actions:
+                if action_dict == template:
+                    return True
+
+
+        # For complex actions, check if non-numeric parameters match a template.
+        for template in matching_type_actions:
+            params_match = True
+            # Check that all non-numeric key-value pairs from the template are present and identical in the action_dict.
+            for key, template_value in template.items():
+                if not isinstance(template_value, (int, float)): # Focus on non-numeric template values
+                    if key not in action_dict or action_dict[key] != template_value:
+                        params_match = False
+                        break
+
+            if params_match:
+                # Additionally, ensure the LLM's action doesn't have extra non-numeric keys not in the template
+                # (numeric keys like 'num_armies' are fine to be added by LLM)
+                for key, action_value in action_dict.items():
+                    if not isinstance(action_value, (int, float)): # If LLM's value is non-numeric
+                        if key not in template: # And this key was not in the template
+                            params_match = False
+                            break
+                if params_match:
+                    return True # Found a template that matches all non-numeric params
+
+        print(f"Validation Error: Action {action_dict} does not conform to any valid action template in {matching_type_actions} for type '{llm_action_type}'.")
+        return False
+
+
     def _construct_user_prompt_for_private_chat(self, history: list[dict], game_state_json: str, recipient_name: str) -> str:
         """
         Helper method to construct the user prompt for engage_in_private_chat.
