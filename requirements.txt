@@ -8,3 +8,6 @@ python-dotenv # To load the .env file
 
 # For the GUI
 pygame
+
+# For data validation and settings management (used in GeminiAgent for response schema)
+pydantic

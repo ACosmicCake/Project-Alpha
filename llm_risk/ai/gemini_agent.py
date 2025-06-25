@@ -3,6 +3,12 @@ import os
 import json
 import google.generativeai as genai # Would be used in a real environment
 import time
+from pydantic import BaseModel
+
+# Define the Pydantic model for the expected response structure
+class AgentResponse(BaseModel):
+    thought: str
+    action: dict
 
 class GeminiAgent(BaseAIAgent):
     def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "gemini-1.5-flash-latest"): # Using flash for speed
@@ -21,10 +27,8 @@ class GeminiAgent(BaseAIAgent):
             )
         self.model_name = model_name
         # Base system prompt will be part of the full prompt sent to generate_content
-        self.base_system_prompt = f"You are a strategic AI player in the game of Risk, named {self.player_name} ({self.player_color}). Your goal is to win. You must respond with a valid JSON object containing 'thought' and 'action' keys."
-        self.generation_config_json = genai.types.GenerationConfig(
-            response_mime_type="application/json" # Crucial for JSON mode
-        )
+        self.base_system_prompt = f"You are a strategic AI player in the game of Risk, named {self.player_name} ({self.player_color}). Your goal is to win. You must respond with a valid JSON object containing 'thought' and 'action' keys, according to the provided schema."
+        # self.generation_config_json is no longer needed here as schema will be passed directly
         self.generation_config_text = genai.types.GenerationConfig(
             response_mime_type="text/plain"
         )
@@ -65,43 +69,66 @@ class GeminiAgent(BaseAIAgent):
         for attempt in range(max_retries + 1):
             try:
                 print(f"GeminiAgent ({self.player_name}) attempt {attempt + 1}: Sending request to API. Model: {self.model_name}")
-                # Forcing JSON output using response_mime_type
                 response = self.client.generate_content(
                     full_prompt,
-                    generation_config=self.generation_config_json
+                    generation_config={
+                        "response_mime_type": "application/json",
+                        "response_schema": AgentResponse,
+                    }
                 )
 
-                # response.text should directly be the JSON string if response_mime_type="application/json" worked.
-                action_data_str = response.text
-                action_data = json.loads(action_data_str)
+                # Parse the response using the Pydantic model
+                # The API should return a JSON string that pydantic can parse if response_schema is honored.
+                # If the model directly returns the parsed object (depends on SDK version/behavior):
+                # parsed_response = response.candidates[0].content.parts[0].data # or similar, needs checking
+                # For now, assume response.text is the JSON string as per example, then parse if needed
+                # Or directly use response.parse() if available and does what we want
 
-                if "thought" not in action_data or "action" not in action_data:
-                    raise ValueError("Response JSON must contain 'thought' and 'action' keys.")
+                # The example shows `response.parse()`, let's use that.
+                # If `response.parse()` is not available or doesn't work as expected with `response_schema`,
+                # we might need to fall back to `AgentResponse.model_validate_json(response.text)`.
+                try:
+                    parsed_response: AgentResponse = response.parse()
+                except AttributeError: # If .parse() is not a method of response
+                    print(f"GeminiAgent ({self.player_name}): response.parse() not available, trying AgentResponse.model_validate_json(response.text)")
+                    parsed_response = AgentResponse.model_validate_json(response.text)
+                except Exception as e_parse: # Catch other potential parsing issues
+                    print(f"GeminiAgent ({self.player_name}): Error during response.parse() or model_validate_json: {e_parse}. Response text: {response.text if hasattr(response, 'text') else 'N/A'}")
+                    raise # Re-raise to be caught by the outer try-except
 
-                action_type_and_params = {k: v for k, v in action_data["action"].items()}
+                # Pydantic model validation handles the presence of 'thought' and 'action' keys.
+                action_to_validate = parsed_response.action
+                action_type_and_params = {k: v for k, v in action_to_validate.items()}
                 is_valid = any(action_type_and_params == {k:v for k,v in va.items()} for va in valid_actions)
 
                 if not is_valid:
-                    is_type_valid = any(action_data["action"]["type"] == va["type"] for va in valid_actions)
+                    is_type_valid = any(action_to_validate["type"] == va["type"] for va in valid_actions)
                     if is_type_valid:
-                        print(f"GeminiAgent ({self.player_name}): Action {action_data['action']['type']} is a valid type, but params mismatch: {action_data['action']}. Valid: {valid_actions}. Falling back.")
-                        raise ValueError(f"Action {action_data['action']} params mismatch or not found in valid_actions list.")
+                        print(f"GeminiAgent ({self.player_name}): Action {action_to_validate['type']} is a valid type, but params mismatch: {action_to_validate}. Valid: {valid_actions}. Falling back.")
+                        raise ValueError(f"Action {action_to_validate} params mismatch or not found in valid_actions list.")
                     else:
-                        raise ValueError(f"Action type {action_data['action']['type']} not found in valid_actions list.")
+                        raise ValueError(f"Action type {action_to_validate['type']} not found in valid_actions list.")
 
-                print(f"GeminiAgent ({self.player_name}): Successfully received and validated action: {action_data['action']}")
-                return action_data
+                print(f"GeminiAgent ({self.player_name}): Successfully received and validated action: {parsed_response.action}")
+                # Return the dictionary structure expected by the game engine
+                return {"thought": parsed_response.thought, "action": parsed_response.action}
 
-            except json.JSONDecodeError as e:
-                error_message = f"JSONDecodeError: {e}. Response: '{action_data_str if 'action_data_str' in locals() else (response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text attribute or response var')}'"
-                print(f"GeminiAgent ({self.player_name}): {error_message}")
-                if 'response' in locals() and response.prompt_feedback.block_reason:
-                    print(f"GeminiAgent ({self.player_name}): Prompt blocked, reason: {response.prompt_feedback.block_reason}")
-                if attempt >= max_retries:
-                    return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
-            except (AttributeError, IndexError, ValueError, genai.types.BlockedPromptException, genai.types.generation_types.StopCandidateException) as e:
+            # Removed json.JSONDecodeError as Pydantic handles JSON validation.
+            # ValueError can still be raised by Pydantic or our custom checks.
+            except (AttributeError, IndexError, ValueError, genai.types.BlockedPromptException, genai.types.generation_types.StopCandidateException, genai.types.generation_types.IncompleteIterationError) as e:
+                # Added IncompleteIterationError for cases where the model stops but schema isn't met
                 error_message = f"API/Validation Error: {e.__class__.__name__}: {e}"
-                print(f"GeminiAgent ({self.player_name}): {error_message}")
+                # Check if response text is available for logging
+                response_text_for_log = "No response text available"
+                if 'response' in locals() and hasattr(response, 'text'):
+                    response_text_for_log = response.text
+                elif 'response' in locals() and hasattr(response, 'candidates') and response.candidates:
+                    try:
+                        response_text_for_log = str(response.candidates[0].content.parts)
+                    except:
+                        pass # Keep default if extraction fails
+
+                print(f"GeminiAgent ({self.player_name}): {error_message}. Response content/text (if available): '{response_text_for_log}'")
                 if 'response' in locals() and hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
                      print(f"GeminiAgent ({self.player_name}): Prompt blocked, reason: {response.prompt_feedback.block_reason}")
                 if attempt >= max_retries:
