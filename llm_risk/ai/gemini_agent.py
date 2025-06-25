@@ -85,17 +85,34 @@ class GeminiAgent(BaseAIAgent):
                 # For now, assume response.text is the JSON string as per example, then parse if needed
                 # Or directly use response.parse() if available and does what we want
 
-                # The example shows `response.parse()`, let's use that.
-                # If `response.parse()` is not available or doesn't work as expected with `response_schema`,
-                # we might need to fall back to `AgentResponse.model_validate_json(response.text)`.
-                try:
-                    parsed_api_response: AgentResponse = response.parse()
-                except AttributeError: # If .parse() is not a method of response
-                    print(f"GeminiAgent ({self.player_name}): response.parse() not available, trying AgentResponse.model_validate_json(response.text)")
-                    parsed_api_response = AgentResponse.model_validate_json(response.text)
-                except Exception as e_parse: # Catch other potential parsing issues
-                    print(f"GeminiAgent ({self.player_name}): Error during response.parse() or model_validate_json: {e_parse}. Response text: {response.text if hasattr(response, 'text') else 'N/A'}")
-                    raise # Re-raise to be caught by the outer try-except
+                # Try to use response.parsed first, as the SDK should provide the parsed object directly
+                # when a response_schema is specified.
+                parsed_api_response: AgentResponse | None = None
+                if hasattr(response, 'parsed') and isinstance(response.parsed, AgentResponse):
+                    print(f"GeminiAgent ({self.player_name}): Successfully used response.parsed.")
+                    parsed_api_response = response.parsed
+                else:
+                    if hasattr(response, 'parsed'):
+                        print(f"GeminiAgent ({self.player_name}): response.parsed was available but not an AgentResponse instance (type: {type(response.parsed)}). Falling back to model_validate_json.")
+                    else:
+                        print(f"GeminiAgent ({self.player_name}): response.parsed not available. Falling back to model_validate_json.")
+
+                    # Fallback to manually parsing from response.text
+                    if hasattr(response, 'text') and response.text:
+                        try:
+                            parsed_api_response = AgentResponse.model_validate_json(response.text)
+                        except Exception as e_validate:
+                            print(f"GeminiAgent ({self.player_name}): Error during AgentResponse.model_validate_json: {e_validate}. Response text: {response.text}")
+                            raise # Re-raise to be caught by the outer try-except
+                    else:
+                        # This case should ideally not be reached if the API call itself was successful
+                        # and response_schema was honored, or if text fallback is possible.
+                        print(f"GeminiAgent ({self.player_name}): Neither response.parsed nor response.text is usable.")
+                        raise ValueError("No valid response data found to parse.")
+
+                if parsed_api_response is None:
+                    # This should be caught by the ValueError above, but as a safeguard:
+                    raise ValueError("Failed to obtain a parsed API response.")
 
                 # parsed_api_response.action is now a string, expected to be a JSON representation of the action
                 try:
