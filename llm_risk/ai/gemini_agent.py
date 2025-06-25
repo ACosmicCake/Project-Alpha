@@ -1,27 +1,30 @@
 from .base_agent import BaseAIAgent, GAME_RULES_SNIPPET
 import os
 import json
-from google import genai # Would be used in a real environment
+import google.generativeai as genai # Would be used in a real environment
 import time
 from pydantic import BaseModel
 
 # Define the Pydantic model for the expected response structure
 class AgentResponse(BaseModel):
     thought: str
-    action: dict
+    action: str # Changed from dict to str to comply with Gemini API's stricter schema validation
 
 class GeminiAgent(BaseAIAgent):
-    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "gemini-2.5-flash"): # Using flash for speed
+    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "gemini-1.5-flash-latest"): # Using flash for speed
         super().__init__(player_name, player_color)
-        self.api_key = os.environ.get("GEMINI_API_KEY")
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         if not self.api_key:
             print(f"Warning: GeminiAgent for {player_name} initialized without an API key. Live calls will fail.")
             self.client = None
         else:
-            self.client = genai.Client(api_key=self.api_key)
+            genai.configure(api_key=self.api_key)
             # System instructions can be passed to GenerativeModel for some models/versions
             # Or included directly in the prompt. For action generation, explicit JSON instruction is key.
-           
+            self.client = genai.GenerativeModel(
+                model_name,
+                # system_instruction=f"You are a strategic AI player in the game of Risk, named {self.player_name}. Respond in JSON." # Example
+            )
         self.model_name = model_name
         # Base system prompt will be part of the full prompt sent to generate_content
         self.base_system_prompt = f"You are a strategic AI player in the game of Risk, named {self.player_name} ({self.player_color}). Your goal is to win. You must respond with a valid JSON object containing 'thought' and 'action' keys, according to the provided schema."
@@ -66,10 +69,9 @@ class GeminiAgent(BaseAIAgent):
         for attempt in range(max_retries + 1):
             try:
                 print(f"GeminiAgent ({self.player_name}) attempt {attempt + 1}: Sending request to API. Model: {self.model_name}")
-                response = self.client.models.generate_content(
-                    model= self.model_name,
-                    contents= full_prompt,
-                    config={
+                response = self.client.generate_content(
+                    full_prompt,
+                    generation_config={
                         "response_mime_type": "application/json",
                         "response_schema": AgentResponse,
                     }
@@ -86,34 +88,46 @@ class GeminiAgent(BaseAIAgent):
                 # If `response.parse()` is not available or doesn't work as expected with `response_schema`,
                 # we might need to fall back to `AgentResponse.model_validate_json(response.text)`.
                 try:
-                    parsed_response: AgentResponse = response.parse()
+                    parsed_api_response: AgentResponse = response.parse()
                 except AttributeError: # If .parse() is not a method of response
                     print(f"GeminiAgent ({self.player_name}): response.parse() not available, trying AgentResponse.model_validate_json(response.text)")
-                    parsed_response = AgentResponse.model_validate_json(response.text)
+                    parsed_api_response = AgentResponse.model_validate_json(response.text)
                 except Exception as e_parse: # Catch other potential parsing issues
                     print(f"GeminiAgent ({self.player_name}): Error during response.parse() or model_validate_json: {e_parse}. Response text: {response.text if hasattr(response, 'text') else 'N/A'}")
                     raise # Re-raise to be caught by the outer try-except
 
-                # Pydantic model validation handles the presence of 'thought' and 'action' keys.
-                action_to_validate = parsed_response.action
+                # parsed_api_response.action is now a string, expected to be a JSON representation of the action
+                try:
+                    action_dict = json.loads(parsed_api_response.action)
+                except json.JSONDecodeError as e_json:
+                    error_message = f"Invalid JSON string for action: '{parsed_api_response.action}'. Error: {e_json}"
+                    print(f"GeminiAgent ({self.player_name}): {error_message}")
+                    # Raise ValueError to be caught by the existing error handling for retries/fallback
+                    raise ValueError(error_message)
+
+                # Pydantic model validation (for AgentResponse) handled 'thought' and 'action' (as str) presence.
+                # Now validate the content of action_dict.
+                action_to_validate = action_dict
                 action_type_and_params = {k: v for k, v in action_to_validate.items()}
                 is_valid = any(action_type_and_params == {k:v for k,v in va.items()} for va in valid_actions)
 
                 if not is_valid:
-                    is_type_valid = any(action_to_validate["type"] == va["type"] for va in valid_actions)
+                    # Check if 'type' exists before trying to access it, in case of malformed action_dict
+                    action_type_str = action_to_validate.get("type", "Unknown Type")
+                    is_type_valid = any(action_type_str == va["type"] for va in valid_actions if "type" in va)
+
                     if is_type_valid:
-                        print(f"GeminiAgent ({self.player_name}): Action {action_to_validate['type']} is a valid type, but params mismatch: {action_to_validate}. Valid: {valid_actions}. Falling back.")
+                        print(f"GeminiAgent ({self.player_name}): Action type {action_type_str} is valid, but params mismatch: {action_to_validate}. Valid: {valid_actions}. Falling back.")
                         raise ValueError(f"Action {action_to_validate} params mismatch or not found in valid_actions list.")
                     else:
-                        raise ValueError(f"Action type {action_to_validate['type']} not found in valid_actions list.")
+                        raise ValueError(f"Action type {action_type_str} not found in valid_actions list. Action received: {action_to_validate}")
 
-                print(f"GeminiAgent ({self.player_name}): Successfully received and validated action: {parsed_response.action}")
+                print(f"GeminiAgent ({self.player_name}): Successfully received and validated action: {action_dict}")
                 # Return the dictionary structure expected by the game engine
-                return {"thought": parsed_response.thought, "action": parsed_response.action}
+                return {"thought": parsed_api_response.thought, "action": action_dict}
 
-            # Removed json.JSONDecodeError as Pydantic handles JSON validation.
-            # ValueError can still be raised by Pydantic or our custom checks. # Fixed: The line below originally caused error
-            except (AttributeError, IndexError, ValueError) as e:
+            except (AttributeError, IndexError, ValueError, json.JSONDecodeError, genai.types.BlockedPromptException, genai.types.generation_types.StopCandidateException, genai.types.generation_types.IncompleteIterationError) as e:
+                # Added json.JSONDecodeError here as well in case it's raised before our specific catch block
                 # Added IncompleteIterationError for cases where the model stops but schema isn't met
                 error_message = f"API/Validation Error: {e.__class__.__name__}: {e}"
                 # Check if response text is available for logging

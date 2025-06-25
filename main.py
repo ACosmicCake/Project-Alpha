@@ -3,7 +3,6 @@ Main entry point for the LLM Risk Game application.
 Allows for console-based configuration of players and AI types.
 """
 from llm_risk.game_orchestrator import GameOrchestrator
-from dotenv import load_dotenv
 
 # Define available AI types and colors
 AVAILABLE_AI_TYPES = ["OpenAI", "Gemini", "Claude", "DeepSeek"] # Add "Human" if you implement human players
@@ -97,8 +96,6 @@ def main():
     Allows for console-based player configuration.
     """
     print("LLM Risk Game - Main Application Starting...")
-
-    load_dotenv() # Load environment variables from .env file
 
     custom_player_configs = get_player_configurations_from_console()
 
