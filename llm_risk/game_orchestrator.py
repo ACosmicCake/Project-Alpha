@@ -1288,7 +1288,8 @@ class GameOrchestrator:
                         # No actual fortification happens, turn ends.
                     else:
                         # perform_fortify will validate ownership, connectivity, army counts.
-                        fortify_result = self.engine.perform_fortify(player, from_territory_name, to_territory_name, num_armies)
+                        # The 'player' object is not needed for the engine's perform_fortify method.
+                        fortify_result = self.engine.perform_fortify(from_territory_name, to_territory_name, num_armies)
                         log_message = fortify_result.get('message', f"Fortify attempt by {player.name} from {from_territory_name} to {to_territory_name} with {num_armies} armies.")
                         self.log_turn_info(log_message)
                         # player.has_fortified_this_turn is set by the engine if successful and num_armies > 0
