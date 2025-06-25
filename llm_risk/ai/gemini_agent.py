@@ -1,7 +1,7 @@
 from .base_agent import BaseAIAgent, GAME_RULES_SNIPPET
 import os
 import json
-import google.generativeai as genai # Would be used in a real environment
+from google import genai # Would be used in a real environment
 import time
 from pydantic import BaseModel
 
@@ -11,20 +11,17 @@ class AgentResponse(BaseModel):
     action: dict
 
 class GeminiAgent(BaseAIAgent):
-    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "gemini-1.5-flash-latest"): # Using flash for speed
+    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "gemini-2.5-flash"): # Using flash for speed
         super().__init__(player_name, player_color)
-        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
+        self.api_key = os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
             print(f"Warning: GeminiAgent for {player_name} initialized without an API key. Live calls will fail.")
             self.client = None
         else:
-            genai.configure(api_key=self.api_key)
+            self.client = genai.Client(api_key=self.api_key)
             # System instructions can be passed to GenerativeModel for some models/versions
             # Or included directly in the prompt. For action generation, explicit JSON instruction is key.
-            self.client = genai.GenerativeModel(
-                model_name,
-                # system_instruction=f"You are a strategic AI player in the game of Risk, named {self.player_name}. Respond in JSON." # Example
-            )
+           
         self.model_name = model_name
         # Base system prompt will be part of the full prompt sent to generate_content
         self.base_system_prompt = f"You are a strategic AI player in the game of Risk, named {self.player_name} ({self.player_color}). Your goal is to win. You must respond with a valid JSON object containing 'thought' and 'action' keys, according to the provided schema."
@@ -69,9 +66,10 @@ class GeminiAgent(BaseAIAgent):
         for attempt in range(max_retries + 1):
             try:
                 print(f"GeminiAgent ({self.player_name}) attempt {attempt + 1}: Sending request to API. Model: {self.model_name}")
-                response = self.client.generate_content(
-                    full_prompt,
-                    generation_config={
+                response = self.client.models.generate_content(
+                    model= self.model_name,
+                    contents= full_prompt,
+                    config={
                         "response_mime_type": "application/json",
                         "response_schema": AgentResponse,
                     }
@@ -114,8 +112,8 @@ class GeminiAgent(BaseAIAgent):
                 return {"thought": parsed_response.thought, "action": parsed_response.action}
 
             # Removed json.JSONDecodeError as Pydantic handles JSON validation.
-            # ValueError can still be raised by Pydantic or our custom checks.
-            except (AttributeError, IndexError, ValueError, genai.types.BlockedPromptException, genai.types.generation_types.StopCandidateException, genai.types.generation_types.IncompleteIterationError) as e:
+            # ValueError can still be raised by Pydantic or our custom checks. # Fixed: The line below originally caused error
+            except (AttributeError, IndexError, ValueError) as e:
                 # Added IncompleteIterationError for cases where the model stops but schema isn't met
                 error_message = f"API/Validation Error: {e.__class__.__name__}: {e}"
                 # Check if response text is available for logging
