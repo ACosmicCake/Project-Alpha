@@ -12,7 +12,7 @@ class AgentResponse(BaseModel):
     action: str # Changed from dict to str to comply with Gemini API's stricter schema validation
 
 class GeminiAgent(BaseAIAgent):
-    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "gemini-2.5-flash"): # Using flash for speed
+    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "gemini-2.5-flash-lite-preview-06-17"): # Using flash for speed
         super().__init__(player_name, player_color)
         load_dotenv()  # Load environment variables from .env
         self.api_key = os.getenv("GEMINI_API_KEY") # Use os.getenv
@@ -106,22 +106,35 @@ class GeminiAgent(BaseAIAgent):
                     # Raise ValueError to be caught by the existing error handling for retries/fallback
                     raise ValueError(error_message)
 
-                # Pydantic model validation (for AgentResponse) handled 'thought' and 'action' (as str) presence.
-                # Now validate the content of action_dict.
-                action_to_validate = action_dict
-                action_type_and_params = {k: v for k, v in action_to_validate.items()}
-                is_valid = any(action_type_and_params == {k:v for k,v in va.items()} for va in valid_actions)
+                # --- NEW VALIDATION LOGIC ---
+                # This logic is more lenient. It checks if the action type is valid and if the
+                # non-numeric parameters (like territory names) match a valid action template.
+                # It correctly ignores numeric parameters like 'max_armies' which the LLM is
+                # supposed to replace with its own choice (e.g., 'num_armies').
+                is_valid = False
+                llm_action_type = action_dict.get("type")
+
+                if llm_action_type:
+                    matching_type_actions = [va for va in valid_actions if va.get("type") == llm_action_type]
+                    if matching_type_actions:
+                        # For simple actions (e.g., END_TURN), type match is sufficient.
+                        if all(len(va) == 1 for va in matching_type_actions):
+                            is_valid = True
+                        else:
+                            # For complex actions, check if non-numeric parameters match a template.
+                            for template in matching_type_actions:
+                                params_match = True
+                                for key, value in template.items():
+                                    if not isinstance(value, (int, float)): # Check non-numeric params
+                                        if action_dict.get(key) != value:
+                                            params_match = False
+                                            break
+                                if params_match:
+                                    is_valid = True
+                                    break
 
                 if not is_valid:
-                    # Check if 'type' exists before trying to access it, in case of malformed action_dict
-                    action_type_str = action_to_validate.get("type", "Unknown Type")
-                    is_type_valid = any(action_type_str == va["type"] for va in valid_actions if "type" in va)
-
-                    if is_type_valid:
-                        print(f"GeminiAgent ({self.player_name}): Action type {action_type_str} is valid, but params mismatch: {action_to_validate}. Valid: {valid_actions}. Falling back.")
-                        raise ValueError(f"Action {action_to_validate} params mismatch or not found in valid_actions list.")
-                    else:
-                        raise ValueError(f"Action type {action_type_str} not found in valid_actions list. Action received: {action_to_validate}")
+                    raise ValueError(f"Action {action_dict} is not valid or does not conform to any valid action template in {valid_actions}")
 
                 print(f"GeminiAgent ({self.player_name}): Successfully received and validated action: {action_dict}")
                 # Return the dictionary structure expected by the game engine
@@ -142,8 +155,8 @@ class GeminiAgent(BaseAIAgent):
                         pass # Keep default if extraction fails
 
                 print(f"GeminiAgent ({self.player_name}): {error_message}. Response content/text (if available): '{response_text_for_log}'")
-                if 'response' in locals() and hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
-                     print(f"GeminiAgent ({self.player_name}): Prompt blocked, reason: {response.prompt_feedback.block_reason}")
+                if 'response' in locals() and hasattr(response, 'prompt_feedback') and response.prompt_feedback and response.prompt_feedback.block_reason:
+                    print(f"GeminiAgent ({self.player_name}): Prompt blocked, reason: {response.prompt_feedback.block_reason}")
                 if attempt >= max_retries:
                     return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
             except Exception as e: # Catch any other unexpected errors
