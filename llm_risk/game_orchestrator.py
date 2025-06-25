@@ -39,6 +39,7 @@ class GameOrchestrator:
         self.active_ai_player_name: str | None = None
         self.current_ai_context: dict | None = None
         self.has_logged_ai_is_thinking_for_current_action: bool = False
+        self.has_logged_current_turn_player_phase: bool = False
 
         # Load player configurations: either from override or from file
         self._load_player_setup(player_configs_override, default_player_setup_file)
@@ -280,10 +281,15 @@ class GameOrchestrator:
             if self.gui: self._update_gui_full_state()
             return True # Game continues
 
-        print(f"\n--- Turn {self.engine.game_state.current_turn_number} | Player: {current_player_obj.name} ({current_player_obj.color}) | Phase: {self.engine.game_state.current_game_phase} ---")
-        if not self.ai_is_thinking: # Only log new turn start if not already processing an AI action
-            self.log_turn_info(f"Turn {self.engine.game_state.current_turn_number} starting for {current_player_obj.name}.")
-            self._update_gui_full_state() # Update GUI at start of player's turn segment
+        if not self.has_logged_current_turn_player_phase:
+            print(f"\n--- Turn {self.engine.game_state.current_turn_number} | Player: {current_player_obj.name} ({current_player_obj.color}) | Phase: {self.engine.game_state.current_game_phase} ---")
+            self.has_logged_current_turn_player_phase = True
+            # Also log to file/action log only once per new header
+            if not self.ai_is_thinking: # Avoid double logging if AI just started thinking this exact moment
+                self.log_turn_info(f"Turn {self.engine.game_state.current_turn_number} starting for {current_player_obj.name}.")
+
+        if not self.ai_is_thinking and self.gui: # Ensure GUI is updated if it's not an AI thinking loop
+            self._update_gui_full_state() # Update GUI at start of player's turn segment, if not already done by AI start
 
         # Check if AI is currently thinking
         if self.ai_is_thinking:
@@ -375,6 +381,7 @@ class GameOrchestrator:
             if not self.ai_is_thinking:
                  if self.engine.game_state.current_game_phase == "FORTIFY": # Typically, fortify phase ends the turn.
                     self.engine.next_turn()
+                    self.has_logged_current_turn_player_phase = False # Reset for new player/turn
                     print(f"--- End of Turn for {current_player_obj.name}. Next player: {self.engine.game_state.get_current_player().name if self.engine.game_state.get_current_player() else 'N/A'} ---")
                     self._update_gui_full_state()
                  # If not FORTIFY, it implies phases might have auto-advanced or there's a logic gap for this step.
@@ -953,6 +960,7 @@ class GameOrchestrator:
             if player.armies_to_deploy > 0:
                 self.auto_distribute_armies(player, player.armies_to_deploy)
             self.engine.game_state.current_game_phase = "ATTACK"
+            self.has_logged_current_turn_player_phase = False # Phase changed
             self.ai_is_thinking = False # Ensure not stuck in thinking
             if self.gui: self._update_gui_full_state()
             return
@@ -1036,11 +1044,13 @@ class GameOrchestrator:
                 self.auto_distribute_armies(player, player.armies_to_deploy)
                 player.armies_to_deploy = 0
                 self.engine.game_state.current_game_phase = "ATTACK"
+                self.has_logged_current_turn_player_phase = False # Phase changed
                 phase_continues_for_ai = False
             else:
                 self.log_turn_info(f"{player.name} ends REINFORCE phase.")
                 player.armies_to_deploy = 0
                 self.engine.game_state.current_game_phase = "ATTACK"
+                self.has_logged_current_turn_player_phase = False # Phase changed
                 phase_continues_for_ai = False
             # If phase ended, ai_is_thinking remains False, advance_game_turn will move to ATTACK.
 
@@ -1086,6 +1096,7 @@ class GameOrchestrator:
         if not valid_actions or all(a['type'] == "END_ATTACK_PHASE" for a in valid_actions if len(valid_actions) ==1):
             self.log_turn_info(f"No more valid attack moves for {player.name} or only END_ATTACK_PHASE available. Moving to FORTIFY.");
             self.engine.game_state.current_game_phase = "FORTIFY"
+            self.has_logged_current_turn_player_phase = False # Phase changed
             self.ai_is_thinking = False # Ensure not stuck
             if self.gui: self._update_gui_full_state()
             return
@@ -1163,6 +1174,7 @@ class GameOrchestrator:
         elif action_type == "END_ATTACK_PHASE":
             self.log_turn_info(f"{player.name} ends ATTACK phase.")
             self.engine.game_state.current_game_phase = "FORTIFY"
+            self.has_logged_current_turn_player_phase = False # Phase changed
             self.ai_is_thinking = False # Phase ended.
 
         elif action_type == "GLOBAL_CHAT":
@@ -1207,6 +1219,7 @@ class GameOrchestrator:
              self.log_turn_info(f"No valid FORTIFY actions for {player.name}. This should not happen (must have END_TURN). Ending turn.");
              self.engine.game_state.current_game_phase = "REINFORCE" # Prepare for next player
              self.engine.next_turn()
+             self.has_logged_current_turn_player_phase = False # New turn/player starting
              self.ai_is_thinking = False
              if self.gui: self._update_gui_full_state()
              return
