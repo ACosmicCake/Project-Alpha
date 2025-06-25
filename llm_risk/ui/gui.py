@@ -199,9 +199,20 @@ class GameGUI:
             info_surface = self.font.render(info_text, True, WHITE)
             self.screen.blit(info_surface, (panel_rect.x + 5, y_pos))
             y_pos += 20
-            cards_text = f"Cards: {len(current_player.hand)}, Deploy: {current_player.armies_to_deploy}, Phase: {gs_to_draw.current_game_phase}"
+
+            phase_text = f"Phase: {gs_to_draw.current_game_phase}"
+            if self.orchestrator and self.orchestrator.ai_is_thinking and self.orchestrator.active_ai_player_name == current_player.name:
+                phase_text += " (Thinking...)"
+
+            cards_text = f"Cards: {len(current_player.hand)}, Deploy: {current_player.armies_to_deploy}, {phase_text}"
             cards_surface = self.font.render(cards_text, True, WHITE)
             self.screen.blit(cards_surface, (panel_rect.x + 5, y_pos))
+        elif self.orchestrator and self.orchestrator.ai_is_thinking and self.orchestrator.active_ai_player_name:
+            # Case where current_player might be None briefly during transitions, but an AI is thinking
+            thinking_text = f"AI ({self.orchestrator.active_ai_player_name}) is thinking..."
+            thinking_surface = self.font.render(thinking_text, True, YELLOW) # Yellow to stand out
+            self.screen.blit(thinking_surface, (panel_rect.x + 5, y_pos))
+
 
     def draw_action_log_panel(self):
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, 0, SIDE_PANEL_WIDTH, ACTION_LOG_HEIGHT)
