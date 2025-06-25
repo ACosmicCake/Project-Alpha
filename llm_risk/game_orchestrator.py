@@ -10,6 +10,7 @@ from .ai.gemini_agent import GeminiAgent
 from .ai.openai_agent import OpenAIAgent
 from .ai.claude_agent import ClaudeAgent
 from .ai.deepseek_agent import DeepSeekAgent
+import threading # For asynchronous AI calls
 
 import json # For loading player configs if any
 import time # For potential delays
@@ -30,6 +31,13 @@ class GameOrchestrator:
 
         self.ai_agents: dict[str, BaseAIAgent] = {}
         self.player_map: dict[GamePlayer, BaseAIAgent] = {}
+
+        # Attributes for asynchronous AI calls - INITIALIZE THEM HERE
+        self.ai_is_thinking: bool = False
+        self.current_ai_thread: threading.Thread | None = None
+        self.ai_action_result: dict | None = None
+        self.active_ai_player_name: str | None = None
+        self.current_ai_context: dict | None = None
 
         # Load player configurations: either from override or from file
         self._load_player_setup(player_configs_override, default_player_setup_file)
