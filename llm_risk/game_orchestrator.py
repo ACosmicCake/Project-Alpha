@@ -38,6 +38,7 @@ class GameOrchestrator:
         self.ai_action_result: dict | None = None
         self.active_ai_player_name: str | None = None
         self.current_ai_context: dict | None = None
+        self.has_logged_ai_is_thinking_for_current_action: bool = False
 
         # Load player configurations: either from override or from file
         self._load_player_setup(player_configs_override, default_player_setup_file)
@@ -79,6 +80,7 @@ class GameOrchestrator:
             print(f"Warning: _execute_ai_turn_async called while AI for {self.active_ai_player_name} is already thinking. Ignoring.")
             return
 
+        self.has_logged_ai_is_thinking_for_current_action = False # Reset logging flag for the new AI action
         self.active_ai_player_name = agent.player_name # Store who is thinking
         self.ai_action_result = None  # Clear previous result
         self.ai_is_thinking = True
@@ -286,13 +288,16 @@ class GameOrchestrator:
         # Check if AI is currently thinking
         if self.ai_is_thinking:
             if self.current_ai_thread and self.current_ai_thread.is_alive():
-                print(f"Orchestrator: AI ({self.active_ai_player_name}) is still thinking. GUI should be responsive.")
+                if not self.has_logged_ai_is_thinking_for_current_action:
+                    print(f"Orchestrator: AI ({self.active_ai_player_name}) is still thinking. GUI should be responsive.")
+                    self.has_logged_ai_is_thinking_for_current_action = True
                 if self.gui: self.gui.update(self.engine.game_state, self.global_chat.get_log(), self.private_chat_manager.get_all_conversations()) # Keep GUI fresh
                 return True # AI is busy, game loop continues, UI remains responsive
             else:
                 # AI thread has finished
                 print(f"Orchestrator: AI ({self.active_ai_player_name}) thread finished.")
                 self.ai_is_thinking = False
+                self.has_logged_ai_is_thinking_for_current_action = False # Reset for next potential AI action or next AI player
                 action_to_process = self.ai_action_result
                 # self.ai_action_result = None # Clear it after fetching - or clear before next AI turn
 
