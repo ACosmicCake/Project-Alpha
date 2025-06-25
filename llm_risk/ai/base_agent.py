@@ -78,7 +78,9 @@ class BaseAIAgent(ABC):
             prompt += f"{i+1}. {action}\n"
         prompt += "\nIf you want to chat globally, use action: {'type': 'GLOBAL_CHAT', 'message': 'your message here'}\n"
         prompt += "If you want to initiate a private chat, use action: {'type': 'PRIVATE_CHAT', 'target_player_name': 'PlayerName', 'initial_message': 'your message here'}\n"
-        prompt += "\nRespond with a JSON object containing 'thought' and 'action' keys. Your action must be one of the valid actions or a chat action."
+        prompt += "\nRespond with a JSON object containing 'thought' and 'action' keys. "
+        prompt += "The 'action' key's value in your JSON response MUST be a JSON STRING representation of your chosen action object from the 'Valid Actions' list (or a chat action). "
+        prompt += "For example, if you choose the action object `{'type': 'DEPLOY', 'territory': 'Alaska', 'armies': 3}`, then the 'action' field in your response should be the literal JSON string: `'{\"type\": \"DEPLOY\", \"territory\": \"Alaska\", \"armies\": 3}'`."
         return prompt
 
     def _construct_user_prompt_for_private_chat(self, history: list[dict], game_state_json: str, recipient_name: str) -> str:
