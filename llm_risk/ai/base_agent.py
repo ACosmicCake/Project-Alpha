@@ -139,8 +139,10 @@ Game Phases & Key Actions:
    - Fortifying:
      - You can make ONE fortification move per turn.
      - Action: {"type": "FORTIFY", "from": "YourTerritoryA", "to": "YourTerritoryB", "max_armies_to_move": X}
+       - When choosing this action, you MUST include the 'num_armies' key in your action dictionary, specifying the number of armies to move (an integer from 1 up to X, the 'max_armies_to_move').
+       - For example, your JSON string for the action field could be: '{"type": "FORTIFY", "from": "YourTerritoryA", "to": "YourTerritoryB", "num_armies": Y}' where Y is your chosen number.
      - Territories must be connected by a path of your owned territories.
-     - You must leave at least one army in 'from' territory. Specify 'num_armies' to move (1 to X).
+     - You must leave at least one army in 'from' territory.
    - End Turn:
      - Action: {"type": "END_TURN"} (If you choose not to fortify, or after fortifying). This ends your entire turn.
 

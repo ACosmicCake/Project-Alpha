@@ -706,25 +706,49 @@ class GameOrchestrator:
     def _process_fortify_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
         print(f"Orchestrator: Processing FORTIFY AI action for {player.name}")
         action = ai_response.get("action")
+        action_processed_successfully = False
 
-        if not action or "type" not in action:
-            self.log_turn_info(f"{player.name} malformed FORTIFY action. Ending turn.")
+        if not action or not isinstance(action, dict) or "type" not in action:
+            self.log_turn_info(f"{player.name} malformed/missing FORTIFY action: {action}. Ending turn.")
         else:
             action_type = action.get("type", "")
-            self.log_turn_info(f"{player.name} FORTIFY action: {action_type} (simulated).")
+            self.log_turn_info(f"{player.name} FORTIFY phase, AI action: {action_type} - {action}")
+
             if action_type == "FORTIFY":
-                # Simulate actual fortify call to engine
-                self.engine.perform_fortify(action.get("from"), action.get("to"), action.get("num_armies"))
-            # Else, if END_TURN, engine will handle it via next_turn() call in advance_game_turn
+                if player.has_fortified_this_turn:
+                    self.log_turn_info(f"{player.name} tried to FORTIFY again (should be prevented by valid_actions). Action ignored.")
+                    # This state should ideally not be reached if valid_actions is correct.
+                else:
+                    from_t_name = action.get("from")
+                    to_t_name = action.get("to")
+                    num_a = action.get("num_armies")
+
+                    if from_t_name and to_t_name and isinstance(num_a, int):
+                        if num_a > 0: # Fortifying with 0 armies is not a move.
+                            fortify_result = self.engine.perform_fortify(from_t_name, to_t_name, num_a)
+                            self.log_turn_info(f"{player.name} FORTIFY {from_t_name}->{to_t_name} ({num_a}): {fortify_result.get('message')}")
+                            action_processed_successfully = fortify_result.get("success", False)
+                        else:
+                            self.log_turn_info(f"{player.name} tried to FORTIFY with {num_a} armies. Action ignored. Fortification requires >0 armies.")
+                            # No actual fortify action taken, player can still choose to end turn or try valid fortify if that was a mistake.
+                            # However, current flow processes one action then ends turn.
+                    else:
+                        self.log_turn_info(f"{player.name} provided incomplete FORTIFY action: from='{from_t_name}', to='{to_t_name}', num_armies='{num_a}'. Action ignored.")
+            elif action_type == "END_TURN":
+                self.log_turn_info(f"{player.name} chose to END_TURN.")
+                action_processed_successfully = True # Ending turn is a successful processing of an action.
+            else: # Unknown action
+                self.log_turn_info(f"{player.name} unknown action in FORTIFY phase: {action_type}. Ending turn.")
 
         # Fortify phase is always followed by next_turn() if not game over.
-        # No need to set self.ai_is_thinking = False, as the turn will end for this player.
-        # The main advance_game_turn loop will call self.engine.next_turn().
+        self.ai_is_thinking = False
         if self.gui: self._update_gui_full_state()
 
 
-    def handle_reinforce_phase(self, player: GamePlayer, agent: BaseAIAgent):
-        # This method will be split into _initiate_reinforce_ai_action and _process_reinforce_ai_action
+    # Removed original handle_reinforce_phase, handle_attack_communicate_phase, handle_fortify_phase
+    # as their logic is now split into _initiate_ and _process_ methods, driven by advance_game_turn.
+
+    def auto_distribute_armies(self, player: GamePlayer, armies_to_distribute: int):
         # For now, keeping a simplified version of the original logic for placeholder
         print(f"DEBUG: handle_reinforce_phase called for {player.name} - TO BE REFACTORED")
         if not self.ai_is_thinking:
@@ -1183,7 +1207,10 @@ class GameOrchestrator:
              return
 
         prompt_add = f"It is your FORTIFY phase. Fortified this turn: {player.has_fortified_this_turn}. "
-        prompt_add += "Make one fortification move or end your turn." if not player.has_fortified_this_turn else "You must end your turn."
+        if not player.has_fortified_this_turn:
+            prompt_add += "Make one fortification move (remember to specify 'num_armies') or choose to end your turn."
+        else:
+            prompt_add += "You have already fortified. You must end your turn."
         self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition=prompt_add)
 
     def _process_fortify_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
