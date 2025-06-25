@@ -78,9 +78,14 @@ class BaseAIAgent(ABC):
             prompt += f"{i+1}. {action}\n"
         prompt += "\nIf you want to chat globally, use action: {'type': 'GLOBAL_CHAT', 'message': 'your message here'}\n"
         prompt += "If you want to initiate a private chat, use action: {'type': 'PRIVATE_CHAT', 'target_player_name': 'PlayerName', 'initial_message': 'your message here'}\n"
+        prompt += "\nCRITICAL INSTRUCTIONS FOR ACTION SELECTION:\n"
+        prompt += "1. Your primary task is to select ONE action object EXACTLY AS IT APPEARS in the 'Valid Actions' list below or construct a chat action.\n"
+        prompt += "2. For actions like 'DEPLOY', 'ATTACK', or 'FORTIFY', the 'Valid Actions' list provides templates. You MUST choose one of these templates.\n"
+        prompt += "   - The `territory`, `from`, `to` fields in these templates are FIXED. DO NOT change them or choose territories not listed in these templates for the respective action type.\n"
+        prompt += "   - Your role is to decide numerical values like `num_armies`, `num_attacking_armies`, or `num_armies_to_move`, respecting any 'max_armies' or similar constraints provided in the chosen template.\n"
+        prompt += "3. The 'action' key in your JSON response MUST be a JSON STRING representation of your chosen action object (copied from 'Valid Actions' and with numerical values filled in where appropriate).\n"
+        prompt += "   Example: If a valid DEPLOY action is `{'type': 'DEPLOY', 'territory': 'Alaska', 'max_armies': 5}` and you decide to deploy 3 armies, your action string would be `'{\"type\": \"DEPLOY\", \"territory\": \"Alaska\", \"num_armies\": 3}'`. Notice 'Alaska' was copied directly.\n"
         prompt += "\nRespond with a JSON object containing 'thought' and 'action' keys. "
-        prompt += "The 'action' key's value in your JSON response MUST be a JSON STRING representation of your chosen action object from the 'Valid Actions' list (or a chat action). "
-        prompt += "For example, if you choose the action object `{'type': 'DEPLOY', 'territory': 'Alaska', 'armies': 3}`, then the 'action' field in your response should be the literal JSON string: `'{\"type\": \"DEPLOY\", \"territory\": \"Alaska\", \"armies\": 3}'`."
         return prompt
 
     def _construct_user_prompt_for_private_chat(self, history: list[dict], game_state_json: str, recipient_name: str) -> str:
@@ -149,7 +154,10 @@ Strategic Considerations:
   - Private Chat Initiation: {"type": "PRIVATE_CHAT", "target_player_name": "PlayerNameToChatWith", "initial_message": "Your opening message."}
 
 CRITICAL:
-- Your chosen 'action' in the JSON response MUST be an exact, verbatim copy of one of the action dictionaries provided in the 'Valid Actions' list. Do not modify it in any way.
+- Your chosen 'action' in the JSON response MUST be an exact, verbatim copy of one of the action dictionaries provided in the 'Valid Actions' list. Do not modify it in any way, except for filling in numerical values like 'num_armies' where specified by a 'max_armies' field in the template.
+- Specifically for actions involving territories (DEPLOY, ATTACK, FORTIFY):
+    - The 'territory', 'from_territory', or 'to_territory' names are part of the action template provided in 'Valid Actions'. You MUST choose an action template that already contains the territory you intend to act upon.
+    - DO NOT invent or choose a territory name that is not explicitly part of one of the action templates in the 'Valid Actions' list for the current decision. Your strategic decision is WHICH of the provided valid action templates to use, and then what numerical values (e.g. number of armies) to apply.
 - Pay close attention to parameters like 'max_armies', 'max_armies_for_attack', 'max_armies_to_move', 'min_armies'. Your chosen 'num_armies' in the final action must respect these.
 - If an action from the list has specific values (e.g. "territory": "Alaska"), your chosen action must use those exact values.
 - Do not add extra keys to the action dictionary. Only use the keys shown in the valid action.
