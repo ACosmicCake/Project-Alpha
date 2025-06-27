@@ -623,23 +623,16 @@ class GameEngine:
 
     def _are_territories_connected(self, start_territory: Territory, end_territory: Territory, player: Player) -> bool:
         """
-        Checks if two territories are connected via a path of territories owned by the given player.
-        Uses Breadth-First Search (BFS).
+        Checks if two territories are ADJACENT and owned by the given player.
+        This is for the strict Risk rule for fortification.
         """
-        if start_territory == end_territory:
+        if start_territory.owner != player or end_territory.owner != player:
+            return False # Should be pre-filtered by caller, but good check
+
+        # Check for direct adjacency
+        if end_territory in start_territory.adjacent_territories:
             return True
 
-        queue = [start_territory]
-        visited = {start_territory}
-
-        while queue:
-            current_territory = queue.pop(0)
-            for neighbor in current_territory.adjacent_territories:
-                if neighbor == end_territory and neighbor.owner == player:
-                    return True
-                if neighbor.owner == player and neighbor not in visited:
-                    visited.add(neighbor)
-                    queue.append(neighbor)
         return False
 
     def is_game_over(self) -> Player | None:
