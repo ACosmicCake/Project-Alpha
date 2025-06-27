@@ -1209,7 +1209,8 @@ class GameOrchestrator:
                not isinstance(num_armies, int) or num_armies <= 0: # Attacking with 0 or less armies is invalid
                 self.log_turn_info(f"Orchestrator: {player.name} invalid ATTACK parameters: from='{from_territory_name}', to='{to_territory_name}', num_armies='{num_armies}'. AI will be prompted again.")
             else:
-                attack_log = self.engine.perform_attack(player, from_territory_name, to_territory_name, num_armies)
+                # Player argument is not needed for engine.perform_attack as it infers from territory owner
+                attack_log = self.engine.perform_attack(from_territory_name, to_territory_name, num_armies)
                 self.log_turn_info(f"Orchestrator: Engine perform_attack log for {player.name}: {attack_log}")
 
                 attacks_this_turn +=1
