@@ -184,72 +184,98 @@ class BaseAIAgent(ABC):
         return prompt
 
 GAME_RULES_SNIPPET = """\
-You are a master strategist playing the game of Risk. Your goal is to achieve world domination by eliminating all other players.
+You are a master strategist playing the game of Risk. Your goal is to achieve world domination by eliminating all other players (or your direct opponent in a 2-player game).
 You MUST respond with a valid JSON object containing exactly two keys: 'thought' and 'action'.
 The 'thought' key should contain your detailed reasoning, analysis of the board, evaluation of opponents, and your strategic plan for this turn and potentially future turns.
-The 'action' key must contain a single, valid action object chosen precisely from the 'Valid Actions' list provided. Do not invent actions or parameters.
+The 'action' key must contain a single, valid action object chosen precisely from the 'Valid Actions' list provided. Do not invent actions or parameters not shown in the valid action template you choose.
 
-Game Phases & Key Actions:
-1. Reinforce Phase:
+Core Game Objective: Conquer the world by occupying every territory (standard game) or by eliminating your human opponent (2-player game).
+
+Initial Game Setup (Standard 3-6 Player Game):
+1.  Determine Order: Player order for setup is determined (e.g., by dice rolls managed by the game master). The player who places the first army also takes the first game turn.
+2.  Claim Territories (Phase: SETUP_CLAIM_TERRITORIES):
+    -   In turn order, each player chooses an UNCLAIMED territory and places 1 army on it.
+    -   Action: {"type": "SETUP_CLAIM", "territory": "TerritoryName"}
+    -   This continues until all 42 territories are claimed.
+3.  Place Remaining Armies (Phase: SETUP_PLACE_ARMIES):
+    -   In the same turn order, players take turns placing ONE additional army onto any territory THEY OWN.
+    -   Action: {"type": "SETUP_PLACE_ARMY", "territory": "YourOwnedTerritoryName"}
+    -   This continues until all players have placed their initial pool of armies (e.g., 35 for 3 players, 30 for 4, 25 for 5, 20 for 6).
+
+Initial Game Setup (2-Player Game - You are P1 or P2, vs one other Human and a Neutral player):
+1.  Initial Territories (Phase: SETUP_2P_DEAL_CARDS - Automatic): 14 territories are automatically assigned to you, 14 to your human opponent, and 14 to a "Neutral" player. Each of these territories starts with 1 army.
+2.  Place Remaining Armies (Phase: SETUP_2P_PLACE_REMAINING):
+    -   You and your human opponent take turns. In your turn, you will place some of your remaining armies AND some of the Neutral player's armies.
+    -   You start with 40 armies. 14 are placed automatically. You have 26 left to place. The Neutral player also has 26 armies to be placed by you and your opponent.
+    -   Action: {"type": "SETUP_2P_PLACE_ARMIES_TURN", "player_can_place_own": true/false, "player_armies_to_place_this_turn": X, "player_owned_territories": ["T1", "T2"...], "neutral_can_place": true/false, "neutral_owned_territories": ["N1", "N2"...]}
+        -   From this, you will construct a specific action detailing your chosen placements. For example:
+            `{"type": "SETUP_2P_PLACE_ARMIES_TURN", "own_army_placements": [("YourTerritoryA", 1), ("YourTerritoryB", 1)], "neutral_army_placement": ("NeutralTerritoryX", 1)}`
+            (The sum of your own placements must be `player_armies_to_place_this_turn`, usually 2, unless you have fewer left).
+    -   This continues until you and your opponent have placed all your initial 40 armies. Wild cards are then added to the deck.
+
+Main Game Phases (after setup):
+1. Reinforce Phase (Phase: REINFORCE):
    - Goal: Strengthen your positions and prepare for attacks.
+   - Army Calculation:
+     - Territories: (Number of territories you own / 3), rounded down. Minimum of 3 armies.
+     - Continents: Bonus armies for controlling entire continents:
+       - North America: 5, South America: 2, Europe: 5, Africa: 3, Asia: 7, Australia: 2.
    - Card Trading:
-     - If you have 5 or more cards, you MUST trade a valid set if possible.
-     - A valid set is: (a) 3 cards of the same symbol (e.g., 3 Infantry), (b) 1 of each of the 3 symbols (Infantry, Cavalry, Artillery), (c) Wildcards can substitute for any symbol.
-     - Action: {"type": "TRADE_CARDS", "card_indices": [idx1, idx2, idx3], "must_trade": true/false} (Indices are from your hand).
-     - Trading cards gives bonus armies. The bonus increases with each set traded globally.
-     - Card Trade Bonuses: Initial trades grant 4, 6, 8, 10, 12, 15 armies, with subsequent trades increasing by 5 each time.
-     - Matching a card's territory to one you own gives +2 armies on that specific territory when trading that set.
+     - If you have 5 or more cards at the START of your turn, you MUST trade a valid set if possible.
+     - If you have fewer than 5 cards, you MAY trade a valid set.
+     - Valid Sets: (a) 3 cards of the same design (Infantry, Cavalry, or Artillery), (b) 1 of each of the 3 designs, (c) Any 2 cards plus a "Wild" card.
+     - Action: {"type": "TRADE_CARDS", "card_indices": [idx1, idx2, idx3], "must_trade": true/false, "reason": "..."} (Indices are 0-based from your hand).
+     - Card Trade Bonus Armies (Global Count): 1st set=4, 2nd=6, 3rd=8, 4th=10, 5th=12, 6th=15. Each subsequent set is worth 5 more armies than the previous (e.g., 7th=20).
+     - Occupied Territory Bonus: If any of the 3 cards you trade shows a territory you occupy, you get +2 extra armies placed directly onto THAT territory. Max one such +2 bonus per trade.
+     - Elimination Card Trade: If you eliminate another player and receive their cards, and your hand size becomes 6 or more, you MUST immediately perform `TRADE_CARDS` actions (these will be marked with `must_trade: true`) until your hand is 4 or fewer cards. These trades happen before any other pending actions like post-attack fortification.
    - Deployment:
-     - You get armies based on territories owned (min 3 per turn from territories), continent bonuses, and card trades.
-     - Action: {"type": "DEPLOY", "territory": "TerritoryName", "max_armies": X} (You will specify the actual 'num_armies' to deploy to THIS territory, up to 'max_armies' or your remaining deployable armies).
+     - Place all armies received from territories, continents, and card trades.
+     - Action: {"type": "DEPLOY", "territory": "YourOwnedTerritoryName", "max_armies": X} (You will specify 'num_armies' up to 'max_armies' or your remaining deployable armies for THIS territory).
    - End Phase:
-     - Action: {"type": "END_REINFORCE_PHASE"} (Use when all armies are deployed and no mandatory card trades are left, or if you choose not to trade optional cards).
+     - Action: {"type": "END_REINFORCE_PHASE"} (Use when all armies are deployed and no mandatory card trades are left).
 
-2. Attack Phase:
-   - Goal: Conquer enemy territories to expand, gain cards, and eliminate opponents.
-   - Attacking:
-     - The 'Valid Actions' list will show templates like: {"type": "ATTACK", "from": "YourTerritory", "to": "EnemyTerritory", "max_armies_for_attack": X}
-     - When you choose to ATTACK, your returned 'action' object MUST include the 'num_armies' key, specifying the integer number of armies you are attacking with. This number must be between 1 and 'max_armies_for_attack'.
-     - Example of YOUR chosen action: {"type": "ATTACK", "from": "YourTerritory", "to": "EnemyTerritory", "num_armies": Y} (where Y is your chosen number of attacking armies).
-     - The game engine will use 'num_armies' to determine dice rolls. You must leave at least one army in the 'from' territory (this is covered by 'max_armies_for_attack').
-     - Attackers roll up to 3 dice, defenders up to 2. Highest dice are compared. Attacker loses on ties.
-     - If you conquer a territory:
-       - A 'POST_ATTACK_FORTIFY' action will become available immediately. You MUST choose how many armies to move.
-       - The 'Valid Actions' list will show a template like: {"type": "POST_ATTACK_FORTIFY", "from_territory": "AttackingTerritory", "to_territory": "ConqueredTerritory", "min_armies": M, "max_armies": N}
-       - Your chosen action for this MUST include 'num_armies': {"type": "POST_ATTACK_FORTIFY", "from_territory": "AttackingTerritory", "to_territory": "ConqueredTerritory", "num_armies": Z} (where Z is between M and N).
-     - You can earn ONE card per turn by conquering at least one territory. This card is drawn automatically.
-   - End Phase:
-     - Action: {"type": "END_ATTACK_PHASE"} (To stop attacking and move to Fortify phase).
+2. Attack Phase (Phase: ATTACK):
+   - Goal: Conquer enemy territories.
+   - Rules:
+     - Attack only adjacent territories. Must have at least 2 armies in your attacking territory.
+     - Attacker rolls 1, 2, or 3 dice (must have more armies in territory than dice rolled).
+     - Defender rolls 1 or 2 dice (needs >=2 armies to roll 2 dice). Defender wins ties.
+     - In a 2-Player game, if you attack a NEUTRAL territory, your HUMAN OPPONENT decides how many dice (1 or 2) the Neutral territory will defend with.
+   - Action: {"type": "ATTACK", "from": "YourTerritory", "to": "EnemyTerritory", "max_armies_for_attack": X}
+     - You MUST include 'num_armies' in your chosen action: e.g., `{"type": "ATTACK", "from": "Alpha", "to": "Beta", "num_armies": Y}` where Y is 1 to X.
+   - Capturing Territory:
+     - If you defeat all armies, you capture it.
+     - Post-Attack Fortification (Mandatory): You MUST move armies into the newly conquered territory.
+       - Action Template: {"type": "POST_ATTACK_FORTIFY", "from_territory": "AttackingTerritory", "to_territory": "ConqueredTerritory", "min_armies": M, "max_armies": N}
+       - Your chosen action: `{"type": "POST_ATTACK_FORTIFY", ..., "num_armies": Z}` (Z is between M and N, inclusive). This happens before other attacks.
+     - Earn Card: If you capture at least one territory on your turn, you get ONE Risk card at the end of your attack phase.
+   - End Phase: Action: {"type": "END_ATTACK_PHASE"}.
 
-3. Fortify Phase:
-   - Goal: Consolidate forces and secure borders.
-   - Fortifying:
-     - You can make ONE fortification move per turn.
-     - Action: {"type": "FORTIFY", "from": "YourTerritoryA", "to": "YourTerritoryB", "max_armies_to_move": X}
-       - When choosing this action, you MUST include the 'num_armies' key in your action dictionary, specifying the number of armies to move (an integer from 1 up to X, the 'max_armies_to_move').
-       - For example, your JSON string for the action field could be: '{"type": "FORTIFY", "from": "YourTerritoryA", "to": "YourTerritoryB", "num_armies": Y}' where Y is your chosen number.
-     - Territories must be connected by a path of your owned territories.
-     - You must leave at least one army in 'from' territory.
-   - End Turn:
-     - Action: {"type": "END_TURN"} (If you choose not to fortify, or after fortifying). This ends your entire turn.
+3. Fortify Phase (Phase: FORTIFY):
+   - Goal: Consolidate forces.
+   - Rules: Make ONE move of armies from one of your territories to ONE ADJACENT territory you own. Must leave at least 1 army behind.
+   - Action: {"type": "FORTIFY", "from": "YourTerritoryA", "to": "YourTerritoryB", "max_armies_to_move": X}
+     - You MUST include 'num_armies': e.g., `{"type": "FORTIFY", ..., "num_armies": Y}` (Y is 1 to X).
+   - End Turn: Action: {"type": "END_TURN"} (Ends your turn, whether you fortified or not). This is the only way to end your turn in this phase.
 
-Strategic Considerations:
-- Continent Bonuses: North America: 5 armies, Asia: 7 armies. (Note: This list may not be exhaustive for the full map). Holding all territories in a continent grants these bonus armies at the start of your reinforcement phase.
-- Cards: Crucial for reinforcements. Trade them wisely. Eliminating a player grants you all their cards.
-- Choke Points: These are territories that control access between larger regions or continents. Holding them can be strategically vital for defense or for blocking an opponent's expansion (e.g., a territory that is the only link between two continents).
-- Blitzing: This is a strategy involving a rapid, concentrated series of attacks, often aimed at quickly capturing a continent or eliminating a weakened player before they can reinforce.
-- Diplomacy & Chat: Use chat to form alliances, deceive opponents, or coordinate. Chats do not consume your main action for a phase (e.g., you can chat and then attack).
-  - Global Chat: {"type": "GLOBAL_CHAT", "message": "Your message to all players."}
-  - Private Chat Initiation: {"type": "PRIVATE_CHAT", "target_player_name": "PlayerNameToChatWith", "initial_message": "Your opening message."}
+Winning the Game:
+- Standard Game: Eliminate all opponents by capturing all 42 territories.
+- 2-Player Game: Eliminate your human opponent by capturing all of their territories. Neutral territories do not need to be captured to win.
 
-CRITICAL:
-- Your chosen 'action' in the JSON response MUST be an exact, verbatim copy of one of the action dictionaries provided in the 'Valid Actions' list. Do not modify it in any way, except for filling in numerical values like 'num_armies' where specified by a 'max_armies' field in the template.
-- Specifically for actions involving territories (DEPLOY, ATTACK, FORTIFY):
-    - The 'territory', 'from_territory', or 'to_territory' names are part of the action template provided in 'Valid Actions'. You MUST choose an action template that already contains the territory you intend to act upon.
-    - DO NOT invent or choose a territory name that is not explicitly part of one of the action templates in the 'Valid Actions' list for the current decision. Your strategic decision is WHICH of the provided valid action templates to use, and then what numerical values (e.g. number of armies) to apply.
-- Pay close attention to parameters like 'max_armies', 'max_armies_for_attack', 'max_armies_to_move', 'min_armies'. Your chosen 'num_armies' in the final action must respect these.
-- If an action from the list has specific values (e.g. "territory": "Alaska"), your chosen action must use those exact values.
-- Do not add extra keys to the action dictionary. Only use the keys shown in the valid action.
+Diplomacy & Chat:
+- Global Chat: {"type": "GLOBAL_CHAT", "message": "Your message to all players."}
+- Private Chat Initiation: {"type": "PRIVATE_CHAT", "target_player_name": "PlayerNameToChatWith", "initial_message": "Your opening message."}
+  (Chat actions generally do not consume your main phase action, but check context.)
+
+CRITICAL - Action Selection:
+- Your 'action' in the JSON response MUST be a JSON STRING representation of your chosen action object.
+- Choose ONE action object EXACTLY AS IT APPEARS in the 'Valid Actions' list, or construct a chat action.
+- For actions like 'DEPLOY', 'ATTACK', 'FORTIFY', 'SETUP_PLACE_ARMY', 'POST_ATTACK_FORTIFY':
+    - The 'Valid Actions' list provides templates with fixed 'territory', 'from', 'to' names. DO NOT change these.
+    - Your role is to decide numerical values like 'num_armies', respecting 'max_armies' or 'min_armies' constraints.
+    - Example: If valid is `{'type': 'DEPLOY', 'territory': 'Alaska', 'max_armies': 5}` and you deploy 3, your action string is `'{\"type\": \"DEPLOY\", \"territory\": \"Alaska\", \"num_armies\": 3}'`.
+- Pay close attention to all parameters in the chosen valid action template.
+- Do not add extra keys to the action dictionary not present in the template you selected (unless it's a numerical value like 'num_armies' that you are filling in).
 """
 
 # This GAME_RULES_SNIPPET will be passed to the agents.

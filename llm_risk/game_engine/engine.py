@@ -6,120 +6,530 @@ class GameEngine:
     def __init__(self, map_file_path: str = "map_config.json"):
         self.game_state = GameState()
         self.map_file_path = map_file_path
-        self.card_trade_bonus_index = 0 # For escalating card bonuses
-        self.card_trade_bonuses = [4, 6, 8, 10, 12, 15] # Standard escalation
+        self.card_trade_bonus_index = 0
+        self.card_trade_bonuses = [4, 6, 8, 10, 12, 15]
 
-    def initialize_board(self, players_data: list[dict]):
+    def initialize_game_from_map(self, players_data: list[dict], is_two_player_game: bool = False):
         """
-        Initializes the board from a map configuration file,
-        creates players, assigns territories randomly, and places initial armies.
+        Initializes continents, territories (unowned), creates players,
+        allocates initial army pools, and prepares the deck.
+        This method sets up the game for the interactive setup phases.
+        If is_two_player_game is True, specific 2-player setup rules are applied.
         """
+        gs = self.game_state
+        gs.current_game_phase = "SETUP_START" # Ensure fresh start
+        gs.is_two_player_game = is_two_player_game # Store this mode
+
+        if gs.is_two_player_game:
+            if len(players_data) != 2:
+                print("Error: Two-player game mode selected, but players_data does not contain 2 players.")
+                gs.current_game_phase = "ERROR"
+                return
+            print("Initializing for 2-Player Game Rules (Neutral player will be added by orchestrator/rules).")
+
+
         try:
             with open(self.map_file_path, 'r') as f:
                 map_data = json.load(f)
         except FileNotFoundError:
             print(f"Error: Map file '{self.map_file_path}' not found.")
-            # Potentially raise an exception or handle more gracefully
+            gs.current_game_phase = "ERROR"
             return
         except json.JSONDecodeError:
             print(f"Error: Could not decode JSON from map file '{self.map_file_path}'.")
+            gs.current_game_phase = "ERROR"
             return
 
         # 1. Create Continents
+        gs.continents.clear()
         for cont_data in map_data.get("continents", []):
             continent = Continent(name=cont_data["name"], bonus_armies=cont_data["bonus_armies"])
-            self.game_state.continents[continent.name] = continent
+            gs.continents[continent.name] = continent
 
-        # 2. Create Territories and assign them to Continents
+        # 2. Create Territories (unowned) and assign them to Continents
+        gs.territories.clear()
+        gs.unclaimed_territory_names.clear()
         for terr_name, terr_data in map_data.get("territories", {}).items():
             continent_name = terr_data.get("continent")
-            continent = self.game_state.continents.get(continent_name)
+            continent = gs.continents.get(continent_name)
             if not continent:
                 print(f"Warning: Continent '{continent_name}' for territory '{terr_name}' not found. Skipping continent assignment.")
 
-            territory = Territory(name=terr_name, continent=continent)
-            self.game_state.territories[territory.name] = territory
+            territory = Territory(name=terr_name, continent=continent, owner=None, army_count=0) # Initially unowned
+            gs.territories[territory.name] = territory
+            gs.unclaimed_territory_names.append(terr_name)
             if continent:
                 continent.territories.append(territory)
+        random.shuffle(gs.unclaimed_territory_names) # Shuffle for fairness if multiple AIs pick simultaneously
 
         # 3. Link adjacent territories
         for terr_name, terr_data in map_data.get("territories", {}).items():
-            territory = self.game_state.territories.get(terr_name)
+            territory = gs.territories.get(terr_name)
             if territory:
+                territory.adjacent_territories.clear() # Clear previous links if any
                 for adj_name in terr_data.get("adjacent_to", []):
-                    adj_territory = self.game_state.territories.get(adj_name)
+                    adj_territory = gs.territories.get(adj_name)
                     if adj_territory:
                         territory.adjacent_territories.append(adj_territory)
                     else:
-                        print(f"Warning: Adjacent territory '{adj_name}' for '{terr_name}' not found.")
+                        print(f"Warning: Adjacent territory '{adj_name}' for '{terr_name}' not found during linking.")
 
-        # 4. Create Players
+        # 4. Create Players and allocate initial armies
         if not players_data:
             print("Error: No player data provided for initialization.")
+            gs.current_game_phase = "ERROR"
             return
 
-        for player_info in players_data:
+        gs.players.clear()
+        human_players = []
+        for player_info in players_data: # Should be 2 for 2-player mode
             player = Player(name=player_info["name"], color=player_info["color"])
-            self.game_state.players.append(player)
+            human_players.append(player)
 
-        if not self.game_state.players:
-            print("Error: No players were created. Cannot assign territories.")
+        gs.players.extend(human_players)
+
+        if gs.is_two_player_game:
+            # Add Neutral player
+            # Find a color for Neutral that isn't used by human players
+            used_colors = [p.color.lower() for p in human_players]
+            neutral_color = "Gray" # Default
+            if "gray" in used_colors: # Find another color if gray is taken
+                possible_colors = ["LightBlue", "Brown", "Pink", "Orange"]
+                for pc in possible_colors:
+                    if pc.lower() not in used_colors:
+                        neutral_color = pc
+                        break
+            neutral_player = Player(name="Neutral", color=neutral_color, is_neutral=True)
+            gs.players.append(neutral_player)
+
+        if not gs.players: # Should be caught by earlier checks if players_data was empty
+            print("Error: No players were created (including potential neutral).")
+            gs.current_game_phase = "ERROR"
             return
 
-        # 5. Assign territories randomly and place initial armies
-        all_territory_names = list(self.game_state.territories.keys())
-        random.shuffle(all_territory_names)
+        num_actual_players_for_army_calc = len(players_data) # Use original players_data count for standard rules
+        if gs.is_two_player_game:
+            initial_armies_per_entity = 40 # P1, P2, Neutral each get 40
+            for player in gs.players: # This now includes Neutral
+                player.initial_armies_pool = initial_armies_per_entity
+                player.armies_placed_in_setup = 0
+        else: # Standard game army allocation
+            initial_armies_per_player = 0
+            if num_actual_players_for_army_calc == 3: initial_armies_per_player = 35
+            elif num_actual_players_for_army_calc == 4: initial_armies_per_player = 30
+            elif num_actual_players_for_army_calc == 5: initial_armies_per_player = 25
+            elif num_actual_players_for_army_calc == 6: initial_armies_per_player = 20
+            # Note: Standard rules don't explicitly cover 2 players without the 2-player variation.
+            # If is_two_player_game is False and num_actual_players_for_army_calc is 2, this will error.
+            # The orchestrator should ensure correct mode or player count.
+            else:
+                print(f"Error: Invalid number of players ({num_actual_players_for_army_calc}) for standard game mode. Must be 3-6.")
+                gs.current_game_phase = "ERROR"
+                return
+            for player in gs.players: # Only human players in this branch
+                player.initial_armies_pool = initial_armies_per_player
+                player.armies_placed_in_setup = 0
 
-        num_players = len(self.game_state.players)
-        territories_per_player = len(all_territory_names) // num_players
-        extra_territories = len(all_territory_names) % num_players
-
-        current_territory_idx = 0
-        for i, player in enumerate(self.game_state.players):
-            num_to_assign = territories_per_player + (1 if i < extra_territories else 0)
-            for _ in range(num_to_assign):
-                if current_territory_idx < len(all_territory_names):
-                    terr_name = all_territory_names[current_territory_idx]
-                    territory = self.game_state.territories[terr_name]
-                    territory.owner = player
-                    territory.army_count = 1 # Start with 1 army
-                    player.territories.append(territory)
-                    current_territory_idx += 1
-
-        # Initial army deployment (example: 35 armies for 4 players, can be adjusted)
-        # This is a simplified initial deployment. Classic Risk has more complex rules.
-        initial_armies_per_player = 0
-        if num_players == 2: initial_armies_per_player = 40
-        elif num_players == 3: initial_armies_per_player = 35
-        elif num_players == 4: initial_armies_per_player = 30
-        elif num_players == 5: initial_armies_per_player = 25
-        elif num_players == 6: initial_armies_per_player = 20
-
-        for player in self.game_state.players:
-            armies_to_distribute = initial_armies_per_player - len(player.territories)
-            player.armies_to_deploy = armies_to_distribute # Store for manual placement later if desired
-
-            # For now, distribute remaining armies somewhat evenly after the initial 1 per territory
-            idx = 0
-            while armies_to_distribute > 0 and player.territories:
-                player.territories[idx % len(player.territories)].army_count += 1
-                armies_to_distribute -= 1
-                idx += 1
-
-        # 6. Create Deck of Cards
-        # One card for each territory: 1/3 infantry, 1/3 cavalry, 1/3 artillery (approx)
-        # Plus two wild cards
+        # 5. Create Deck of Cards
+        gs.deck.clear()
         symbols = ["Infantry", "Cavalry", "Artillery"]
         symbol_idx = 0
-        for terr_name in self.game_state.territories.keys():
-            self.game_state.deck.append(Card(terr_name, symbols[symbol_idx % 3]))
-            symbol_idx +=1
-        self.game_state.deck.append(Card(None, "Wildcard"))
-        self.game_state.deck.append(Card(None, "Wildcard"))
-        random.shuffle(self.game_state.deck)
+        territory_names_for_cards = list(gs.territories.keys())
 
-        self.game_state.current_player_index = random.randrange(num_players) # Random first player
+        # For 2-player game, wild cards are initially excluded for territory dealing
+        # They are added back before main play starts.
+        if not gs.is_two_player_game:
+            for terr_name in territory_names_for_cards:
+                gs.deck.append(Card(terr_name, symbols[symbol_idx % 3]))
+                symbol_idx +=1
+            gs.deck.append(Card(None, "Wildcard"))
+            gs.deck.append(Card(None, "Wildcard"))
+            random.shuffle(gs.deck)
+        else: # 2-player game: create territory cards only for initial deal
+            if len(territory_names_for_cards) != 42:
+                print(f"Error: Map does not have 42 territories for 2-player card dealing (found {len(territory_names_for_cards)}).")
+                gs.current_game_phase = "ERROR"
+                return
+            for terr_name in territory_names_for_cards: # Create all 42 territory cards
+                gs.deck.append(Card(terr_name, symbols[symbol_idx % 3]))
+                symbol_idx +=1
+            random.shuffle(gs.deck) # Shuffle territory cards
 
+        if gs.is_two_player_game:
+            gs.current_game_phase = "SETUP_2P_DEAL_CARDS"
+        else:
+            gs.current_game_phase = "SETUP_DETERMINE_ORDER"
+
+        print(f"Game initialized. Phase: {gs.current_game_phase}. Players: {[p.name for p in gs.players]}. Unclaimed territories: {len(gs.unclaimed_territory_names)}")
+
+    def setup_two_player_initial_territory_assignment(self) -> dict:
+        """
+        Specific for 2-player setup: Deals territory cards to assign initial 14 territories
+        to each human player and the neutral player. Each gets 1 army.
+        Wild cards are NOT in the deck at this point.
+        """
+        gs = self.game_state
+        log = {"event": "setup_2p_deal_cards", "success": False, "message": ""}
+
+        if not gs.is_two_player_game or gs.current_game_phase != "SETUP_2P_DEAL_CARDS":
+            log["message"] = f"Cannot perform 2-player card dealing in current state (is_2p: {gs.is_two_player_game}, phase: {gs.current_game_phase})."
+            return log
+
+        if len(gs.players) != 3: # P1, P2, Neutral
+            log["message"] = "Error: Expected 3 players (P1, P2, Neutral) for 2-player card setup."
+            return log
+
+        # Deck should contain 42 territory cards, shuffled.
+        if len(gs.deck) != 42:
+            log["message"] = f"Error: Deck should have 42 territory cards for 2-player setup, found {len(gs.deck)}."
+            return log
+
+        human_players = [p for p in gs.players if not p.is_neutral]
+        neutral_player = next((p for p in gs.players if p.is_neutral), None)
+
+        if len(human_players) != 2 or not neutral_player:
+            log["message"] = "Error: Could not identify 2 human players and 1 neutral player."
+            return log
+
+        players_for_deal = human_players + [neutral_player] # Order of dealing can be fixed or random
+
+        assigned_territories_log = {p.name: [] for p in players_for_deal}
+
+        for i in range(14): # Each gets 14 cards
+            for player_receiving_card in players_for_deal:
+                if not gs.deck:
+                    log["message"] = "Error: Deck ran out of cards during 2-player territory assignment."
+                    log["assigned_territories"] = assigned_territories_log
+                    return log # Should not happen with 42 cards and 3x14 assignment
+
+                card = gs.deck.pop(0)
+                territory_name = card.territory_name
+                if not territory_name: # Should be a territory card
+                    log["message"] = f"Error: Drew a non-territory card '{card}' during 2-player setup."
+                    return log
+
+                territory = gs.territories.get(territory_name)
+                if not territory or territory_name not in gs.unclaimed_territory_names:
+                    log["message"] = f"Error: Territory '{territory_name}' from card not found or already claimed."
+                    return log
+
+                if player_receiving_card.armies_placed_in_setup >= player_receiving_card.initial_armies_pool:
+                    log["message"] = f"{player_receiving_card.name} has no armies in pool for initial territory claim."
+                    return log # Should have 40 initially.
+
+                territory.owner = player_receiving_card
+                territory.army_count = 1
+                player_receiving_card.territories.append(territory)
+                player_receiving_card.armies_placed_in_setup += 1
+                gs.unclaimed_territory_names.remove(territory_name)
+                assigned_territories_log[player_receiving_card.name].append(territory_name)
+
+        if gs.unclaimed_territory_names:
+            log["message"] = f"Error: {len(gs.unclaimed_territory_names)} territories remained unclaimed after 2P card dealing."
+            log["success"] = False
+        else:
+            log["success"] = True
+            log["message"] = "All 42 territories assigned via cards for 2-player setup. Each has 1 army."
+            gs.current_game_phase = "SETUP_2P_PLACE_REMAINING"
+            # Determine who places remaining armies first (e.g., player 1 from initial setup, or fixed)
+            # For now, assume human_players[0] (original player 1) starts this. Orchestrator will manage turns.
+            gs.player_setup_order = human_players # Only human players take turns placing remaining.
+            gs.current_setup_player_index = 0
+            # The player who gets the *first game turn* after setup needs to be decided.
+            # PDF: "Whoever placed the first army takes the first turn." - this is complex with card dealing.
+            # For 2-player, often P1 just starts. Let's assume human_players[0] for now.
+            gs.first_player_of_game = human_players[0]
+
+
+        log["assigned_territories_map"] = assigned_territories_log
+        # Wild cards are added back to the deck *after* this entire setup phase, before regular play.
+        # This will be handled by a method called by orchestrator, or end of setup logic.
+        return log
+
+    def player_places_initial_armies_2p(self, acting_player_name: str, own_army_placements: list[tuple[str, int]], neutral_army_placement: tuple[str, int] | None) -> dict:
+        """
+        For 2-player setup: allows the acting_player to place 2 of their own armies
+        and 1 neutral army.
+        own_army_placements: list of (territory_name, count), sum of counts must be 2.
+        neutral_army_placement: (territory_name, count=1)
+        """
+        gs = self.game_state
+        log = {"event": "place_initial_armies_2p", "player": acting_player_name, "success": False, "message": ""}
+
+        if not gs.is_two_player_game or gs.current_game_phase != "SETUP_2P_PLACE_REMAINING":
+            log["message"] = f"Cannot place 2P initial armies in current state (is_2p: {gs.is_two_player_game}, phase: {gs.current_game_phase})."
+            return log
+
+        acting_player = gs.get_current_setup_player() # player_setup_order should contain the two human players
+        if not acting_player or acting_player.name != acting_player_name or acting_player.is_neutral:
+            log["message"] = f"Invalid acting player '{acting_player_name}' or not their turn."
+            return log
+
+        neutral_player = next((p for p in gs.players if p.is_neutral), None)
+        if not neutral_player: # Should exist in 2p mode
+            log["message"] = "Neutral player not found."
+            return log
+
+        # Validate and place player's own 2 armies
+        player_armies_to_place_this_turn = sum(count for _, count in own_army_placements)
+        if player_armies_to_place_this_turn != 2:
+            log["message"] = f"Player must place exactly 2 of their own armies, attempted {player_armies_to_place_this_turn}."
+            return log
+
+        armies_left_in_player_pool = acting_player.initial_armies_pool - acting_player.armies_placed_in_setup
+        if armies_left_in_player_pool < 2 and armies_left_in_player_pool > 0: # Player has 1 army left
+             if player_armies_to_place_this_turn != armies_left_in_player_pool : # Must place remaining 1
+                log["message"] = f"Player has only {armies_left_in_player_pool} army left, must place that many."
+                return log
+        elif armies_left_in_player_pool <= 0 :
+             log["message"] = f"Player {acting_player_name} has no more armies in their pool ({armies_left_in_player_pool})."
+             # This case should ideally be handled by get_valid_actions not offering this.
+             # If they have 0 left, they can't place their 2.
+             # But they might still need to place a neutral army if neutral has some left.
+             # For simplicity now, if player has 0, they can't do this action.
+             return log
+
+
+        for terr_name, count in own_army_placements:
+            territory = gs.territories.get(terr_name)
+            if not territory or territory.owner != acting_player:
+                log["message"] = f"Invalid territory '{terr_name}' for {acting_player_name}'s army placement."
+                return log
+            if count <=0:
+                log["message"] = f"Army count for {terr_name} must be positive."
+                return log
+
+            # Check if placing 'count' exceeds remaining armies for this turn (2) or total pool
+            # This is implicitly handled by player_armies_to_place_this_turn check and armies_left_in_player_pool
+
+            territory.army_count += count
+            acting_player.armies_placed_in_setup += count
+            log["message"] += f"Placed {count} on {terr_name}. "
+
+        log["player_armies_placed_total"] = acting_player.armies_placed_in_setup
+
+        # Place 1 neutral army
+        if neutral_army_placement:
+            neut_terr_name, neut_count = neutral_army_placement
+            if neut_count != 1:
+                log["message"] += "Must place exactly 1 neutral army."
+                # Rollback player's own army placement for this turn if strict atomicity is needed, or just fail here.
+                # For now, fail and player has to retry.
+                return log
+
+            neutral_territory = gs.territories.get(neut_terr_name)
+            if not neutral_territory or neutral_territory.owner != neutral_player:
+                log["message"] += f"Invalid territory '{neut_terr_name}' for neutral army placement."
+                return log
+
+            if neutral_player.armies_placed_in_setup < neutral_player.initial_armies_pool:
+                neutral_territory.army_count += 1
+                neutral_player.armies_placed_in_setup += 1
+                log["message"] += f"Placed 1 neutral army on {neut_terr_name}. Neutral armies placed: {neutral_player.armies_placed_in_setup}."
+            else:
+                log["message"] += "Neutral player has no armies left in pool. Skipped neutral placement."
+
+        log["neutral_armies_placed_total"] = neutral_player.armies_placed_in_setup
+        log["success"] = True
+
+        # Check if all armies for all (human) players are placed
+        # Neutral armies are placed by humans; their pool depletion is a consequence.
+        all_human_players_done = True
+        for p in gs.player_setup_order: # player_setup_order contains the two human players
+            if p.armies_placed_in_setup < p.initial_armies_pool:
+                all_human_players_done = False
+                break
+
+        if all_human_players_done:
+            log["message"] += " All human player initial armies placed."
+            # Add wild cards back to deck and shuffle
+            gs.deck.append(Card(None, "Wildcard"))
+            gs.deck.append(Card(None, "Wildcard"))
+            random.shuffle(gs.deck)
+            log["message"] += " Wild cards added to deck."
+
+            gs.current_game_phase = "REINFORCE"
+            try:
+                gs.current_player_index = gs.players.index(gs.first_player_of_game)
+                # Ensure first player is not neutral
+                if gs.players[gs.current_player_index].is_neutral:
+                    # This means first_player_of_game was set to Neutral, which is an error for 2P mode.
+                    # Default to the first human player in original list.
+                    first_human = next(p for p in gs.players if not p.is_neutral)
+                    gs.current_player_index = gs.players.index(first_human)
+            except ValueError:
+                gs.current_player_index = 0 # Fallback
+
+            first_active_player = gs.get_current_player()
+            if first_active_player and not first_active_player.is_neutral:
+                first_active_player.armies_to_deploy = self.calculate_reinforcements(first_active_player)
+                log["message"] += f" Game setup complete. First turn: {first_active_player.name}. Reinforcements: {first_active_player.armies_to_deploy}."
+            else: # Should not happen if first_player_of_game is set correctly to a human
+                 log["message"] += " Game setup complete. Error finding first non-neutral player."
+
+        else: # Not all human armies placed, advance to next human player in setup order
+            gs.current_setup_player_index = (gs.current_setup_player_index + 1) % len(gs.player_setup_order)
+            log["message"] += f" Next player to place armies: {gs.player_setup_order[gs.current_setup_player_index].name}."
+
+        return log
+
+
+    def set_player_setup_order(self, ordered_player_names: list[str], first_placer_for_game_turn_name: str):
+        """
+        Sets the order for setup actions and identifies the first player for the main game.
+        Called by the orchestrator after player order is determined (e.g., by dice rolls).
+        Relevant for standard setup, not 2-player card-based setup.
+        """
+        gs = self.game_state
+        if gs.is_two_player_game:
+            # For 2-player, setup order for placing remaining armies is typically fixed (P1, P2)
+            # and first game turn player is also often fixed or determined differently.
+            # This method might not be directly used, or used just to set first_player_of_game.
+            human_players = [p for p in gs.players if not p.is_neutral]
+            if not human_players: return False # Should not happen
+
+            first_player_obj = next((p for p in human_players if p.name == first_placer_for_game_turn_name), None)
+            if not first_player_obj: first_player_obj = human_players[0] # Default if name not found
+            gs.first_player_of_game = first_player_obj
+            # player_setup_order for 2P remaining armies is set in setup_two_player_initial_territory_assignment
+            print(f"2P Game: First game turn set to {gs.first_player_of_game.name}.")
+            # Phase transition for 2P happens in other setup methods.
+            return True
+
+        if gs.current_game_phase != "SETUP_DETERMINE_ORDER":
+            print(f"Error: Cannot set player setup order in phase {gs.current_game_phase}")
+            return False
+
+        name_to_player_map = {p.name: p for p in gs.players}
+        # Filter out neutral player if it accidentally got into ordered_player_names for standard setup
+        gs.player_setup_order = [name_to_player_map[name] for name in ordered_player_names if name in name_to_player_map and not name_to_player_map[name].is_neutral]
+
+        # Check if number of players in setup order matches non-neutral players
+        non_neutral_players_count = sum(1 for p in gs.players if not p.is_neutral)
+        if len(gs.player_setup_order) != non_neutral_players_count:
+            print(f"Error: Mismatch in ordered_player_names ({len(gs.player_setup_order)}) and game's non-neutral players ({non_neutral_players_count}).")
+            return False
+
+        first_player_obj = name_to_player_map.get(first_placer_for_game_turn_name)
+        if not first_player_obj or first_player_obj.is_neutral:
+            print(f"Error: First placer for game turn '{first_placer_for_game_turn_name}' not found or is neutral.")
+            return False
+        gs.first_player_of_game = first_player_obj
+
+        gs.current_setup_player_index = 0
+        gs.current_game_phase = "SETUP_CLAIM_TERRITORIES"
+        print(f"Player setup order set: {[p.name for p in gs.player_setup_order]}. First game turn: {gs.first_player_of_game.name}. Phase: {gs.current_game_phase}")
+        return True
+
+    def player_claims_territory(self, player_name: str, territory_name: str) -> dict:
+        """
+        Allows a player to claim an unoccupied territory during setup.
+        """
+        gs = self.game_state
+        log = {"event": "claim_territory", "player": player_name, "territory": territory_name, "success": False, "message": ""}
+
+        if gs.current_game_phase != "SETUP_CLAIM_TERRITORIES":
+            log["message"] = f"Cannot claim territory in phase: {gs.current_game_phase}"
+            return log
+
+        current_setup_player = gs.player_setup_order[gs.current_setup_player_index]
+        if current_setup_player.name != player_name:
+            log["message"] = f"Not {player_name}'s turn to claim. Current: {current_setup_player.name}"
+            return log
+
+        if territory_name not in gs.unclaimed_territory_names:
+            log["message"] = f"Territory '{territory_name}' is not available or already claimed."
+            return log
+
+        territory = gs.territories.get(territory_name)
+        if not territory: # Should not happen if unclaimed_territory_names is synced with territories
+            log["message"] = f"Territory object for '{territory_name}' not found (internal error)."
+            return log
+
+        if current_setup_player.armies_placed_in_setup >= current_setup_player.initial_armies_pool:
+            log["message"] = f"{player_name} has no more armies in their initial pool to place for claiming."
+            # This implies an issue with initial army counts or logic, as claiming should use 1 army.
+            return log
+
+        territory.owner = current_setup_player
+        territory.army_count = 1
+        current_setup_player.territories.append(territory)
+        current_setup_player.armies_placed_in_setup += 1
+        gs.unclaimed_territory_names.remove(territory_name)
+
+        log["success"] = True
+        log["message"] = f"{player_name} claimed {territory_name}. Armies placed by {player_name}: {current_setup_player.armies_placed_in_setup}/{current_setup_player.initial_armies_pool}."
+
+        # Advance to next player in setup order
+        gs.current_setup_player_index = (gs.current_setup_player_index + 1) % len(gs.player_setup_order)
+
+        if not gs.unclaimed_territory_names: # All territories claimed
+            gs.current_game_phase = "SETUP_PLACE_ARMIES"
+            gs.current_setup_player_index = 0 # Reset for placing remaining armies, starting with first in setup order
+            log["message"] += " All territories claimed. Moving to SETUP_PLACE_ARMIES phase."
+            print("All territories claimed. Phase: SETUP_PLACE_ARMIES")
+
+        return log
+
+    def _all_initial_armies_placed(self) -> bool:
+        """Checks if all players have placed all their initial armies."""
+        return all(p.armies_placed_in_setup >= p.initial_armies_pool for p in self.game_state.players)
+
+    def player_places_initial_army(self, player_name: str, territory_name: str) -> dict:
+        """
+        Allows a player to place one additional army on an owned territory during setup.
+        """
+        gs = self.game_state
+        log = {"event": "place_initial_army", "player": player_name, "territory": territory_name, "success": False, "message": ""}
+
+        if gs.current_game_phase != "SETUP_PLACE_ARMIES":
+            log["message"] = f"Cannot place initial army in phase: {gs.current_game_phase}"
+            return log
+
+        current_setup_player = gs.player_setup_order[gs.current_setup_player_index]
+        if current_setup_player.name != player_name:
+            log["message"] = f"Not {player_name}'s turn to place. Current: {current_setup_player.name}"
+            return log
+
+        territory = gs.territories.get(territory_name)
+        if not territory or territory.owner != current_setup_player:
+            log["message"] = f"Territory '{territory_name}' not found or not owned by {player_name}."
+            return log
+
+        if current_setup_player.armies_placed_in_setup >= current_setup_player.initial_armies_pool:
+            log["message"] = f"{player_name} has no more armies in their initial pool to place."
+            # This player is done placing, but others might not be.
+            # The orchestrator should only offer this action if player has armies left.
+            # We should still advance turn if this state is reached.
+            log["success"] = True # No action taken, but not an error for this player.
+        else:
+            territory.army_count += 1
+            current_setup_player.armies_placed_in_setup += 1
+            log["success"] = True
+            log["message"] = f"{player_name} placed 1 army on {territory_name} (now {territory.army_count}). Total placed by {player_name}: {current_setup_player.armies_placed_in_setup}/{current_setup_player.initial_armies_pool}."
+
+        # Advance to next player in setup order, only if current player successfully placed or had no more to place.
+        if log["success"]:
+            gs.current_setup_player_index = (gs.current_setup_player_index + 1) % len(gs.player_setup_order)
+
+        if self._all_initial_armies_placed():
+            gs.current_game_phase = "REINFORCE" # First game phase after setup
+            try:
+                gs.current_player_index = gs.players.index(gs.first_player_of_game)
+            except ValueError:
+                print(f"Error: First player of game '{gs.first_player_of_game.name if gs.first_player_of_game else 'None'}' not found in players list. Defaulting to index 0.")
+                gs.current_player_index = 0
+
+            first_player_for_turn = gs.get_current_player()
+            if first_player_for_turn:
+                first_player_for_turn.armies_to_deploy = self.calculate_reinforcements(first_player_for_turn)
+                log["message"] += f" All initial armies placed. Game starts! First turn: {first_player_for_turn.name}. Reinforcements: {first_player_for_turn.armies_to_deploy}."
+                print(f"All initial armies placed. Phase: REINFORCE. First player: {first_player_for_turn.name}")
+            else: # Should not happen
+                log["message"] += " All initial armies placed. Game starts! Error finding first player."
+                print("All initial armies placed. Phase: REINFORCE. Error finding first player.")
+
+        return log
 
     def calculate_reinforcements(self, player: Player) -> int:
         """
@@ -155,6 +565,24 @@ class GameEngine:
         # Card trade-in reinforcements are handled by `perform_card_trade` now.
 
         # player.armies_to_deploy += reinforcements # This is done by the caller
+        if player.is_neutral: # Neutral players do not get reinforcements
+            return 0
+
+        # 1. Territories owned
+        num_territories = len(player.territories)
+        reinforcements = max(3, num_territories // 3)
+
+        # 2. Continent bonuses
+        for continent in self.game_state.continents.values():
+            is_owner_of_all = True
+            if not continent.territories:
+                is_owner_of_all = False
+            for territory in continent.territories:
+                if territory.owner != player:
+                    is_owner_of_all = False
+                    break
+            if is_owner_of_all:
+                reinforcements += continent.bonus_armies
         return reinforcements
 
     def _get_card_trade_bonus(self) -> int:
@@ -162,7 +590,6 @@ class GameEngine:
         if self.card_trade_bonus_index < len(self.card_trade_bonuses):
             bonus = self.card_trade_bonuses[self.card_trade_bonus_index]
         else:
-            # After the defined list, bonus increases by 5 each time
             bonus = self.card_trade_bonuses[-1] + (self.card_trade_bonus_index - len(self.card_trade_bonuses) + 1) * 5
         return bonus
 
@@ -315,25 +742,33 @@ class GameEngine:
         log["traded_card_symbols"] = symbols_in_trade
         return log
 
-    def perform_attack(self, attacker_territory_name: str, defender_territory_name: str, num_attacking_armies: int) -> dict:
+    def perform_attack(self, attacker_territory_name: str, defender_territory_name: str, num_attacking_armies: int, explicit_defender_dice_count: int | None = None) -> dict:
         """
         Handles dice rolling logic, army reduction, territory ownership changes,
         and card drawing upon conquering a territory.
+        explicit_defender_dice_count: If provided (e.g., for Neutral player in 2P mode, chosen by other human),
+                                      this exact number of dice will be used for defense if valid.
         Returns a log of the battle's result.
         """
         attacker_territory = self.game_state.territories.get(attacker_territory_name)
         defender_territory = self.game_state.territories.get(defender_territory_name)
         log = {"event": "attack", "attacker": None, "defender": None, "results": [], "conquered": False, "card_drawn": None}
+        gs = self.game_state
 
         # Validations
         if not attacker_territory or not defender_territory:
             log["error"] = "Invalid territory specified."
             return log
 
-        log["attacker"] = attacker_territory.owner.name if attacker_territory.owner else "N/A"
-        log["defender"] = defender_territory.owner.name if defender_territory.owner else "N/A"
+        attacker_player = attacker_territory.owner
+        defender_player = defender_territory.owner # This could be the Neutral player
 
-        if attacker_territory.owner == defender_territory.owner:
+        log["attacker"] = attacker_player.name if attacker_player else "N/A"
+        log["defender"] = defender_player.name if defender_player else "N/A"
+        if defender_player and defender_player.is_neutral:
+            log["defender_is_neutral"] = True
+
+        if attacker_player == defender_player: # Also covers attacking own neutral territories if that were possible
             log["error"] = "Cannot attack your own territory."
             return log
         if defender_territory not in attacker_territory.adjacent_territories:
@@ -346,11 +781,33 @@ class GameEngine:
             log["error"] = f"Invalid number of attacking armies ({num_attacking_armies}). Must be between 1 and {attacker_territory.army_count - 1}."
             return log
 
-        max_attacker_dice = min(3, num_attacking_armies) # Attacker can use at most 3 dice, or fewer if they have fewer armies involved
-        max_defender_dice = min(2, defender_territory.army_count) # Defender can use at most 2 dice
+        # Determine number of defender dice
+        actual_defender_dice_count = 0
+        if explicit_defender_dice_count is not None:
+            # Validate explicit_defender_dice_count against defender's army count
+            if explicit_defender_dice_count == 1 and defender_territory.army_count >= 1:
+                actual_defender_dice_count = 1
+            elif explicit_defender_dice_count == 2 and defender_territory.army_count >= 2:
+                actual_defender_dice_count = 2
+            elif explicit_defender_dice_count > 0 and defender_territory.army_count > 0 : # e.g. chose 2 but only 1 army
+                actual_defender_dice_count = 1 # Default to 1 if choice is invalid but can still defend
+            else: # Choice is 0, or defender has 0 armies
+                actual_defender_dice_count = 0
+            log["defender_dice_choice_is_explicit"] = True
+        else: # Standard calculation
+            if defender_territory.army_count >= 2:
+                actual_defender_dice_count = 2
+            elif defender_territory.army_count == 1:
+                actual_defender_dice_count = 1
+            else:
+                actual_defender_dice_count = 0
+
+        log["actual_defender_dice_count"] = actual_defender_dice_count
+
+        max_attacker_dice = min(3, num_attacking_armies)
 
         attacker_dice_rolls = sorted([random.randint(1, 6) for _ in range(max_attacker_dice)], reverse=True)
-        defender_dice_rolls = sorted([random.randint(1, 6) for _ in range(max_defender_dice)], reverse=True)
+        defender_dice_rolls = sorted([random.randint(1, 6) for _ in range(actual_defender_dice_count)], reverse=True)
 
         log["attacker_rolls"] = attacker_dice_rolls
         log["defender_rolls"] = defender_dice_rolls
@@ -484,11 +941,17 @@ class GameEngine:
 
             # Check if the old owner is eliminated
             if old_owner and not old_owner.territories:
-                log["eliminated_player"] = old_owner.name
-                # Transfer cards from eliminated player to conqueror
+                log["eliminated_player_name"] = old_owner.name # Log name for orchestrator
                 new_owner.hand.extend(old_owner.hand)
                 old_owner.hand.clear()
-                # Note: GameState.players list should be updated by orchestrator if a player is eliminated.
+                log["cards_transferred_count"] = len(new_owner.hand) # Log new hand size for orchestrator
+
+                # Check for mandatory card trade
+                if len(new_owner.hand) >= 6: # As per rule: "If winning them gives you 6 or more cards"
+                    self.game_state.elimination_card_trade_player_name = new_owner.name
+                    log["mandatory_card_trade_initiated"] = new_owner.name
+                # Note: GameState.players list (actual removal of player object) should be updated by orchestrator
+                # after processing the elimination event from this log.
 
         return log
 
@@ -637,76 +1100,147 @@ class GameEngine:
 
     def is_game_over(self) -> Player | None:
         """
-        Checks for the win condition (one player owns all territories).
+        Checks for win conditions:
+        - Standard: One player owns all territories.
+        - 2-Player: One human player eliminates the other human player.
         Returns the winning player or None.
         """
-        if not self.game_state.territories: # No territories, game can't be won
+        gs = self.game_state
+        if not gs.territories:
             return None
 
-        first_owner = None
-        for territory in self.game_state.territories.values():
-            if territory.owner is None: # Unowned territory means game is not over
+        if gs.is_two_player_game:
+            human_players_with_territories = [p for p in gs.players if not p.is_neutral and p.territories]
+            if len(human_players_with_territories) == 1:
+                # The one remaining human player is the winner.
+                # Neutral territories don't need to be conquered.
+                return human_players_with_territories[0]
+            elif not human_players_with_territories: # Should not happen if game ends with one winner
+                print("Error: 2-player game, but no human players with territories found.")
+                return None # Or handle as a draw/error
+            else: # More than one human player still has territories
                 return None
-            if first_owner is None:
-                first_owner = territory.owner
-            elif territory.owner != first_owner: # Different owners means game is not over
-                return None
-        return first_owner # If loop completes, first_owner owns all territories
+        else: # Standard game mode (3-6 players)
+            first_owner = None
+            all_territories_owned_by_one_player = True
+            for territory in gs.territories.values():
+                if territory.owner is None or territory.owner.is_neutral : # Unowned or neutral owned means not over for standard
+                    all_territories_owned_by_one_player = False
+                    break
+                if first_owner is None:
+                    first_owner = territory.owner
+                elif territory.owner != first_owner:
+                    all_territories_owned_by_one_player = False
+                    break
+
+            if all_territories_owned_by_one_player and first_owner:
+                return first_owner # This first_owner is not neutral due to check above
+
+            # Additional check: if only one non-neutral player remains with territories
+            active_non_neutral_players = [p for p in gs.players if not p.is_neutral and p.territories]
+            if len(active_non_neutral_players) == 1:
+                return active_non_neutral_players[0] # This player is the winner by elimination
+
+            return None
 
     def next_turn(self):
         """
         Advances to the next player and resets turn-specific state.
         """
-        if not self.game_state.players:
+        gs = self.game_state
+        if not gs.players:
             return
 
-        current_player = self.game_state.get_current_player()
-        if current_player:
-            # Reset turn-specific flags for the player whose turn is ending
-            current_player.has_fortified_this_turn = False
-            current_player.has_conquered_territory_this_turn = False
-            # armies_to_deploy is reset when new reinforcements are calculated for the next player
+        current_player_obj = gs.get_current_player()
+        if current_player_obj:
+            current_player_obj.has_fortified_this_turn = False
+            current_player_obj.has_conquered_territory_this_turn = False
 
-        active_players = [p for p in self.game_state.players if p.territories] # Only consider players with territories
-        if not active_players:
-            # This case should ideally be handled by is_game_over, but as a safeguard
-            print("Warning: No active players with territories found during next_turn.")
+        # Determine active (non-neutral, territory-holding) players for turn progression
+        active_human_players = [p for p in gs.players if not p.is_neutral and p.territories]
+
+        if not active_human_players:
+            print("Warning: No active human players with territories found during next_turn.")
+            # Game over should be caught by is_game_over, but this is a fallback.
+            # If is_two_player_game, this means one human player eliminated the other.
+            # If not, it means all human players are eliminated (e.g. by some other logic or error).
             return
 
-        # Find the index of the current player in the list of active players
-        try:
-            current_active_player_idx = active_players.index(current_player)
-            next_active_player_idx = (current_active_player_idx + 1) % len(active_players)
-            next_player_overall_idx = self.game_state.players.index(active_players[next_active_player_idx])
-        except ValueError: # Current player might have been eliminated
-            # Default to the first active player if current player is not found (e.g. eliminated)
-            # Or, if the list of players was modified, find the one after the last recorded index.
-            # This logic might need refinement based on how player elimination is handled by the orchestrator.
-            # For now, a simple wrap around on the original player list, then find the next active one.
+        if len(active_human_players) == 1 and gs.is_two_player_game:
+            # Game over condition for 2-player game is handled by is_game_over
+            print(f"Next_turn called when only one human player ({active_human_players[0].name}) remains in 2P game. Game should be over.")
+            return
 
-            # A robust way is to find the next player in self.game_state.players who is still active
-            start_idx = (self.game_state.current_player_index + 1) % len(self.game_state.players)
-            for i in range(len(self.game_state.players)):
-                check_idx = (start_idx + i) % len(self.game_state.players)
-                if self.game_state.players[check_idx] in active_players:
-                    next_player_overall_idx = check_idx
-                    break
-            else: # Should not happen if there's at least one active player
-                print("Error finding next active player.")
+
+        next_player_found = False
+        original_player_count = len(gs.players) # Total players including neutral
+
+        for i in range(1, original_player_count + 1):
+            next_potential_idx = (gs.current_player_index + i) % original_player_count
+            potential_next_player = gs.players[next_potential_idx]
+
+            if not potential_next_player.is_neutral and potential_next_player in active_human_players:
+                # Check if we wrapped around to the start of the active human player list
+                # This is a simplified way to detect a new round for turn counting
+                # More robust: compare new index to old index relative to active_human_players
+
+                # If the new index is less than or equal to the old index (after wrapping), it's a new round for turn counting.
+                # This needs to be careful if players are eliminated.
+                # A simpler way for turn counting: if the new current_player_index (overall list)
+                # means we passed the original first_player_of_game or index 0.
+                # Let's count a new turn if the chosen next_potential_idx is 0 (or index of first_player_of_game)
+                # AND it's not the same player starting again immediately (e.g. single player left).
+
+                old_overall_idx = gs.current_player_index
+                gs.current_player_index = next_potential_idx
+
+                # Check if this constitutes a full round of active human players
+                # This is tricky if active_human_players list changes due to elimination
+                # A simpler check: if the new player index is less than the old one (after modulo),
+                # it often means a new round for turn counting.
+                # Or, if the new player is the very first player in the overall list of human players.
+                first_human_player_overall_idx = -1
+                for idx, p_obj in enumerate(gs.players):
+                    if not p_obj.is_neutral:
+                        first_human_player_overall_idx = idx
+                        break
+
+                if gs.current_player_index == first_human_player_overall_idx and gs.current_player_index != old_overall_idx :
+                     gs.current_turn_number += 1
+
+                next_player_found = True
+                break
+
+        if not next_player_found:
+            # This should not happen if there's at least one active human player.
+            # Could mean current_player_index was pointing at Neutral and loop didn't find next human.
+            # Try to reset to the first active human player.
+            if active_human_players:
+                try:
+                    gs.current_player_index = gs.players.index(active_human_players[0])
+                    print(f"Warning: Next player not found by iteration, reset to first active human: {active_human_players[0].name}")
+                except ValueError:
+                    print("Error: Could not find first active human player in main player list after next_turn error.")
+                    return # Critical error
+            else: # No active human players, game should be over.
+                print("Error: No next player found and no active human players.")
                 return
 
 
-        self.game_state.current_player_index = next_player_overall_idx
+        gs.current_game_phase = "REINFORCE"
+        new_current_player_obj = gs.get_current_player() # This should now be a non-neutral, active player
 
-        if self.game_state.current_player_index == 0: # Wrapped around to the first player
-             self.game_state.current_turn_number += 1
+        if new_current_player_obj:
+            if new_current_player_obj.is_neutral: # Should not happen if logic above is correct
+                print(f"CRITICAL ERROR in next_turn: New current player {new_current_player_obj.name} is Neutral.")
+                # Attempt recovery: find next non-neutral.
+                # This indicates a flaw in the player iteration logic above.
+                # For now, let the game proceed, but this needs fixing.
+            else:
+                new_current_player_obj.armies_to_deploy = self.calculate_reinforcements(new_current_player_obj)
+        else:
+            print("CRITICAL ERROR in next_turn: No current player after advancing turn.")
 
-        self.game_state.current_game_phase = "REINFORCE"
-
-        # New current player calculates reinforcements for their turn
-        new_current_player = self.game_state.get_current_player()
-        if new_current_player:
-            new_current_player.armies_to_deploy = self.calculate_reinforcements(new_current_player)
 
     def get_valid_actions(self, player: Player) -> list:
         """
@@ -716,45 +1250,131 @@ class GameEngine:
         # This will be a complex function depending on the game phase and state.
         # For now, returning a generic list.
         actions = []
-        phase = self.game_state.current_game_phase
+        gs = self.game_state
+        phase = gs.current_game_phase
 
-        # Check for mandatory post-attack fortification first, as this takes precedence.
-        if self.game_state.requires_post_attack_fortify and self.game_state.conquest_context:
-            context = self.game_state.conquest_context
-            # Only POST_ATTACK_FORTIFY actions are allowed at this point.
-            # The AI needs to decide how many armies to move, from min_movable to max_movable.
-            # The action should allow specifying any number in this range.
-            if context["max_movable"] > 0 : # Only if there are armies that *can* be moved
-                actions.append({
-                    "type": "POST_ATTACK_FORTIFY",
-                    "from_territory": context["from_territory_name"], # Attacking territory
-                    "to_territory": context["to_territory_name"],     # Newly conquered territory
-                    "min_armies": context["min_movable"],
-                    "max_armies": context["max_movable"],
-                    # The AI will select "num_armies" in its chosen action.
-                })
-            else: # No armies can be moved (e.g. attacking territory has only 1 after battle, or all attackers died but somehow still won)
-                  # This case implies something might be off, or it's an edge case where 0 armies are moved.
-                  # The perform_post_attack_fortify will still be called (with 0 armies if AI chooses that).
-                  # Or we can force it to "complete" by providing a "skip" or "confirm_zero_move" type action.
-                  # For now, if max_movable is 0, min_movable will also be 0.
-                  # The AI should choose to move 0 armies.
+        # Check for mandatory post-elimination card trade first. This overrides other actions.
+        if gs.elimination_card_trade_player_name == player.name:
+            if len(player.hand) <= 4: # Target is 4 or fewer cards
+                gs.elimination_card_trade_player_name = None # Requirement met
+                # Fall through to regular actions for the current phase (e.g. post_attack_fortify or attack)
+            else:
+                valid_card_sets = self.find_valid_card_sets(player)
+                if not valid_card_sets:
+                    # Player has > 4 cards but no sets to trade. This is an edge case.
+                    # As per rules "once your hand is reduced to 4,3, or 2 cards, you must stop trading."
+                    # If they have 5 with no sets, they can't reduce further.
+                    # If they have 6+ with no sets, this is problematic. For now, assume they can always make sets if >4.
+                    # If they truly cannot make sets to get to 4 or less, the flag should be cleared.
+                    # This logic implies: if len(player.hand) >= 5 and no sets, then this state is problematic.
+                    # For now, if no sets, they can't trade, so clear the flag.
+                    # The rule "reduce your hand to 4 or fewer cards" implies you trade *if possible*.
+                    # "But once your hand is reduced to 4, 3, or 2 cards, you must stop trading."
+                    # This means if you have 5 cards and make a trade, you get to 2 + new armies.
+                    # If you have 5 cards and CANNOT make a trade, you stop.
+                    if len(player.hand) >=5 and not valid_card_sets: # Cannot make a trade to reduce hand
+                         gs.elimination_card_trade_player_name = None # Consider requirement met as impossible to proceed
+                    # Fall through to regular actions.
+                else: # Has sets and must trade
+                    for card_set in valid_card_sets:
+                        card_indices_in_hand = [player.hand.index(c) for c in card_set if c in player.hand]
+                        if len(card_indices_in_hand) == 3:
+                            actions.append({
+                                "type": "TRADE_CARDS",
+                                "card_indices": sorted(card_indices_in_hand),
+                                "must_trade": True, # This is a mandatory trade due to elimination
+                                "reason": "Post-elimination mandatory trade"
+                            })
+                    if actions: # Only trade actions are allowed
+                        return actions
+                    else: # No valid sets found, despite hand > 4. Clear flag.
+                        gs.elimination_card_trade_player_name = None
+                        # Fall through to regular actions.
+
+        # Check for mandatory post-attack fortification next, as this takes precedence over other phase actions.
+        if gs.requires_post_attack_fortify and gs.conquest_context:
+            context = gs.conquest_context
+            if context["max_movable"] >= 0 : # Allow 0 move if that's the only option
                 actions.append({
                     "type": "POST_ATTACK_FORTIFY",
                     "from_territory": context["from_territory_name"],
                     "to_territory": context["to_territory_name"],
-                    "min_armies": 0,
-                    "max_armies": 0,
+                    "min_armies": context["min_movable"],
+                    "max_armies": context["max_movable"],
                 })
+            # If max_movable is < 0 (should not happen), no valid PAF action.
+            # This implies an issue in conquest_context setup.
+            # If actions list is empty here, orchestrator might need to auto-resolve PAF.
+            return actions # Return immediately, only PAF is valid.
 
-            # If no valid POST_ATTACK_FORTIFY actions could be generated (e.g. max_movable is 0 and we didn't add the above)
-            # OR if the only option is to move 0, the game should proceed.
-            # The current logic will provide an action for 0 move. The orchestrator will call perform_post_attack_fortify.
-            # That method will then clear requires_post_attack_fortify.
-            return actions # Return immediately, no other actions are valid.
+        # Handle 2-Player Specific Setup Phases first
+        if gs.is_two_player_game:
+            if phase == "SETUP_2P_DEAL_CARDS":
+                # This is an automatic engine step triggered by orchestrator, no player actions.
+                return [{"type": "AUTO_SETUP_2P_DEAL_CARDS"}] # Orchestrator will call specific engine method
+
+            if phase == "SETUP_2P_PLACE_REMAINING":
+                if player.is_neutral: return [] # Neutral player doesn't act
+
+                armies_left_in_player_pool = player.initial_armies_pool - player.armies_placed_in_setup
+                can_place_own = armies_left_in_player_pool > 0
+
+                neutral_player = next((p for p in gs.players if p.is_neutral), None)
+                can_place_neutral = neutral_player and neutral_player.armies_placed_in_setup < neutral_player.initial_armies_pool
+
+                if not can_place_own and not can_place_neutral: # Player and Neutral are done
+                    # This state means this player has no more armies, and neutral has no more.
+                    # Orchestrator should detect if all players are done.
+                    # For this player, they effectively pass.
+                    return [{"type": "SETUP_2P_DONE_PLACING"}] # Signal this player is done
+
+                # Action structure for 2P remaining placement:
+                # The AI needs to choose 2 armies for itself and 1 for neutral (if possible)
+                # This is complex for a single action.
+                # Alternative: Orchestrator asks for player's 2 armies, then asks for neutral placement.
+                # For now, let's generate a composite action type that orchestrator will parse.
+                action_template = {
+                    "type": "SETUP_2P_PLACE_ARMIES_TURN",
+                    "player_can_place_own": can_place_own,
+                    "player_armies_to_place_this_turn": min(2, armies_left_in_player_pool) if can_place_own else 0,
+                    "player_owned_territories": [t.name for t in player.territories],
+                    "neutral_can_place": can_place_neutral,
+                    "neutral_owned_territories": [t.name for t in neutral_player.territories] if neutral_player else []
+                }
+                actions.append(action_template)
+                return actions
+
+        # Standard Setup Phases (not 2-player specific card dealing/placing)
+        if phase == "SETUP_DETERMINE_ORDER":
+            # Usually handled by orchestrator rolling dice, then calling set_player_setup_order.
+            # No direct player actions here, more of an orchestrator state.
+            return [{"type": "AWAIT_SETUP_ORDER"}]
+
+        if phase == "SETUP_CLAIM_TERRITORIES":
+            if player.is_neutral: return [] # Should not happen if setup_order is correct
+            if gs.unclaimed_territory_names:
+                for terr_name in gs.unclaimed_territory_names:
+                     actions.append({"type": "SETUP_CLAIM", "territory": terr_name})
+            return actions
+
+        if phase == "SETUP_PLACE_ARMIES": # Standard setup
+            if player.is_neutral: return []
+            if player.armies_placed_in_setup < player.initial_armies_pool:
+                for territory in player.territories:
+                    actions.append({
+                        "type": "SETUP_PLACE_ARMY",
+                        "territory": territory.name,
+                        "armies_left_in_pool": player.initial_armies_pool - player.armies_placed_in_setup
+                        })
+            else: # Player is done placing their initial armies
+                 actions.append({"type": "SETUP_STANDARD_DONE_PLACING"})
+            return actions
+
+        # Regular Game Phases - ensure neutral player doesn't act
+        if player.is_neutral:
+            return []
 
         if phase == "REINFORCE":
-            # Valid deploy actions: (territory_name, num_armies)
             # Option to trade cards
             # Player must trade cards if they have 5 or more.
             # Otherwise, they can choose to trade if they have a valid set.

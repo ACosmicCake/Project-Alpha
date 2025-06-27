@@ -30,32 +30,34 @@ class GameOrchestrator:
         self.setup_gui()
 
         self.ai_agents: dict[str, BaseAIAgent] = {}
-        self.player_map: dict[GamePlayer, BaseAIAgent] = {}
+        self.player_map: dict[GamePlayer, BaseAIAgent] = {} # Maps GamePlayer objects to their AI agents
+        self.is_two_player_mode: bool = False # Will be set in _load_player_setup
 
         # Attributes for asynchronous AI calls - INITIALIZE THEM HERE
         self.ai_is_thinking: bool = False
         self.current_ai_thread: threading.Thread | None = None
         self.ai_action_result: dict | None = None
-        self.active_ai_player_name: str | None = None
-        self.current_ai_context: dict | None = None
+        self.active_ai_player_name: str | None = None # Name of the player whose AI is thinking
+        self.current_ai_context: dict | None = None # Context for the current AI call
         self.has_logged_ai_is_thinking_for_current_action: bool = False
-        self.has_logged_current_turn_player_phase: bool = False
+        self.has_logged_current_turn_player_phase: bool = False # For logging headers
 
-        # Load player configurations: either from override or from file
-        self._load_player_setup(player_configs_override, default_player_setup_file)
+        # Load player configurations: this will populate self.engine.game_state.players
+        # and also determine self.is_two_player_mode
+        human_player_configs = self._load_player_setup(player_configs_override, default_player_setup_file)
 
-        # Ensure players list is populated before initializing the board
-        if not self.engine.game_state.players:
-            print("Critical Error: No players were loaded or configured. Cannot initialize board.")
-            # Potentially raise an error here or handle more gracefully
-            # For now, if _load_player_setup failed to populate, this will be an issue.
-            # The _load_player_setup should ideally raise an error if it ends with no players.
-            raise ValueError("Player setup resulted in no players.")
+        if not human_player_configs: # _load_player_setup should raise error if this happens
+             raise ValueError("Player setup resulted in no human player configurations.")
 
+        # Initialize the game board in the engine
+        # The engine will internally create a Neutral player if is_two_player_mode is True.
+        self.engine.initialize_game_from_map(
+            players_data=[{"name": p.name, "color": p.color} for p in human_players], # Pass only human player data
+            is_two_player_game=self.is_two_player_mode
+        )
 
-        players_data_for_engine = [{"name": p.name, "color": p.color} for p in self.engine.game_state.players]
-        self.engine.initialize_board(players_data=players_data_for_engine)
-
+        # After engine initializes players (including Neutral if 2P), map all to AI agents
+        # The Neutral player won't have an AI agent in self.ai_agents, so player_map will skip it.
         self._map_game_players_to_ai_agents()
 
         self.game_rules = GAME_RULES_SNIPPET
@@ -106,128 +108,149 @@ class GameOrchestrator:
              self._update_gui_full_state()
 
 
-    def _load_player_setup(self, player_configs_override: list | None, default_player_setup_file: str):
-        final_player_configs = []
+    def _load_player_setup(self, player_configs_override: list | None, default_player_setup_file: str) -> list[GamePlayer]:
+        """
+        Loads player configurations, creates AI agents, and determines game mode (2-player or standard).
+        Returns a list of human GamePlayer objects created.
+        The actual Player objects in self.engine.game_state (including Neutral for 2P)
+        will be created by self.engine.initialize_game_from_map().
+        """
+        loaded_player_configs = []
         if player_configs_override is not None and isinstance(player_configs_override, list) and player_configs_override:
-            print(f"Using player configurations provided by override (e.g., console input). Count: {len(player_configs_override)}")
-            final_player_configs = player_configs_override
+            print(f"Using player configurations provided by override. Count: {len(player_configs_override)}")
+            loaded_player_configs = player_configs_override
         else:
             print(f"No valid player override. Attempting to load from default setup file: '{default_player_setup_file}'")
             try:
                 with open(default_player_setup_file, 'r') as f:
-                    final_player_configs = json.load(f)
-                print(f"Successfully loaded player configurations from '{default_player_setup_file}'. Count: {len(final_player_configs)}")
+                    loaded_player_configs = json.load(f)
+                print(f"Successfully loaded player configurations from '{default_player_setup_file}'. Count: {len(loaded_player_configs)}")
             except FileNotFoundError:
-                print(f"Warning: Default player setup file '{default_player_setup_file}' not found. Using hardcoded default AI setup.")
-                final_player_configs = [
-                    {"name": "PlayerA (Gemini)", "color": "Red", "ai_type": "Gemini"},
-                    {"name": "PlayerB (OpenAI)", "color": "Blue", "ai_type": "OpenAI"}
-                ] # Simplified default for when file is missing
-                # Optionally, try to write this default back to default_player_setup_file
+                print(f"Warning: Default player setup file '{default_player_setup_file}' not found. Using 2-player default AI setup.")
+                loaded_player_configs = [
+                    {"name": "P1-Gemini", "color": "Red", "ai_type": "Gemini"},
+                    {"name": "P2-OpenAI", "color": "Blue", "ai_type": "OpenAI"}
+                ]
                 try:
-                    with open(default_player_setup_file, 'w') as f:
-                        json.dump(final_player_configs, f, indent=2)
+                    with open(default_player_setup_file, 'w') as f: json.dump(loaded_player_configs, f, indent=2)
                     print(f"Created default player setup file '{default_player_setup_file}' with 2 players.")
-                except IOError:
-                    print(f"Could not write default player setup file '{default_player_setup_file}'.")
+                except IOError: print(f"Could not write default player setup file '{default_player_setup_file}'.")
             except json.JSONDecodeError:
-                print(f"Error: Could not decode JSON from '{default_player_setup_file}'. Using hardcoded default.")
-                final_player_configs = [ # Fallback if JSON is corrupt
-                    {"name": "PlayerX (Gemini)", "color": "Red", "ai_type": "Gemini"},
-                    {"name": "PlayerY (OpenAI)", "color": "Blue", "ai_type": "OpenAI"}
+                print(f"Error: Could not decode JSON from '{default_player_setup_file}'. Using 2-player hardcoded default.")
+                loaded_player_configs = [
+                    {"name": "PX-Gemini", "color": "Red", "ai_type": "Gemini"},
+                    {"name": "PY-OpenAI", "color": "Blue", "ai_type": "OpenAI"}
                 ]
 
+        if not loaded_player_configs:
+            raise ValueError("Player configurations are empty after attempting to load.")
 
-        if not final_player_configs: # Should not happen if defaults are set, but as a safeguard
-            print("Critical: No player configurations loaded or defined. Cannot proceed.")
-            raise ValueError("Player configurations are empty.")
+        self.ai_agents.clear() # Clear any previous agents
+        human_game_players_for_engine = [] # Store GamePlayer stubs for engine init
 
-        # Clear existing players before loading new ones, if any (e.g. re-init)
-        self.engine.game_state.players.clear()
-        self.ai_agents.clear()
+        # Determine game mode based on number of human player configs
+        if len(loaded_player_configs) == 2:
+            self.is_two_player_mode = True
+            print("2-Player mode detected based on configuration.")
+        elif len(loaded_player_configs) >= 3 and len(loaded_player_configs) <= 6:
+            self.is_two_player_mode = False
+            print(f"{len(loaded_player_configs)}-Player standard mode detected.")
+        else:
+            raise ValueError(f"Invalid number of player configurations: {len(loaded_player_configs)}. Must be 2 (for 2-player mode) or 3-6 (for standard mode).")
 
-        # Keep track of default colors if none are provided in config
         default_colors = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange"]
-        color_index = 0
+        used_colors = set()
 
-        for i, config in enumerate(final_player_configs):
-            # Generate player name automatically
-            player_name = f"Player {i + 1}"
+        for i, config in enumerate(loaded_player_configs):
+            player_name = config.get("name", f"Player{i+1}") # Use configured name or generate
 
-            # Use color from config if available, otherwise assign a default color
             player_color = config.get("color")
-            if not player_color:
-                if color_index < len(default_colors):
-                    player_color = default_colors[color_index]
-                    color_index += 1
-                else:
-                    # Fallback if more players than default colors (e.g., assign by number or cycle)
-                    player_color = default_colors[color_index % len(default_colors)]
-                    color_index += 1
-                print(f"Warning: Player config for original name '{config.get('name', 'N/A')}' missing 'color'. Assigning default color '{player_color}' to '{player_name}'.")
+            if not player_color or player_color.lower() in used_colors:
+                # Find next available default color
+                found_color = False
+                for c in default_colors:
+                    if c.lower() not in used_colors:
+                        player_color = c
+                        found_color = True
+                        break
+                if not found_color: # All defaults used, cycle with numbers
+                    player_color = f"{default_colors[i % len(default_colors)]}{i // len(default_colors) + 1}"
+                print(f"Assigned color '{player_color}' to player '{player_name}'.")
+            used_colors.add(player_color.lower())
 
-            ai_type = config.get("ai_type", "Gemini") # Default to Gemini if not specified
+            ai_type = config.get("ai_type", "Gemini")
 
-            # Duplicate name check is inherently handled by generating Player {i+1}
-            # However, we still need to ensure the GamePlayer object is created correctly.
-
-            game_player_obj = GamePlayer(name=player_name, color=player_color)
-            self.engine.game_state.players.append(game_player_obj)
+            # Create GamePlayer stub for engine (engine creates the actual objects)
+            # This list `human_game_players_for_engine` will only contain human players.
+            # The engine will add the Neutral player itself in 2P mode.
+            human_game_players_for_engine.append(GamePlayer(name=player_name, color=player_color))
 
             agent: BaseAIAgent | None = None
-            # When creating agents, use the new player_name for consistency
             if ai_type == "Gemini": agent = GeminiAgent(player_name, player_color)
             elif ai_type == "OpenAI": agent = OpenAIAgent(player_name, player_color)
             elif ai_type == "Claude": agent = ClaudeAgent(player_name, player_color)
             elif ai_type == "DeepSeek": agent = DeepSeekAgent(player_name, player_color)
-            # Add "Human" type here if you have a HumanAgent class
-            # elif ai_type == "Human": agent = HumanAgent(player_name, player_color, self.gui if self.gui else None) # Example if HumanAgent needs GUI
             else:
-                print(f"Warning: Unknown AI type '{ai_type}' for player {player_name} (original config: {config.get('name', 'N/A')}). Defaulting to Gemini.")
-                agent = GeminiAgent(player_name, player_color) # Fallback
+                print(f"Warning: Unknown AI type '{ai_type}' for player {player_name}. Defaulting to Gemini.")
+                agent = GeminiAgent(player_name, player_color)
 
             if agent:
                 self.ai_agents[player_name] = agent
-            else: # Should not happen with current logic unless agent creation fails for other reasons
-                print(f"Critical: Could not create agent for {player_name} with type {ai_type}.")
+            else:
+                raise ValueError(f"Could not create AI agent for {player_name} with type {ai_type}.")
 
+        print(f"Player setup complete. Loaded {len(human_game_players_for_engine)} human players. Two player mode: {self.is_two_player_mode}")
+        return human_game_players_for_engine
 
-        if len(self.engine.game_state.players) < 2 :
-            # This check is important. If after all loading, we don't have enough players.
-            print(f"Error: At least two players are required to start the game. Loaded {len(self.engine.game_state.players)} players.")
-            # Consider what to do here - raise error, or try to add default players again?
-            # For now, raising an error is probably best to indicate a setup problem.
-            raise ValueError(f"Insufficient players configured. Need at least 2, got {len(self.engine.game_state.players)}.")
-
-        print(f"Player setup complete. Loaded {len(self.engine.game_state.players)} players.")
 
     def _map_game_players_to_ai_agents(self):
+        """Maps GamePlayer objects (created by engine) to their corresponding AI agents."""
         self.player_map.clear()
         if not self.engine.game_state.players:
-            print("Warning: No players in game_state to map to AI agents.")
+            print("Warning: No players in game_state to map to AI agents (called from _map_game_players_to_ai_agents).")
             return
 
         for gp in self.engine.game_state.players:
+            if gp.is_neutral: # Neutral player does not have an AI agent
+                continue
             if gp.name in self.ai_agents:
                 self.player_map[gp] = self.ai_agents[gp.name]
             else:
-                # This indicates a mismatch between players defined in game_state and AI agents created.
-                # This should ideally not happen if _load_player_setup and subsequent logic is correct.
-                print(f"Critical Error: GamePlayer {gp.name} from engine does not have a corresponding AI agent. AI Agents: {list(self.ai_agents.keys())}")
-                # Potentially raise an error or try to create a default agent for robustness,
-                # but this points to a deeper setup issue.
-                # For now, just print error. The game might fail later if an agent is None.
-                # raise ValueError(f"Mismatch: GamePlayer {gp.name} has no AI agent.")
+                print(f"Critical Error: Human GamePlayer {gp.name} from engine does not have a corresponding AI agent. AI Agents: {list(self.ai_agents.keys())}")
+                # This implies a mismatch between player names in configs and those used by engine, or an issue in agent creation.
+                # Raise error as this will break gameplay.
+                raise ValueError(f"Mismatch: GamePlayer {gp.name} has no AI agent.")
+        print(f"Mapped {len(self.player_map)} GamePlayer objects to AI agents.")
+
+
+    def get_agent_for_player(self, player_obj: GamePlayer) -> BaseAIAgent | None:
+        """Gets the AI agent for a given GamePlayer object."""
+        if player_obj is None or player_obj.is_neutral:
+            return None
+        return self.player_map.get(player_obj)
+
 
     def get_agent_for_current_player(self) -> BaseAIAgent | None:
-        current_game_player = self.engine.game_state.get_current_player()
-        if current_game_player and current_game_player in self.player_map:
-            return self.player_map[current_game_player]
-        elif current_game_player:
-            print(f"Error: No AI agent mapped for current GamePlayer: {current_game_player.name}")
-        else:
-            print("Error: No current player in game state.")
+        # This method now needs to handle setup phases where current player might be from player_setup_order
+        gs = self.engine.game_state
+        current_phase = gs.current_game_phase
+
+        acting_player_obj: GamePlayer | None = None
+
+        if current_phase in ["SETUP_CLAIM_TERRITORIES", "SETUP_PLACE_ARMIES"] and not gs.is_two_player_game:
+            acting_player_obj = gs.get_current_setup_player()
+        elif current_phase == "SETUP_2P_PLACE_REMAINING" and gs.is_two_player_game:
+            acting_player_obj = gs.get_current_setup_player() # This will be one of the two human players
+        elif current_phase not in ["SETUP_START", "SETUP_DETERMINE_ORDER", "SETUP_2P_DEAL_CARDS"]: # Regular game turn
+            acting_player_obj = gs.get_current_player()
+
+        if acting_player_obj:
+            return self.get_agent_for_player(acting_player_obj)
+
+        # If in a phase without a current acting player (e.g., SETUP_START) or error
+        # print(f"get_agent_for_current_player: No specific acting player in phase {current_phase} or acting_player_obj is None.")
         return None
+
 
     def _update_gui_full_state(self):
         """Helper to call GUI update with all necessary data."""
@@ -260,47 +283,419 @@ class GameOrchestrator:
                 running = self.advance_game_turn()
         print("GameOrchestrator.run_game() finished.")
 
+
+    # --- Setup Phase Handlers ---
+    def _handle_setup_determine_order(self) -> bool:
+        """Handles logic for SETUP_DETERMINE_ORDER phase (standard game)."""
+        gs = self.engine.game_state
+        self.log_turn_info("Phase: SETUP_DETERMINE_ORDER")
+        if gs.is_two_player_game: # Should not be in this phase for 2P
+            self.log_turn_info("Error: SETUP_DETERMINE_ORDER called in 2-player mode. Advancing to 2P card dealing.")
+            gs.current_game_phase = "SETUP_2P_DEAL_CARDS"
+            return True # Continue to next state processing
+
+        # Simulate dice rolls to determine order (TODO: Involve AI if players were human and rolled)
+        # For now, use current player list order, P0 is first.
+        human_players = [p for p in gs.players if not p.is_neutral]
+        if not human_players:
+            self.log_turn_info("No human players to determine order for. Error.")
+            return False # Stop game
+
+        # Simple order: current order of human_players in gs.players
+        ordered_player_names = [p.name for p in human_players]
+        first_placer_name = human_players[0].name # First player in list places first army & gets first game turn
+
+        success = self.engine.set_player_setup_order(ordered_player_names, first_placer_name)
+        if not success:
+            self.log_turn_info("Failed to set player setup order in engine. Halting.")
+            return False
+
+        self.log_turn_info(f"Player setup order determined: {ordered_player_names}. First placer & first turn: {first_placer_name}.")
+        self.has_logged_current_turn_player_phase = False # Allow new phase header
+        return True # Phase changed, continue processing
+
+    def _get_current_setup_player_and_agent(self) -> tuple[GamePlayer | None, BaseAIAgent | None]:
+        gs = self.engine.game_state
+        current_setup_player_obj = gs.get_current_setup_player()
+        if not current_setup_player_obj:
+            self.log_turn_info(f"Error: No current setup player in phase {gs.current_game_phase}")
+            return None, None
+
+        current_setup_agent = self.get_agent_for_player(current_setup_player_obj)
+        if not current_setup_agent:
+            # This could happen if a human player is configured without a valid AI type
+            # Or if a neutral player somehow becomes the setup player (should be prevented)
+            self.log_turn_info(f"Error: No AI agent for current setup player {current_setup_player_obj.name}. Skipping their setup turn.")
+            # To prevent game from stalling, advance setup player index in engine directly (if possible)
+            # This is a hack; proper error handling or player skipping logic is needed in engine or here.
+            # For now, just log and the game might stall if AI is expected.
+            return current_setup_player_obj, None
+        return current_setup_player_obj, current_setup_agent
+
+    def _handle_setup_claim_territories(self) -> bool:
+        """Handles logic for SETUP_CLAIM_TERRITORIES phase (standard game)."""
+        gs = self.engine.game_state
+        if gs.is_two_player_game: # Should not be here
+            gs.current_game_phase = "SETUP_2P_DEAL_CARDS"; return True
+
+        if not gs.unclaimed_territory_names: # Should have been caught by engine transitioning phase
+            self.log_turn_info("All territories claimed, but phase is still SETUP_CLAIM_TERRITORIES. Engine should have transitioned.")
+            gs.current_game_phase = "SETUP_PLACE_ARMIES" # Force transition
+            self.engine.game_state.current_setup_player_index = 0 # Reset for next phase
+            return True
+
+        if self.ai_is_thinking: return True # AI is busy for this phase
+
+        # If AI has finished, process its action
+        if self.ai_action_result:
+            action_to_process = self.ai_action_result
+            self.ai_action_result = None # Clear it
+            player_name_who_acted = self.active_ai_player_name
+            self.active_ai_player_name = None # Clear active AI
+
+            action = action_to_process.get("action")
+            if action and action.get("type") == "SETUP_CLAIM":
+                territory_name = action.get("territory")
+                log = self.engine.player_claims_territory(player_name_who_acted, territory_name)
+                self.log_turn_info(f"{player_name_who_acted} claims {territory_name}: {log['message']}")
+                if not log["success"]:
+                    self.log_turn_info(f"Claim by {player_name_who_acted} for {territory_name} failed. AI may need to retry if phase hasn't changed.")
+                    # AI will be re-prompted if phase is still SETUP_CLAIM_TERRITORIES
+            else:
+                self.log_turn_info(f"Invalid action from {player_name_who_acted} during SETUP_CLAIM: {action}. Will re-prompt.")
+
+            self._update_gui_full_state()
+            self.has_logged_current_turn_player_phase = False # Allow new phase header if phase changed
+            return True # Continue processing, potentially re-prompting or moving to next phase
+
+        # If AI is not thinking and no result to process, initiate AI action
+        current_setup_player_obj, current_setup_agent = self._get_current_setup_player_and_agent()
+        if not current_setup_player_obj or not current_setup_agent:
+             self.log_turn_info("No current setup player/agent for claiming. Game might stall.")
+             return False # Stall or error
+
+        if not self.has_logged_current_turn_player_phase: # Log only once per actual player's turn part
+            self.log_turn_info(f"Phase: SETUP_CLAIM_TERRITORIES - {current_setup_player_obj.name}'s turn to claim.")
+            self.has_logged_current_turn_player_phase = True
+
+        valid_actions = self.engine.get_valid_actions(current_setup_player_obj)
+        if not valid_actions: # Should not happen if territories are still unclaimed
+            self.log_turn_info(f"No valid claim actions for {current_setup_player_obj.name}, but territories remain. Engine state: {gs.unclaimed_territory_names}")
+            # This might mean engine correctly moved to next phase if all claimed by others before this player's turn in a loop
+            if not gs.unclaimed_territory_names: gs.current_game_phase = "SETUP_PLACE_ARMIES"; self.engine.game_state.current_setup_player_index = 0
+            return True
+
+        prompt_add = f"It's your turn to claim a territory. Choose one from the list."
+        self._execute_ai_turn_async(current_setup_agent, gs.to_json(), valid_actions, self.game_rules, prompt_add)
+        return True # AI is now thinking
+
+    def _handle_setup_place_armies(self) -> bool:
+        """Handles logic for SETUP_PLACE_ARMIES phase (standard game)."""
+        gs = self.engine.game_state
+        if gs.is_two_player_game: # Should not be here
+            gs.current_game_phase = "SETUP_2P_DEAL_CARDS"; return True
+
+        if self.engine._all_initial_armies_placed(): # Should have been caught by engine
+            gs.current_game_phase = "REINFORCE" # Should be set by engine
+            self.log_turn_info("All initial armies placed, but phase is still SETUP_PLACE_ARMIES. Engine should have transitioned.")
+            # Ensure first player is set for REINFORCE
+            if gs.first_player_of_game:
+                 try: gs.current_player_index = gs.players.index(gs.first_player_of_game)
+                 except ValueError: gs.current_player_index = 0 # Fallback
+                 # Calculate initial reinforcements for the actual first player
+                 first_game_player = gs.get_current_player()
+                 if first_game_player: first_game_player.armies_to_deploy = self.engine.calculate_reinforcements(first_game_player)
+            return True
+
+        if self.ai_is_thinking: return True
+
+        if self.ai_action_result:
+            action_to_process = self.ai_action_result
+            self.ai_action_result = None
+            player_name_who_acted = self.active_ai_player_name
+            self.active_ai_player_name = None
+
+            action = action_to_process.get("action")
+            if action and action.get("type") == "SETUP_PLACE_ARMY":
+                territory_name = action.get("territory")
+                log = self.engine.player_places_initial_army(player_name_who_acted, territory_name)
+                self.log_turn_info(f"{player_name_who_acted} places army on {territory_name}: {log['message']}")
+            elif action and action.get("type") == "SETUP_STANDARD_DONE_PLACING":
+                self.log_turn_info(f"{player_name_who_acted} is done placing initial armies (or has no more to place).")
+                # Engine will advance current_setup_player_index when player_places_initial_army is called,
+                # even if player had no armies left. Orchestrator just needs to keep calling for next player.
+            else:
+                self.log_turn_info(f"Invalid action from {player_name_who_acted} during SETUP_PLACE_ARMIES: {action}")
+
+            self._update_gui_full_state()
+            self.has_logged_current_turn_player_phase = False
+            return True
+
+        current_setup_player_obj, current_setup_agent = self._get_current_setup_player_and_agent()
+        if not current_setup_player_obj : # Agent can be none if we decide to auto-place for some.
+             self.log_turn_info("No current setup player for placing armies. Game might stall if not all armies placed.")
+             return False if not self.engine._all_initial_armies_placed() else True # If all placed, allow phase change.
+
+        if current_setup_player_obj.armies_placed_in_setup >= current_setup_player_obj.initial_armies_pool:
+            # This player is done, engine will advance. We just need to re-trigger the loop for the next player.
+            self.log_turn_info(f"{current_setup_player_obj.name} has placed all initial armies. Orchestrator cycling.")
+            # Manually advance engine's setup player index if engine didn't for a "done" player.
+            # The engine's player_places_initial_army does advance if success is true, even if no armies placed.
+            # So, just need to ensure the loop continues.
+            self.has_logged_current_turn_player_phase = False # Log for next player
+            # No AI call needed for this player, just continue the orchestrator loop.
+            return True # Loop again in advance_game_turn for the next setup player.
+
+        if not current_setup_agent: # Human player with no agent
+            self.log_turn_info(f"Player {current_setup_player_obj.name} has no AI agent. Cannot place armies. Game will stall.")
+            return False
+
+
+        if not self.has_logged_current_turn_player_phase:
+            self.log_turn_info(f"Phase: SETUP_PLACE_ARMIES - {current_setup_player_obj.name}'s turn to place. ({current_setup_player_obj.initial_armies_pool - current_setup_player_obj.armies_placed_in_setup} left)")
+            self.has_logged_current_turn_player_phase = True
+
+        valid_actions = self.engine.get_valid_actions(current_setup_player_obj)
+        if not valid_actions and current_setup_player_obj.armies_placed_in_setup < current_setup_player_obj.initial_armies_pool :
+            self.log_turn_info(f"No valid place_army actions for {current_setup_player_obj.name} but has armies left. Owned: {[t.name for t in current_setup_player_obj.territories]}")
+            return True # Let it loop, maybe state will resolve or engine handles phase end.
+        elif not valid_actions : # No actions and no armies left
+             return True # Player is done, loop for next.
+
+        prompt_add = f"Place one army on a territory you own. You have {current_setup_player_obj.initial_armies_pool - current_setup_player_obj.armies_placed_in_setup} left to place in total."
+        self._execute_ai_turn_async(current_setup_agent, gs.to_json(), valid_actions, self.game_rules, prompt_add)
+        return True
+
+    def _handle_setup_2p_deal_cards(self) -> bool:
+        """Handles SETUP_2P_DEAL_CARDS phase (automatic engine step)."""
+        gs = self.engine.game_state
+        self.log_turn_info("Phase: SETUP_2P_DEAL_CARDS (Automatic)")
+        log = self.engine.setup_two_player_initial_territory_assignment()
+        self.log_turn_info(log["message"])
+        if not log["success"]: return False # Error in engine step
+        self._update_gui_full_state()
+        self.has_logged_current_turn_player_phase = False
+        return True # Phase changed, continue processing
+
+    def _handle_setup_2p_place_remaining(self) -> bool:
+        """Handles SETUP_2P_PLACE_REMAINING phase."""
+        gs = self.engine.game_state
+
+        # Check if all human players have placed their armies
+        all_human_done = True
+        for p_human in gs.player_setup_order: # Should be the two human players
+            if p_human.armies_placed_in_setup < p_human.initial_armies_pool:
+                all_human_done = False; break
+
+        if all_human_done: # Engine should transition phase when last army placed by player_places_initial_armies_2p
+            if gs.current_game_phase == "SETUP_2P_PLACE_REMAINING": # If engine hasn't transitioned
+                 self.log_turn_info("All 2P human armies placed, but phase not transitioned by engine. Forcing.")
+                 # This part is complex as engine's player_places_initial_armies_2p should handle final transition
+                 # For now, assume engine handles it. If orchestrator finds itself here and all done, it's a sync issue.
+            return True # Let main loop pick up new REINFORCE phase.
+
+        if self.ai_is_thinking: return True
+
+        if self.ai_action_result:
+            action_to_process = self.ai_action_result
+            self.ai_action_result = None
+            player_name_who_acted = self.active_ai_player_name
+            self.active_ai_player_name = None
+
+            action_data = action_to_process.get("action")
+            # AI's action for "SETUP_2P_PLACE_ARMIES_TURN" should be a dict containing
+            # "own_army_placements": list[tuple[str, int]] and "neutral_army_placement": tuple[str, int] | None
+            if action_data and action_data.get("type") == "SETUP_2P_PLACE_ARMIES_TURN":
+                own_placements = action_data.get("own_army_placements")
+                neutral_placement = action_data.get("neutral_army_placement")
+                if own_placements is not None : # Check presence, engine will validate content
+                    log = self.engine.player_places_initial_armies_2p(player_name_who_acted, own_placements, neutral_placement)
+                    self.log_turn_info(f"{player_name_who_acted} (2P Setup Place): {log['message']}")
+                else:
+                    self.log_turn_info(f"Invalid/missing own_army_placements from {player_name_who_acted} for 2P setup: {action_data}")
+            elif action_data and action_data.get("type") == "SETUP_2P_DONE_PLACING":
+                 self.log_turn_info(f"{player_name_who_acted} is done with 2P setup placing.")
+                 # Engine will advance player turn.
+            else:
+                self.log_turn_info(f"Invalid action from {player_name_who_acted} during SETUP_2P_PLACE_REMAINING: {action_data}")
+
+            self._update_gui_full_state()
+            self.has_logged_current_turn_player_phase = False
+            return True
+
+        current_setup_player_obj, current_setup_agent = self._get_current_setup_player_and_agent()
+        if not current_setup_player_obj or not current_setup_agent:
+            self.log_turn_info("No current setup player/agent for 2P placing. Game might stall.")
+            return False # Stall
+
+        if not self.has_logged_current_turn_player_phase:
+            self.log_turn_info(f"Phase: SETUP_2P_PLACE_REMAINING - {current_setup_player_obj.name}'s turn.")
+            self.has_logged_current_turn_player_phase = True
+
+        valid_actions = self.engine.get_valid_actions(current_setup_player_obj) # Should be one composite action
+        if not valid_actions or valid_actions[0].get("type") != "SETUP_2P_PLACE_ARMIES_TURN":
+            if valid_actions and valid_actions[0].get("type") == "SETUP_2P_DONE_PLACING":
+                # Player has no more armies, this is fine, orchestrator will cycle.
+                self.log_turn_info(f"{current_setup_player_obj.name} has no more armies for 2P setup. Will cycle.")
+                # We need to advance the engine's current_setup_player_index here if engine doesn't.
+                # player_places_initial_armies_2p advances it.
+                # If player is truly done, they should not be asked for action.
+                # This indicates the main loop should cycle.
+                self.has_logged_current_turn_player_phase = False # So next player logs correctly
+                return True # Allow main loop to cycle player via engine's turn advancement in player_places_initial_armies_2p
+
+            self.log_turn_info(f"Unexpected valid actions for {current_setup_player_obj.name} in 2P place remaining: {valid_actions}. Game might stall.")
+            return True # Let it try again, maybe state resolves.
+
+        # Prompt for the composite action
+        action_template = valid_actions[0]
+        prompt_add = (f"Place {action_template['player_armies_to_place_this_turn']} of your armies on your territories "
+                      f"({action_template['player_owned_territories']}). "
+                      f"Also, if neutral can place ({action_template['neutral_can_place']}), "
+                      f"place 1 neutral army on a neutral territory ({action_template['neutral_owned_territories']}). "
+                      "Provide action as: {'type': 'SETUP_2P_PLACE_ARMIES_TURN', 'own_army_placements': [('T1', count1), ...], 'neutral_army_placement': ('NT1', 1) or null}")
+        self._execute_ai_turn_async(current_setup_agent, gs.to_json(), valid_actions, self.game_rules, prompt_add)
+        return True
+
+    def _handle_elimination_card_trade_loop(self, player_to_trade: GamePlayer, agent_to_trade: BaseAIAgent) -> bool:
+        """Handles the mandatory card trading loop after a player elimination."""
+        gs = self.engine.game_state
+        self.log_turn_info(f"Player {player_to_trade.name} must trade cards due to elimination (hand size: {len(player_to_trade.hand)}).")
+
+        trade_attempt_limit = 5 # Prevent infinite loops
+        attempts = 0
+        original_phase_before_trade_loop = gs.current_game_phase # Store to potentially restore or manage state
+
+        while gs.elimination_card_trade_player_name == player_to_trade.name and attempts < trade_attempt_limit:
+            attempts += 1
+            self.log_turn_info(f"Elimination trade attempt {attempts} for {player_to_trade.name}. Hand: {len(player_to_trade.hand)}")
+
+            # Check if condition is met (engine's get_valid_actions clears the flag if met)
+            valid_actions = self.engine.get_valid_actions(player_to_trade) # This will update the flag if needed
+            if gs.elimination_card_trade_player_name != player_to_trade.name:
+                self.log_turn_info(f"{player_to_trade.name} no longer needs to trade for elimination (hand <= 4 or no sets).")
+                break # Requirement met or impossible
+
+            trade_actions = [va for va in valid_actions if va.get("type") == "TRADE_CARDS" and va.get("must_trade")]
+            if not trade_actions:
+                self.log_turn_info(f"No valid 'must_trade' actions for {player_to_trade.name} despite pending elimination trade. Hand: {len(player_to_trade.hand)}. Clearing flag.")
+                gs.elimination_card_trade_player_name = None # Cannot proceed
+                break
+
+            # Get AI action for trading (synchronous for this sub-loop for simplicity now)
+            # TODO: Could make this async like other actions if needed, but it's a sequence.
+            prompt_add = "You MUST trade cards to reduce your hand size below 5 due to player elimination."
+            ai_response = agent_to_trade.get_thought_and_action(gs.to_json(), trade_actions, self.game_rules, prompt_add)
+            self.log_ai_thought(player_to_trade.name, ai_response.get("thought", "N/A (elimination trade)"))
+
+            chosen_action = ai_response.get("action")
+            if chosen_action and chosen_action.get("type") == "TRADE_CARDS":
+                card_indices = chosen_action.get("card_indices")
+                trade_result = self.engine.perform_card_trade(player_to_trade, card_indices)
+                self.log_turn_info(f"{player_to_trade.name} mandatory trade: {trade_result.get('message')}")
+                self._update_gui_full_state() # Update after each trade
+                if not trade_result.get("success"):
+                    self.log_turn_info(f"Mandatory trade by {player_to_trade.name} failed. This may stall the game if not resolved.")
+                    # Potentially break or try to get another action. For now, let loop continue.
+            else:
+                self.log_turn_info(f"{player_to_trade.name} failed to provide a valid TRADE_CARDS action during mandatory elimination trade. Action: {chosen_action}")
+                # This is an AI error. Break loop to avoid getting stuck. Orchestrator might need to handle this.
+                gs.elimination_card_trade_player_name = None # Clear flag to prevent stall
+                break
+
+        if attempts >= trade_attempt_limit:
+            self.log_turn_info(f"Reached trade attempt limit for {player_to_trade.name} during elimination card trade. Clearing flag.")
+            gs.elimination_card_trade_player_name = None
+
+        self.log_turn_info(f"Finished elimination card trade loop for {player_to_trade.name}. Hand size: {len(player_to_trade.hand)}")
+        # The game should now proceed with any pending post-attack fortification or next phase actions.
+        # The main advance_game_turn loop will call get_valid_actions again, which will now not be overridden by this.
+        return True # Indicate trade loop finished, main loop can re-evaluate.
+
+
     def advance_game_turn(self) -> bool:
+        gs = self.engine.game_state
+
         if self.engine.is_game_over():
             winner = self.engine.is_game_over()
-            win_msg = f"\n--- GAME OVER! Winner is {winner.name}! ---"
-            print(win_msg)
-            self.log_turn_info(win_msg)
+            win_msg = f"\n--- GAME OVER! Winner is {winner.name if winner else 'Unknown'}! ---"
+            self.log_turn_info(win_msg); print(win_msg)
             self.global_chat.broadcast("GameSystem", win_msg)
-            if self.gui and self.game_running_via_gui: self.gui.show_game_over_screen(winner.name)
+            if self.gui and self.game_running_via_gui: self.gui.show_game_over_screen(winner.name if winner else "N/A")
             return False
-        if self.engine.game_state.current_turn_number >= self.max_turns:
-            timeout_msg = f"\n--- GAME OVER! Reached maximum turns ({self.max_turns}). No winner declared by conquest. ---"
-            print(timeout_msg)
-            self.log_turn_info(timeout_msg)
+        if gs.current_turn_number >= self.max_turns and not gs.current_game_phase.startswith("SETUP_"):
+            timeout_msg = f"\n--- GAME OVER! Reached max turns ({self.max_turns}). ---"
+            self.log_turn_info(timeout_msg); print(timeout_msg)
             self.global_chat.broadcast("GameSystem", timeout_msg)
             if self.gui and self.game_running_via_gui: self.gui.show_game_over_screen("Draw/Timeout")
             return False
 
-        self.turn_action_log.clear()
-        current_player_obj = self.engine.game_state.get_current_player()
-        if not current_player_obj:
-            print("Error: No current player. Ending game logic.")
+        current_phase = gs.current_game_phase
+        self.log_turn_info(f"Orchestrator: Advancing turn. Current phase: {current_phase}")
+
+        # --- Setup Phase Handling ---
+        if current_phase == "SETUP_START": # Should be handled by initial call to initialize_game_from_map
+            self.log_turn_info("Error: Game in SETUP_START. Initialization might be incomplete.")
+            # Attempt to move to next logical step if possible
+            if self.is_two_player_mode: gs.current_game_phase = "SETUP_2P_DEAL_CARDS"
+            else: gs.current_game_phase = "SETUP_DETERMINE_ORDER"
+            return True
+        elif current_phase == "SETUP_DETERMINE_ORDER":
+            return self._handle_setup_determine_order()
+        elif current_phase == "SETUP_CLAIM_TERRITORIES":
+            return self._handle_setup_claim_territories()
+        elif current_phase == "SETUP_PLACE_ARMIES":
+            return self._handle_setup_place_armies()
+        elif current_phase == "SETUP_2P_DEAL_CARDS":
+            return self._handle_setup_2p_deal_cards()
+        elif current_phase == "SETUP_2P_PLACE_REMAINING":
+            return self._handle_setup_2p_place_remaining()
+
+        # --- Regular Game Turn Logic (Post-Setup) ---
+        self.turn_action_log.clear() # Clear log for the new turn/main phase part
+
+        # Determine current player and agent for regular turns
+        # Note: get_current_player() in engine is for regular turns, skips neutral.
+        # get_current_setup_player() is for setup turns.
+        current_player_obj = gs.get_current_player()
+        if not current_player_obj or current_player_obj.is_neutral: # Should always be a human player here
+            self.log_turn_info(f"Error: No valid current human player for phase {current_phase}. Current player from engine: {current_player_obj.name if current_player_obj else 'None'}. Halting.")
             return False
-        current_player_agent = self.get_agent_for_current_player()
-        if not current_player_agent:
-            print(f"Error: No AI agent for {current_player_obj.name}. Skipping turn.")
-            self.engine.next_turn() # Advance to next player if current has no agent
+
+        current_player_agent = self.get_agent_for_player(current_player_obj)
+        if not current_player_agent: # Should not happen if player is human
+            self.log_turn_info(f"Error: No AI agent for current player {current_player_obj.name} in phase {current_phase}. Skipping turn.")
+            self.engine.next_turn()
+            self.has_logged_current_turn_player_phase = False
             if self.gui: self._update_gui_full_state()
-            return True # Game continues
+            return True
 
         if not self.has_logged_current_turn_player_phase:
-            print(f"\n--- Turn {self.engine.game_state.current_turn_number} | Player: {current_player_obj.name} ({current_player_obj.color}) | Phase: {self.engine.game_state.current_game_phase} ---")
+            header = f"\n--- Turn {gs.current_turn_number} | Player: {current_player_obj.name} ({current_player_obj.color}) | Phase: {current_phase} ---"
+            self.log_turn_info(header); print(header)
             self.has_logged_current_turn_player_phase = True
-            # Also log to file/action log only once per new header
-            if not self.ai_is_thinking: # Avoid double logging if AI just started thinking this exact moment
-                self.log_turn_info(f"Turn {self.engine.game_state.current_turn_number} starting for {current_player_obj.name}.")
 
-        if not self.ai_is_thinking and self.gui: # Ensure GUI is updated if it's not an AI thinking loop
-            self._update_gui_full_state() # Update GUI at start of player's turn segment, if not already done by AI start
+        if not self.ai_is_thinking and self.gui: self._update_gui_full_state()
 
-        # Check if AI is currently thinking
-        # --- AI Thinking & Action Processing Logic ---
+        # --- Mandatory Elimination Card Trade Check ---
+        # This needs to happen before Post Attack Fortify or other actions if flag is set for current player.
+        if gs.elimination_card_trade_player_name == current_player_obj.name:
+            self.log_turn_info(f"Player {current_player_obj.name} has pending elimination card trades.")
+            # The loop will be managed here, AI calls made, until flag is cleared or attempts exhausted.
+            # This needs to be integrated with the async AI call mechanism if we want spinner for these trades.
+            # For now, let's assume _handle_elimination_card_trade_loop is synchronous for simplicity of this step.
+            trade_loop_continue = self._handle_elimination_card_trade_loop(current_player_obj, current_player_agent)
+            if not trade_loop_continue: # Problem in trade loop
+                 self.log_turn_info(f"Problem during elimination card trade for {current_player_obj.name}. Game may be unstable.")
+                 # Fall through, next get_valid_actions will reflect if flag is cleared.
+            # After trade loop, re-fetch valid actions as game state (and flag) might have changed.
+            # The main phase logic below will then pick up.
+            # No immediate 'return True' here, let the main phase logic proceed with updated state.
+            self.has_logged_current_turn_player_phase = False # Re-log phase info if needed
+            self._update_gui_full_state() # Update GUI after trades.
+
+
+        # --- AI Thinking & Action Processing Logic (copied and adapted from before) ---
         # This section handles the asynchronous AI thinking and subsequent action processing.
 
         action_processed_in_current_tick = False
@@ -1214,14 +1609,77 @@ class GameOrchestrator:
             num_armies = action.get("num_armies")
 
             if not all(isinstance(param, str) for param in [from_territory_name, to_territory_name]) or \
-               not isinstance(num_armies, int) or num_armies <= 0: # Attacking with 0 or less armies is invalid
+               not isinstance(num_armies, int) or num_armies <= 0:
                 self.log_turn_info(f"Orchestrator: {player.name} invalid ATTACK parameters: from='{from_territory_name}', to='{to_territory_name}', num_armies='{num_armies}'. AI will be prompted again.")
-            else:
-                # Player argument is not needed for engine.perform_attack as it infers from territory owner
-                attack_log = self.engine.perform_attack(from_territory_name, to_territory_name, num_armies)
-                self.log_turn_info(f"Orchestrator: Engine perform_attack log for {player.name}: {attack_log}")
+                # No actual attack performed, AI needs to retry.
+                self.ai_is_thinking = False # Allow re-triggering for ATTACK phase
+                if self.gui: self._update_gui_full_state()
+                return # Return to main loop to re-initiate AI for attack phase.
 
-                attacks_this_turn +=1
+            # Check if defender is Neutral in a 2-player game
+            defender_territory_obj = self.engine.game_state.territories.get(to_territory_name)
+            explicit_defense_dice = None
+            if self.is_two_player_mode and defender_territory_obj and \
+               defender_territory_obj.owner and defender_territory_obj.owner.is_neutral:
+
+                other_human_player = None
+                for p_obj in self.engine.game_state.players:
+                    if not p_obj.is_neutral and p_obj.name != player.name: # player is the attacker
+                        other_human_player = p_obj
+                        break
+
+                if other_human_player:
+                    other_human_agent = self.get_agent_for_player(other_human_player)
+                    if other_human_agent:
+                        self.log_turn_info(f"Neutral territory {to_territory_name} attacked by {player.name}. Prompting {other_human_player.name} for defense dice.")
+
+                        defense_dice_options = []
+                        if defender_territory_obj.army_count >= 1: defense_dice_options.append({"type": "CHOOSE_DEFENSE_DICE", "num_dice": 1})
+                        if defender_territory_obj.army_count >= 2: defense_dice_options.append({"type": "CHOOSE_DEFENSE_DICE", "num_dice": 2})
+
+                        if defense_dice_options:
+                            # This is a nested, synchronous AI call for simplicity here.
+                            # TODO: Could be made async if this causes noticeable delays.
+                            def_prompt = (f"Player {player.name} is attacking neutral territory {to_territory_name} "
+                                          f"(armies: {defender_territory_obj.army_count}). "
+                                          f"You ({other_human_player.name}) must choose how many dice Neutral will defend with.")
+                            # Use a simplified game_rules for this specific choice.
+                            def_rules = "Choose one action from the list: {'type': 'CHOOSE_DEFENSE_DICE', 'num_dice': 1_or_2}"
+
+                            # Temporarily set active AI for this sub-call for logging purposes
+                            original_active_ai_name = self.active_ai_player_name
+                            self.active_ai_player_name = other_human_agent.player_name
+
+                            defense_choice_response = other_human_agent.get_thought_and_action(
+                                self.engine.game_state.to_json(), defense_dice_options, def_rules, def_prompt
+                            )
+                            self.log_ai_thought(other_human_agent.player_name, defense_choice_response.get("thought", "N/A (defense dice choice)"))
+                            self.active_ai_player_name = original_active_ai_name # Restore
+
+                            defense_action = defense_choice_response.get("action")
+                            if defense_action and defense_action.get("type") == "CHOOSE_DEFENSE_DICE":
+                                explicit_defense_dice = defense_action.get("num_dice")
+                                if not (explicit_defense_dice == 1 or (explicit_defense_dice == 2 and defender_territory_obj.army_count >=2)):
+                                    self.log_turn_info(f"Warning: Invalid defense dice choice {explicit_defense_dice} from {other_human_player.name}. Defaulting to 1 die.")
+                                    explicit_defense_dice = 1 if defender_territory_obj.army_count >=1 else 0
+                            else: # AI failed to choose or malformed action
+                                self.log_turn_info(f"Warning: {other_human_player.name} failed to choose defense dice. Defaulting to 1 die.")
+                                explicit_defense_dice = 1 if defender_territory_obj.army_count >=1 else 0
+                        else: # Neutral territory has 0 armies
+                            explicit_defense_dice = 0
+                    else: # No agent for other human player
+                        self.log_turn_info(f"Warning: No AI agent for other human player {other_human_player.name} to choose neutral defense. Defaulting dice.")
+                        explicit_defense_dice = 1 if defender_territory_obj.army_count >=1 else 0 # Or some other default
+                else: # Should not happen in 2P mode
+                    self.log_turn_info("Warning: Could not find other human player in 2P mode for neutral defense. Defaulting dice.")
+                    explicit_defense_dice = 1 if defender_territory_obj.army_count >=1 else 0
+
+            # Call engine's perform_attack
+            attack_log = self.engine.perform_attack(from_territory_name, to_territory_name, num_armies, explicit_defense_dice)
+            self.log_turn_info(f"Orchestrator: Engine perform_attack log for {player.name}: {attack_log}")
+
+            if "error" not in attack_log: # Only increment if attack was valid and processed
+                attacks_this_turn += 1
                 if self.current_ai_context: self.current_ai_context["attacks_this_turn"] = attacks_this_turn
                 self.log_turn_info(f"Orchestrator: {player.name} attacks_this_turn incremented to: {attacks_this_turn}")
 
