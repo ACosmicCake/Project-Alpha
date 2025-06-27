@@ -142,9 +142,33 @@ class BaseAIAgent(ABC):
                             params_match = False
                             break
                 if params_match:
-                    return True # Found a template that matches all non-numeric params
+                    # Additional check for specific required numeric fields based on type
+                    if llm_action_type == "ATTACK":
+                        if not isinstance(action_dict.get("num_armies"), int) or action_dict.get("num_armies", 0) <= 0:
+                            print(f"Validation Error: ATTACK action {action_dict} missing or invalid 'num_armies'. It must be a positive integer.")
+                            return False
+                    elif llm_action_type == "DEPLOY": # num_armies is also critical for DEPLOY
+                        if not isinstance(action_dict.get("num_armies"), int) or action_dict.get("num_armies", 0) <= 0:
+                            print(f"Validation Error: DEPLOY action {action_dict} missing or invalid 'num_armies'. It must be a positive integer.")
+                            return False
+                    elif llm_action_type == "FORTIFY": # num_armies is also critical for FORTIFY
+                         if not isinstance(action_dict.get("num_armies"), int) or action_dict.get("num_armies", -1) < 0: # Allow 0 for fortify if rules permit, but must be int
+                            # Game engine perform_fortify checks for num_armies > 0. Here we just check type and presence.
+                            # If AI wants to fortify 0, it's more like a "skip fortify specific path" than a real move.
+                            # For now, let's ensure it's an int if present. The game rules ask for Y where Y is chosen.
+                            # If rules imply num_armies must be >0 for a FORTIFY action, this check could be action_dict.get("num_armies", 0) <= 0
+                            if "num_armies" not in action_dict or not isinstance(action_dict.get("num_armies"), int): # Must be present and int
+                                print(f"Validation Error: FORTIFY action {action_dict} missing or invalid 'num_armies'. It must be an integer.")
+                                return False
+                    elif llm_action_type == "POST_ATTACK_FORTIFY":
+                        if not isinstance(action_dict.get("num_armies"), int) or action_dict.get("num_armies", -1) < 0: # Allow 0, but must be int
+                            if "num_armies" not in action_dict or not isinstance(action_dict.get("num_armies"), int):
+                                print(f"Validation Error: POST_ATTACK_FORTIFY action {action_dict} missing or invalid 'num_armies'. It must be an integer.")
+                                return False
+                    # Add more type-specific field validations as needed...
+                    return True # Found a template that matches all non-numeric params and specific type checks passed
 
-        print(f"Validation Error: Action {action_dict} does not conform to any valid action template in {matching_type_actions} for type '{llm_action_type}'.")
+        print(f"Validation Error: Action {action_dict} does not conform to any valid action template in {matching_type_actions} for type '{llm_action_type}'. Or it failed specific field validation for its type.")
         return False
 
 
@@ -184,12 +208,15 @@ Game Phases & Key Actions:
 2. Attack Phase:
    - Goal: Conquer enemy territories to expand, gain cards, and eliminate opponents.
    - Attacking:
-     - Action: {"type": "ATTACK", "from": "YourTerritory", "to": "EnemyTerritory", "max_armies_for_attack": X}
-     - When you choose this action, you will then specify 'num_attacking_armies' (from 1 up to X, representing the armies from 'YourTerritory' that will participate in the battle, determining dice rolled). You must leave at least one army in 'from' territory.
-     - Attackers roll up to 3 dice (or number of attacking armies if less than 3, minus one if that's the rule for armies left behind - this detail is handled by the game engine based on 'num_attacking_armies' you send), defenders up to 2. Highest dice are compared. Attacker loses on ties.
+     - The 'Valid Actions' list will show templates like: {"type": "ATTACK", "from": "YourTerritory", "to": "EnemyTerritory", "max_armies_for_attack": X}
+     - When you choose to ATTACK, your returned 'action' object MUST include the 'num_armies' key, specifying the integer number of armies you are attacking with. This number must be between 1 and 'max_armies_for_attack'.
+     - Example of YOUR chosen action: {"type": "ATTACK", "from": "YourTerritory", "to": "EnemyTerritory", "num_armies": Y} (where Y is your chosen number of attacking armies).
+     - The game engine will use 'num_armies' to determine dice rolls. You must leave at least one army in the 'from' territory (this is covered by 'max_armies_for_attack').
+     - Attackers roll up to 3 dice, defenders up to 2. Highest dice are compared. Attacker loses on ties.
      - If you conquer a territory:
-       - A 'POST_ATTACK_FORTIFY' action will become available immediately. You MUST choose how many armies to move from the attacking territory into the newly conquered one.
-       - Action: {"type": "POST_ATTACK_FORTIFY", "from_territory": "AttackingTerritory", "to_territory": "ConqueredTerritory", "min_armies": M, "max_armies": N} (You specify 'num_armies' to move, between M and N inclusive). M is typically the number of dice you rolled in the last battle.
+       - A 'POST_ATTACK_FORTIFY' action will become available immediately. You MUST choose how many armies to move.
+       - The 'Valid Actions' list will show a template like: {"type": "POST_ATTACK_FORTIFY", "from_territory": "AttackingTerritory", "to_territory": "ConqueredTerritory", "min_armies": M, "max_armies": N}
+       - Your chosen action for this MUST include 'num_armies': {"type": "POST_ATTACK_FORTIFY", "from_territory": "AttackingTerritory", "to_territory": "ConqueredTerritory", "num_armies": Z} (where Z is between M and N).
      - You can earn ONE card per turn by conquering at least one territory. This card is drawn automatically.
    - End Phase:
      - Action: {"type": "END_ATTACK_PHASE"} (To stop attacking and move to Fortify phase).
