@@ -146,36 +146,44 @@ class GameOrchestrator:
         self.engine.game_state.players.clear()
         self.ai_agents.clear()
 
-        for config in final_player_configs:
-            player_name = config.get("name")
-            if not player_name:
-                print(f"Warning: Player config missing 'name': {config}. Skipping.")
-                continue
+        # Keep track of default colors if none are provided in config
+        default_colors = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange"]
+        color_index = 0
+
+        for i, config in enumerate(final_player_configs):
+            # Generate player name automatically
+            player_name = f"Player {i + 1}"
+
+            # Use color from config if available, otherwise assign a default color
             player_color = config.get("color")
             if not player_color:
-                print(f"Warning: Player config for '{player_name}' missing 'color': {config}. Assigning default or skipping.")
-                # Potentially assign a default color or skip this player
-                continue # For now, skip if color is missing
+                if color_index < len(default_colors):
+                    player_color = default_colors[color_index]
+                    color_index += 1
+                else:
+                    # Fallback if more players than default colors (e.g., assign by number or cycle)
+                    player_color = default_colors[color_index % len(default_colors)]
+                    color_index += 1
+                print(f"Warning: Player config for original name '{config.get('name', 'N/A')}' missing 'color'. Assigning default color '{player_color}' to '{player_name}'.")
 
             ai_type = config.get("ai_type", "Gemini") # Default to Gemini if not specified
 
-            # Check for duplicate player names before adding
-            if any(p.name == player_name for p in self.engine.game_state.players):
-                print(f"Warning: Duplicate player name '{player_name}' found. Skipping this configuration.")
-                continue
+            # Duplicate name check is inherently handled by generating Player {i+1}
+            # However, we still need to ensure the GamePlayer object is created correctly.
 
             game_player_obj = GamePlayer(name=player_name, color=player_color)
             self.engine.game_state.players.append(game_player_obj)
 
             agent: BaseAIAgent | None = None
+            # When creating agents, use the new player_name for consistency
             if ai_type == "Gemini": agent = GeminiAgent(player_name, player_color)
             elif ai_type == "OpenAI": agent = OpenAIAgent(player_name, player_color)
             elif ai_type == "Claude": agent = ClaudeAgent(player_name, player_color)
             elif ai_type == "DeepSeek": agent = DeepSeekAgent(player_name, player_color)
             # Add "Human" type here if you have a HumanAgent class
-            # elif ai_type == "Human": agent = HumanAgent(player_name, player_color)
+            # elif ai_type == "Human": agent = HumanAgent(player_name, player_color, self.gui if self.gui else None) # Example if HumanAgent needs GUI
             else:
-                print(f"Warning: Unknown AI type '{ai_type}' for player {player_name}. Defaulting to Gemini.")
+                print(f"Warning: Unknown AI type '{ai_type}' for player {player_name} (original config: {config.get('name', 'N/A')}). Defaulting to Gemini.")
                 agent = GeminiAgent(player_name, player_color) # Fallback
 
             if agent:
