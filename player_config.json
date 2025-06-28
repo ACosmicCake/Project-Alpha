@@ -1,0 +1,22 @@
+[
+  {
+    "name": "PlayerA (Gemini)",
+    "color": "Red",
+    "ai_type": "Gemini"
+  },
+  {
+    "name": "PlayerB (OpenAI)",
+    "color": "Blue",
+    "ai_type": "OpenAI"
+  },
+  {
+    "name": "PlayerC (Claude)",
+    "color": "Green",
+    "ai_type": "Claude"
+  },
+  {
+    "name": "PlayerD (DeepSeek)",
+    "color": "Yellow",
+    "ai_type": "DeepSeek"
+  }
+]
