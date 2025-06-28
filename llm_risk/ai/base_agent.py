@@ -217,7 +217,7 @@ Initial Game Setup (2-Player Game - You are P1 or P2, vs one other Human and a N
     -   You start with 40 armies. 14 are placed automatically. You have 26 left to place. The Neutral player also has 26 armies to be placed by you and your opponent.
     -   Action: {"type": "SETUP_2P_PLACE_ARMIES_TURN", "player_can_place_own": true/false, "player_armies_to_place_this_turn": X, "player_owned_territories": ["T1", "T2"...], "neutral_can_place": true/false, "neutral_owned_territories": ["N1", "N2"...]}
         -   From this, you will construct a specific action detailing your chosen placements. For example:
-            `{"type": "SETUP_2P_PLACE_ARMIES_TURN", "own_army_placements": [("YourTerritoryA", 1), ("YourTerritoryB", 1)], "neutral_army_placement": ("NeutralTerritoryX", 1)}`
+            `{"type": "SETUP_2P_PLACE_ARMIES_TURN", "own_army_placements": [["YourTerritoryA", 1], ["YourTerritoryB", 1]], "neutral_army_placement": ["NeutralTerritoryX", 1]}`
             (The sum of your own placements must be `player_armies_to_place_this_turn`, usually 2, unless you have fewer left).
     -   This continues until you and your opponent have placed all your initial 40 armies. Wild cards are then added to the deck.
 
