@@ -260,7 +260,7 @@ class GameEngine:
             log["message"] = f"Cannot place 2P initial armies in current state (is_2p: {gs.is_two_player_game}, phase: {gs.current_game_phase})."
             return log
 
-        acting_player = gs.get_current_setup_player() # player_setup_order should contain the two human players
+        acting_player = gs.get_current_player() # player_setup_order should contain the two human players
         if not acting_player or acting_player.name != acting_player_name or acting_player.is_neutral:
             log["message"] = f"Invalid acting player '{acting_player_name}' or not their turn."
             return log
