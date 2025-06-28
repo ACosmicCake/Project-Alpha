@@ -1137,9 +1137,18 @@ class GameEngine:
                 return first_owner # This first_owner is not neutral due to check above
 
             # Additional check: if only one non-neutral player remains with territories
-            active_non_neutral_players = [p for p in gs.players if not p.is_neutral and p.territories]
-            if len(active_non_neutral_players) == 1:
-                return active_non_neutral_players[0] # This player is the winner by elimination
+            # This should only apply if the game is past the initial setup phases.
+            setup_phases = [
+                "SETUP_START", "SETUP_DETERMINE_ORDER",
+                "SETUP_CLAIM_TERRITORIES", "SETUP_PLACE_ARMIES",
+                "SETUP_2P_DEAL_CARDS", "SETUP_2P_PLACE_REMAINING" # Included for completeness
+            ]
+            if gs.current_game_phase not in setup_phases:
+                active_non_neutral_players = [p for p in gs.players if not p.is_neutral and p.territories]
+                if len(active_non_neutral_players) == 1:
+                    # This check implies that if only one player has territories AND we are past setup, they win.
+                    # This is a valid win condition by elimination.
+                    return active_non_neutral_players[0]
 
             return None
 
