@@ -28,6 +28,64 @@ class BaseAIAgent(ABC):
                  prompt += f"- {chat_msg['sender']}: {chat_msg['message']}\n"
             prompt += "\n"
 
+        # Attempt to parse game_state_json to extract event_history for summary
+        try:
+            game_state_data = json.loads(game_state_json)
+            event_history = game_state_data.get("event_history") # This key might not be in the default to_json
+            # We need to ensure game_state_json passed here includes event_history.
+            # For now, assume it might be missing or needs to be fetched/passed differently.
+            # If GameState.to_json() doesn't include it, this will be None.
+            # The Orchestrator will need to pass a version of game_state_json that has event_history.
+            # For now, we'll proceed assuming it *could* be there.
+
+            if event_history and isinstance(event_history, list):
+                # Create a summarized intelligence briefing (last 3-5 turns or N events)
+                # This is a simplified summary. More sophisticated summarization could be done by an LLM.
+                briefing = "\n--- Intelligence Briefing (Recent Events) ---\n"
+                recent_events_to_show = 5 # Show last 5 events
+
+                # Filter for key event types and summarize
+                relevant_event_count = 0
+                for event in reversed(event_history):
+                    if relevant_event_count >= recent_events_to_show:
+                        break
+
+                    event_type = event.get("type")
+                    turn = event.get("turn", "N/A")
+                    summary_line = None
+
+                    if event_type == "ATTACK_RESULT" or event_type == "ATTACK_SKIRMISH":
+                        summary_line = (f"Turn {turn}: {event.get('attacker')} attacked {event.get('defender')} "
+                                        f"at {event.get('defending_territory')} (from {event.get('attacking_territory')}). "
+                                        f"Losses: A-{event.get('attacker_losses',0)} D-{event.get('defender_losses',0)}. ")
+                        if event.get('conquered'):
+                            summary_line += f"Conquered. "
+                        if event.get('betrayal'):
+                            summary_line += f"BETRAYAL! "
+                    elif event_type == "DIPLOMACY_CHANGE":
+                        summary_line = (f"Turn {turn}: Diplomacy - {event.get('subtype')} involving {event.get('players') or [event.get('breaker'), event.get('target')]}. "
+                                        f"New status: {event.get('new_status', event.get('status', 'N/A'))}.")
+                    elif event_type == "CARD_TRADE":
+                        summary_line = f"Turn {turn}: {event.get('player')} traded cards for {event.get('armies_gained')} armies."
+                    elif event_type == "CONTINENT_CONTROL_UPDATE":
+                         summary_line = f"Turn {turn}: {event.get('player')} controls continents: {', '.join(event.get('controlled_continents',[]))} (bonus: {event.get('reinforcement_bonus_from_continents',0)})."
+                    elif event_type == "ELIMINATION": # Assuming this event type will be added
+                        summary_line = f"Turn {turn}: {event.get('eliminator')} eliminated {event.get('eliminated_player')}."
+
+                    if summary_line:
+                        briefing += f"- {summary_line}\n"
+                        relevant_event_count += 1
+
+                if relevant_event_count == 0:
+                    briefing += "- No significant recent actions by players.\n"
+                briefing += "--- End of Briefing ---\n\n"
+                prompt += briefing
+            else:
+                # This case will be hit if game_state_json does not contain 'event_history'
+                # or if it's not a list.
+                prompt += "\n--- Intelligence Briefing ---\n- Event history not available in this summary.\n--- End of Briefing ---\n\n"
+
+
         prompt += "Valid Actions (choose one, or a chat action):\n"
         for i, action in enumerate(valid_actions):
             prompt += f"{i+1}. {action}\n"

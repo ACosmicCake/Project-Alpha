@@ -10,6 +10,7 @@ from .ai.gemini_agent import GeminiAgent
 from .ai.openai_agent import OpenAIAgent
 from .ai.claude_agent import ClaudeAgent
 from .ai.deepseek_agent import DeepSeekAgent
+from .game_orchestrator_diplomacy_helper import _process_diplomatic_action # Import the helper
 import threading # For asynchronous AI calls
 
 import json # For loading player configs if any
@@ -435,7 +436,8 @@ class GameOrchestrator:
             return True
 
         prompt_add = f"It's your turn to claim a territory. Choose one from the list."
-        self._execute_ai_turn_async(current_setup_agent, gs.to_json(), valid_actions, self.game_rules, prompt_add)
+        # Use to_json_with_history() for AI context
+        self._execute_ai_turn_async(current_setup_agent, gs.to_json_with_history(), valid_actions, self.game_rules, prompt_add)
         return True # AI is now thinking
 
     def _handle_setup_place_armies(self) -> bool:
@@ -528,7 +530,7 @@ class GameOrchestrator:
              return True # Player is done, loop for next.
 
         prompt_add = f"Place one army on a territory you own. You have {current_setup_player_obj.initial_armies_pool - current_setup_player_obj.armies_placed_in_setup} left to place in total."
-        self._execute_ai_turn_async(current_setup_agent, gs.to_json(), valid_actions, self.game_rules, prompt_add)
+        self._execute_ai_turn_async(current_setup_agent, gs.to_json_with_history(), valid_actions, self.game_rules, prompt_add)
         return True
 
     def _handle_setup_2p_deal_cards(self) -> bool:
@@ -636,7 +638,7 @@ class GameOrchestrator:
                       f"place 1 neutral army on a neutral territory ({action_template['neutral_owned_territories']}). "
                       "Provide action as: {'type': 'SETUP_2P_PLACE_ARMIES_TURN', 'own_army_placements': [['T1', count1], ['T2', count2], ...], 'neutral_army_placement': ['NT1', 1] or null}. "
                       "Ensure placements are lists of two elements (e.g., [\"TerritoryName\", number_of_armies]).")
-        self._execute_ai_turn_async(current_setup_agent, gs.to_json(), valid_actions, self.game_rules, prompt_add)
+        self._execute_ai_turn_async(current_setup_agent, gs.to_json_with_history(), valid_actions, self.game_rules, prompt_add)
         return True
 
     def _handle_elimination_card_trade_loop(self, player_to_trade: GamePlayer, agent_to_trade: BaseAIAgent) -> bool:
@@ -667,7 +669,7 @@ class GameOrchestrator:
             # Get AI action for trading (synchronous for this sub-loop for simplicity now)
             # TODO: Could make this async like other actions if needed, but it's a sequence.
             prompt_add = "You MUST trade cards to reduce your hand size below 5 due to player elimination."
-            ai_response = agent_to_trade.get_thought_and_action(gs.to_json(), trade_actions, self.game_rules, prompt_add)
+            ai_response = agent_to_trade.get_thought_and_action(gs.to_json_with_history(), trade_actions, self.game_rules, prompt_add)
             self.log_ai_thought(player_to_trade.name, ai_response.get("thought", "N/A (elimination trade)"))
 
             chosen_action = ai_response.get("action")
@@ -934,7 +936,8 @@ class GameOrchestrator:
             prompt_details.append("You MUST trade cards.")
         system_prompt_addition = "It is your REINFORCE phase. " + " ".join(prompt_details)
 
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
+        # Use to_json_with_history() for AI context
+        self._execute_ai_turn_async(agent, self.engine.game_state.to_json_with_history(), valid_actions, self.game_rules, system_prompt_addition)
 
     def _process_reinforce_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
         print(f"Orchestrator: Processing REINFORCE AI action for {player.name}")
@@ -1503,6 +1506,12 @@ class GameOrchestrator:
         action_type = action["type"]
         self.log_turn_info(f"{player.name} REINFORCE action: {action_type} - Details: {action}")
 
+        # Handle diplomatic actions first if chosen
+        if self._process_diplomatic_action(player, action):
+            self.ai_is_thinking = False # Diplomatic action taken, AI can make another move in Reinforce
+            if self.gui: self._update_gui_full_state()
+            return
+
         if action_type == "TRADE_CARDS":
             card_indices = action.get("card_indices")
             # Validate card_indices (must be a list of integers)
@@ -1515,6 +1524,15 @@ class GameOrchestrator:
                 if trade_result.get("success"):
                     self.log_turn_info(f"{player.name} gained {trade_result['armies_gained']} armies. Total to deploy: {player.armies_to_deploy}.")
                     if trade_result.get("territory_bonus"): self.log_turn_info(trade_result["territory_bonus"])
+                    # Log card trade event
+                    self.engine.game_state.event_history.append({
+                        "turn": self.engine.game_state.current_turn_number,
+                        "type": "CARD_TRADE",
+                        "player": player.name,
+                        "cards_traded_symbols": trade_result.get("traded_card_symbols", []), # From engine log
+                        "armies_gained": trade_result.get("armies_gained", 0),
+                        "territory_bonus_info": trade_result.get("territory_bonus") # Will be None or a string message
+                    })
                 # else: Card trade failed, message already logged by engine.
             # After any trade attempt, AI needs to make another decision (deploy, trade again if possible, or end).
             self.ai_is_thinking = False
@@ -1612,7 +1630,7 @@ class GameOrchestrator:
                               f"from {paf_detail['from_territory']} (currently has {from_army_count} armies) "
                               f"to the newly conquered {paf_detail['to_territory']}.")
                 self.log_turn_info(f"Orchestrator: Prompting {player.name} for PAF with actions: {paf_actions}. Prompt: {paf_prompt}")
-                self._execute_ai_turn_async(agent, game_state_json, paf_actions, self.game_rules, paf_prompt)
+                self._execute_ai_turn_async(agent, self.engine.game_state.to_json_with_history(), paf_actions, self.game_rules, paf_prompt)
                 self.log_turn_info(f"Orchestrator: PAF AI action initiated for {player.name}. ai_is_thinking is now: {self.ai_is_thinking}")
                 return # AI is now thinking about PAF, advance_game_turn will detect ai_is_thinking.
 
@@ -1641,7 +1659,7 @@ class GameOrchestrator:
         system_prompt_addition = " ".join(prompt_elements)
 
         self.log_turn_info(f"Orchestrator: Prompting {player.name} for regular ATTACK action with {len(valid_actions)} options. System prompt addition: {system_prompt_addition}")
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
+        self._execute_ai_turn_async(agent, self.engine.game_state.to_json_with_history(), valid_actions, self.game_rules, system_prompt_addition)
         self.log_turn_info(f"Orchestrator: Regular ATTACK AI action initiated for {player.name}. ai_is_thinking is now: {self.ai_is_thinking}")
 
         if self.current_ai_context:
@@ -1666,6 +1684,18 @@ class GameOrchestrator:
 
         action_type = action["type"]
         self.log_turn_info(f"Orchestrator: Player {player.name} ATTACK action type: '{action_type}'. Details: {action}")
+
+        # Handle diplomatic actions first if chosen (e.g. ACCEPT/REJECT if proposed via chat earlier)
+        # or BREAK_ALLIANCE if chosen as a formal action.
+        # The `_process_diplomatic_action` method is designed for ACCEPT/REJECT.
+        # BREAK_ALLIANCE is already handled further down.
+        # We need to make sure that if a diplomatic action (ACCEPT/REJECT) is taken,
+        # the player can still perform another attack phase action.
+        if action_type in ["ACCEPT_ALLIANCE", "REJECT_ALLIANCE"]:
+            if self._process_diplomatic_action(player, action):
+                self.ai_is_thinking = False # Diplomatic action processed, AI can make another move in Attack phase
+                if self.gui: self._update_gui_full_state()
+                return # Return to allow re-initiation of AI for attack phase
 
         if action_type == "POST_ATTACK_FORTIFY":
             num_to_move = action.get("num_armies")
@@ -1733,7 +1763,7 @@ class GameOrchestrator:
                             self.active_ai_player_name = other_human_agent.player_name
 
                             defense_choice_response = other_human_agent.get_thought_and_action(
-                                self.engine.game_state.to_json(), defense_dice_options, def_rules, def_prompt
+                                self.engine.game_state.to_json_with_history(), defense_dice_options, def_rules, def_prompt
                             )
                             self.log_ai_thought(other_human_agent.player_name, defense_choice_response.get("thought", "N/A (defense dice choice)"))
                             self.active_ai_player_name = original_active_ai_name # Restore
@@ -1805,23 +1835,112 @@ class GameOrchestrator:
             if not isinstance(target_player_name, str) or not isinstance(initial_message, str) or not initial_message.strip():
                 self.log_turn_info(f"Orchestrator: {player.name} invalid PRIVATE_CHAT parameters: target='{target_player_name}', message_empty='{not initial_message.strip() if isinstance(initial_message, str) else True}'.")
             else:
-                target_agent = self.ai_agents.get(target_player_name)
-                if not target_agent:
-                    self.log_turn_info(f"Orchestrator: {player.name} invalid PRIVATE_CHAT target: Player '{target_player_name}' not found or not an AI.")
+                target_game_player_obj = next((p for p in self.engine.game_state.players if p.name == target_player_name), None)
+                target_agent = self.get_agent_for_player(target_game_player_obj) if target_game_player_obj else None
+
+                if not target_agent: # Covers target_game_player_obj being None or Neutral
+                    self.log_turn_info(f"Orchestrator: {player.name} invalid PRIVATE_CHAT target: Player '{target_player_name}' not found, is neutral, or not an AI.")
                 elif target_agent == agent:
                     self.log_turn_info(f"Orchestrator: {player.name} attempted PRIVATE_CHAT with self. Action ignored.")
                 else:
                     self.log_turn_info(f"Orchestrator: Initiating private chat between {player.name} and {target_player_name}.")
-                    current_game_state_json = self.engine.game_state.to_json()
-                    conversation_log_entries = self.private_chat_manager.run_conversation(
-                        initiating_agent=agent, receiving_agent=target_agent,
-                        initial_message=initial_message, game_state_json=current_game_state_json,
-                        game_rules=self.game_rules
+                    # Define goals for the negotiation based on game context or default
+                    # Example: initiator wants an alliance, recipient wants to evaluate
+                    initiator_goal = f"Your goal is to negotiate a favorable outcome with {target_player_name}. Consider proposing an ALLIANCE, a non-aggression pact, or a joint attack."
+                    recipient_goal = f"Your goal is to evaluate {player.name}'s proposal and negotiate the best terms for yourself. You can accept, reject, or make a counter-offer."
+
+                    conversation_log_entries, negotiated_action = self.private_chat_manager.run_conversation(
+                        agent1=agent, agent2=target_agent,
+                        initial_message=initial_message,
+                        game_state=self.engine.game_state, # Pass full GameState object
+                        game_rules=self.game_rules,
+                        initiator_goal=initiator_goal,
+                        recipient_goal=recipient_goal
                     )
-                    summary_msg = f"Private chat between {player.name} and {target_player_name} concluded ({len(conversation_log_entries)} exchanges)."
-                    if self.gui: self.gui.log_action(summary_msg)
+                    summary_msg = f"Private chat between {player.name} and {target_player_name} concluded ({len(conversation_log_entries)} messages)."
+                    if self.gui: self.gui.log_action(summary_msg) # Simple log for now
                     self.log_turn_info(f"Orchestrator: {summary_msg}")
+
+                    if negotiated_action:
+                        self.log_turn_info(f"Orchestrator: Private chat resulted in a negotiated action: {negotiated_action}")
+                        # Process the negotiated_action
+                        # This is a critical step. The orchestrator needs to validate and apply this action.
+                        # Example: If PROPOSE_ALLIANCE, update GameState.diplomacy to "PROPOSED_ALLIANCE"
+                        #          and set up for target_player to accept/reject on their turn.
+                        # If ACCEPT_ALLIANCE, update GameState.diplomacy to "ALLIANCE".
+                        if negotiated_action.get("type") == "PROPOSE_ALLIANCE":
+                            proposer = negotiated_action.get("proposing_player_name")
+                            target = negotiated_action.get("target_player_name")
+                            if proposer and target:
+                                diplomatic_key = frozenset({proposer, target})
+                                # Store proposal detail (who proposed to whom) for later acceptance check
+                                # This might need a new structure in GameState, e.g., gs.pending_proposals
+                                self.engine.game_state.diplomacy[diplomatic_key] = "PROPOSED_ALLIANCE"
+                                # Add details to a new structure like:
+                                self.engine.game_state.diplomacy[diplomatic_key] = "PROPOSED_ALLIANCE" # General status
+                                self.engine.game_state.active_diplomatic_proposals[diplomatic_key] = {
+                                    'proposer': proposer,
+                                    'target': target,
+                                    'type': 'ALLIANCE', # Could be other types like NON_AGGRESSION
+                                    'turn_proposed': self.engine.game_state.current_turn_number
+                                }
+                                self.log_turn_info(f"Diplomacy: {proposer} proposed ALLIANCE to {target}. Proposal recorded.")
+                                self.global_chat.broadcast("GameSystem", f"{proposer} has proposed an alliance to {target} via private channels.")
+                                # Log event
+                                self.engine.game_state.event_history.append({
+                                    "turn": self.engine.game_state.current_turn_number,
+                                    "type": "DIPLOMACY_PROPOSAL",
+                                    "subtype": "ALLIANCE_PROPOSED",
+                                    "proposer": proposer,
+                                    "target": target
+                                })
+                        elif negotiated_action.get("type") == "ACCEPT_ALLIANCE":
+                            accepter = negotiated_action.get("accepting_player_name")
+                            proposer = negotiated_action.get("proposing_player_name")
+                            if accepter and proposer:
+                                diplomatic_key = frozenset({accepter, proposer})
+                                # TODO: Add verification against a pending proposal structure if implemented
+                                self.engine.game_state.diplomacy[diplomatic_key] = "ALLIANCE"
+                                self.log_turn_info(f"Diplomacy: {accepter} ACCEPTED ALLIANCE with {proposer}. Status set to ALLIANCE.")
+                                self.global_chat.broadcast("GameSystem", f"{accepter} and {proposer} have formed an ALLIANCE!")
+                                # Log event
+                                self.engine.game_state.event_history.append({
+                                    "turn": self.engine.game_state.current_turn_number,
+                                    "type": "DIPLOMACY_CHANGE",
+                                    "subtype": "ALLIANCE_FORMED",
+                                    "players": sorted([accepter, proposer])
+                                })
+                        # Add more processing for other negotiated_action types (BREAK_ALLIANCE, etc.)
+                        self._update_gui_full_state() # Update GUI with new diplomatic status
+                    else:
+                        self.log_turn_info(f"Orchestrator: Private chat between {player.name} and {target_player_name} did not result in a formal agreement.")
+
             self.ai_is_thinking = False
+
+        elif action_type == "BREAK_ALLIANCE":
+            target_player_name = action.get("target_player_name")
+            if player and target_player_name:
+                diplomatic_key = frozenset({player.name, target_player_name})
+                if self.engine.game_state.diplomacy.get(diplomatic_key) == "ALLIANCE":
+                    self.engine.game_state.diplomacy[diplomatic_key] = "NEUTRAL" # Or WAR, depending on desired outcome
+                    self.log_turn_info(f"Diplomacy: {player.name} BROKE ALLIANCE with {target_player_name}. Status set to NEUTRAL.")
+                    self.global_chat.broadcast("GameSystem", f"{player.name} has broken their alliance with {target_player_name}!")
+                    # Log event
+                    self.engine.game_state.event_history.append({
+                        "turn": self.engine.game_state.current_turn_number,
+                        "type": "DIPLOMACY_CHANGE",
+                        "subtype": "ALLIANCE_BROKEN",
+                        "breaker": player.name,
+                        "target": target_player_name,
+                        "new_status": "NEUTRAL"
+                    })
+                    self._update_gui_full_state()
+                else:
+                    self.log_turn_info(f"Orchestrator: {player.name} tried to BREAK_ALLIANCE with {target_player_name}, but no alliance existed.")
+            else:
+                self.log_turn_info(f"Orchestrator: {player.name} tried BREAK_ALLIANCE with invalid parameters: {action}")
+            self.ai_is_thinking = False # Player can make another move in attack phase
+
 
         else:
             self.log_turn_info(f"Orchestrator: Player {player.name} provided an unknown ATTACK action type: '{action_type}'. AI will be prompted again.")
@@ -1852,7 +1971,7 @@ class GameOrchestrator:
         else:
             prompt_add += "You have already fortified. You must end your turn."
         self.log_turn_info(f"Orchestrator: Fortify prompt addition for {player.name}: {prompt_add}")
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition=prompt_add)
+        self._execute_ai_turn_async(agent, self.engine.game_state.to_json_with_history(), valid_actions, self.game_rules, system_prompt_addition=prompt_add)
 
     def _process_fortify_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
         """Processes the AI's action for the FORTIFY phase."""
@@ -1867,7 +1986,20 @@ class GameOrchestrator:
             action_type = action["type"]
             self.log_turn_info(f"{player.name} chose FORTIFY action: {action_type} - Full Details: {action}")
 
-            if action_type == "FORTIFY":
+            # Handle diplomatic actions first if chosen
+            if action_type in ["ACCEPT_ALLIANCE", "REJECT_ALLIANCE"]:
+                if self._process_diplomatic_action(player, action):
+                    # Unlike other phases, a diplomatic action in Fortify phase might still end the turn,
+                    # or allow one actual fortification move.
+                    # For now, let's assume it consumes the "action" for the fortify phase, and then the turn ends.
+                    # If player should be able to fortify *after* diplomacy, this logic needs adjustment.
+                    # The current _process_diplomatic_action doesn't set ai_is_thinking.
+                    # The fortify phase naturally ends after one action (fortify or end_turn).
+                    # So, if a diplomatic action is taken, it's the action for this phase.
+                    pass # Diplomatic action processed, turn will end as usual after this.
+                # Fall through to end turn logic in advance_game_turn
+
+            elif action_type == "FORTIFY":
                 if player.has_fortified_this_turn:
                      self.log_turn_info(f"{player.name} attempted to FORTIFY again in the same turn (has_fortified_this_turn was True). Action ignored. Turn will end.")
                 else:

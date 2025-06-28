@@ -531,59 +531,37 @@ class GameEngine:
 
         return log
 
-    def calculate_reinforcements(self, player: Player) -> int:
+    def calculate_reinforcements(self, player: Player) -> tuple[int, list[str]]:
         """
-        Computes armies based on territories owned, continent bonuses, and card trade-ins.
-        This method calculates and *returns* the number of reinforcements.
-        The actual update to player.armies_to_deploy should happen elsewhere (e.g. in orchestrator or a dedicated deploy phase method)
+        Computes armies based on territories owned and continent bonuses.
+        This method calculates and *returns* the number of reinforcements AND a list of controlled continent names.
+        Card trade-in reinforcements are handled by `perform_card_trade`.
+        The actual update to player.armies_to_deploy should happen elsewhere.
         """
-        if not player:
-            return 0
+        if not player or player.is_neutral:
+            return 0, []
 
         # 1. Territories owned
         num_territories = len(player.territories)
         reinforcements = max(3, num_territories // 3)
 
         # 2. Continent bonuses
+        controlled_continents = []
         for continent in self.game_state.continents.values():
             is_owner_of_all = True
-            if not continent.territories: # Skip empty continents
+            if not continent.territories: # Skip empty or malformed continents
                 is_owner_of_all = False
-            for territory in continent.territories:
-                if territory.owner != player:
-                    is_owner_of_all = False
-                    break
+            else:
+                for territory in continent.territories:
+                    if territory.owner != player:
+                        is_owner_of_all = False
+                        break
+
             if is_owner_of_all:
                 reinforcements += continent.bonus_armies
+                controlled_continents.append(continent.name)
 
-        # 3. Card trade-ins (This is a simplified version. Usually involves sets)
-        # For now, let's assume a simple rule: if player has 3+ cards, they can trade.
-        # A more complete implementation would check for valid sets (3 of a kind, 1 of each, etc.)
-        # and handle the increasing value of sets.
-        # This logic should ideally be separate and called when a player chooses to trade cards.
-        # For now, this part is just a placeholder for where card logic would influence reinforcements.
-        # Card trade-in reinforcements are handled by `perform_card_trade` now.
-
-        # player.armies_to_deploy += reinforcements # This is done by the caller
-        if player.is_neutral: # Neutral players do not get reinforcements
-            return 0
-
-        # 1. Territories owned
-        num_territories = len(player.territories)
-        reinforcements = max(3, num_territories // 3)
-
-        # 2. Continent bonuses
-        for continent in self.game_state.continents.values():
-            is_owner_of_all = True
-            if not continent.territories:
-                is_owner_of_all = False
-            for territory in continent.territories:
-                if territory.owner != player:
-                    is_owner_of_all = False
-                    break
-            if is_owner_of_all:
-                reinforcements += continent.bonus_armies
-        return reinforcements
+        return reinforcements, controlled_continents
 
     def _get_card_trade_bonus(self) -> int:
         """Gets the current bonus for trading cards, and escalates for next time."""
@@ -752,7 +730,7 @@ class GameEngine:
         """
         attacker_territory = self.game_state.territories.get(attacker_territory_name)
         defender_territory = self.game_state.territories.get(defender_territory_name)
-        log = {"event": "attack", "attacker": None, "defender": None, "results": [], "conquered": False, "card_drawn": None}
+        log = {"event": "attack", "attacker": None, "defender": None, "results": [], "conquered": False, "card_drawn": None, "betrayal": False}
         gs = self.game_state
 
         # Validations
@@ -767,6 +745,17 @@ class GameEngine:
         log["defender"] = defender_player.name if defender_player else "N/A"
         if defender_player and defender_player.is_neutral:
             log["defender_is_neutral"] = True
+
+        # Check for betrayal
+        if attacker_player and defender_player and not defender_player.is_neutral: # Betrayal only between non-neutral players
+            diplomatic_key = frozenset({attacker_player.name, defender_player.name})
+            current_status = gs.diplomacy.get(diplomatic_key)
+            if current_status == "ALLIANCE":
+                gs.diplomacy[diplomatic_key] = "WAR" # Alliance is broken, now at WAR
+                log["betrayal"] = True
+                log["old_diplomatic_status"] = "ALLIANCE"
+                log["new_diplomatic_status"] = "WAR"
+                # The GameOrchestrator will be responsible for broadcasting the betrayal message.
 
         if attacker_player == defender_player: # Also covers attacking own neutral territories if that were possible
             log["error"] = "Cannot attack your own territory."
@@ -940,18 +929,60 @@ class GameEngine:
 
 
             # Check if the old owner is eliminated
-            if old_owner and not old_owner.territories:
-                log["eliminated_player_name"] = old_owner.name # Log name for orchestrator
+            eliminated_player_details = None
+            if old_owner and not old_owner.is_neutral and not old_owner.territories : # Elimination only for non-neutral
+                log["eliminated_player_name"] = old_owner.name
                 new_owner.hand.extend(old_owner.hand)
                 old_owner.hand.clear()
-                log["cards_transferred_count"] = len(new_owner.hand) # Log new hand size for orchestrator
+                log["cards_transferred_count"] = len(new_owner.hand)
+                eliminated_player_details = {"player_name": old_owner.name, "cards_transferred_to": new_owner.name, "num_cards": len(new_owner.hand)}
 
-                # Check for mandatory card trade
-                if len(new_owner.hand) >= 6: # As per rule: "If winning them gives you 6 or more cards"
+
+                if len(new_owner.hand) >= 6:
                     self.game_state.elimination_card_trade_player_name = new_owner.name
                     log["mandatory_card_trade_initiated"] = new_owner.name
-                # Note: GameState.players list (actual removal of player object) should be updated by orchestrator
-                # after processing the elimination event from this log.
+
+            # Log event to history
+            event_data = {
+                "turn": gs.current_turn_number,
+                "type": "ATTACK_RESULT",
+                "attacker": attacker_player.name if attacker_player else "N/A",
+                "defender": defender_player.name if defender_player else "N/A",
+                "attacking_territory": attacker_territory_name,
+                "defending_territory": defender_territory_name,
+                "attacker_losses": attacker_losses,
+                "defender_losses": defender_losses,
+                "conquered": log["conquered"],
+                "betrayal": log["betrayal"]
+            }
+            if log["conquered"]:
+                event_data["card_drawn"] = log.get("card_drawn") is not None
+                if eliminated_player_details:
+                    event_data["elimination"] = eliminated_player_details # Keep details in attack log
+                    # Also add a specific ELIMINATION event for easier filtering by AI
+                    gs.event_history.append({
+                        "turn": gs.current_turn_number,
+                        "type": "ELIMINATION",
+                        "eliminator": new_owner.name,
+                        "eliminated_player": old_owner.name,
+                        "context": "CONQUEST"
+                    })
+            gs.event_history.append(event_data)
+
+        else: # Attack did not result in conquest, but still log the skirmish
+            event_data = {
+                "turn": gs.current_turn_number,
+                "type": "ATTACK_SKIRMISH", # Different type for non-conquest
+                "attacker": attacker_player.name if attacker_player else "N/A",
+                "defender": defender_player.name if defender_player else "N/A",
+                "attacking_territory": attacker_territory_name,
+                "defending_territory": defender_territory_name,
+                "attacker_losses": attacker_losses,
+                "defender_losses": defender_losses,
+                "betrayal": log["betrayal"]
+            }
+            gs.event_history.append(event_data)
+
 
         return log
 
@@ -1253,7 +1284,17 @@ class GameEngine:
                 # This indicates a flaw in the player iteration logic above.
                 # For now, let the game proceed, but this needs fixing.
             else:
-                new_current_player_obj.armies_to_deploy = self.calculate_reinforcements(new_current_player_obj)
+                reinforcements, controlled_continents = self.calculate_reinforcements(new_current_player_obj)
+                new_current_player_obj.armies_to_deploy = reinforcements
+                if controlled_continents:
+                    # Log continent control event
+                    gs.event_history.append({
+                        "turn": gs.current_turn_number,
+                        "type": "CONTINENT_CONTROL_UPDATE", # Or "CONTINENT_CONQUERED" if we track "newly"
+                        "player": new_current_player_obj.name,
+                        "controlled_continents": controlled_continents,
+                        "reinforcement_bonus_from_continents": sum(gs.continents[c].bonus_armies for c in controlled_continents if c in gs.continents)
+                    })
         else:
             print("CRITICAL ERROR in next_turn: No current player after advancing turn.")
 
@@ -1459,14 +1500,33 @@ class GameEngine:
                 if territory.army_count > 1:
                     for neighbor in territory.adjacent_territories:
                         if neighbor.owner != player:
-                            # Max armies that can attack: territory.army_count - 1
-                            # Max dice: min(3, territory.army_count - 1)
-                            actions.append({
-                                "type": "ATTACK",
-                                "from": territory.name,
-                                "to": neighbor.name,
-                                "max_armies_for_attack": territory.army_count - 1
-                            })
+                            diplomatic_key = frozenset({player.name, neighbor.owner.name})
+                            current_status = gs.diplomacy.get(diplomatic_key)
+
+                            if current_status == "ALLIANCE":
+                                # Option to BETRAY_ALLY
+                                actions.append({
+                                    "type": "BETRAY_ALLY",
+                                    "from": territory.name,
+                                    "to": neighbor.name,
+                                    "max_armies_for_attack": territory.army_count - 1
+                                })
+                            elif current_status != "WAR": # WAR status also allows attack
+                                # Regular ATTACK action if not ALLIANCE (NEUTRAL or no status)
+                                actions.append({
+                                    "type": "ATTACK",
+                                    "from": territory.name,
+                                    "to": neighbor.name,
+                                    "max_armies_for_attack": territory.army_count - 1
+                                })
+                            elif current_status == "WAR":
+                                # Regular ATTACK action
+                                actions.append({
+                                    "type": "ATTACK",
+                                    "from": territory.name,
+                                    "to": neighbor.name,
+                                    "max_armies_for_attack": territory.army_count - 1
+                                })
             actions.append({"type": "END_ATTACK_PHASE"}) # Always possible to end attack phase
             # Add CHAT actions later
 
@@ -1489,129 +1549,173 @@ class GameEngine:
             # Always possible to end the turn (which skips fortification if not done)
             actions.append({"type": "END_TURN"})
 
-        # Global actions (available in some phases)
-        # actions.append({"type": "GLOBAL_CHAT", "message": "..."})
-        # actions.append({"type": "PRIVATE_CHAT", "target_player": "...", "message": "..."})
+        # Communication and Diplomacy actions available in REINFORCE, ATTACK, FORTIFY phases
+        if phase in ["REINFORCE", "ATTACK", "FORTIFY"]:
+            actions.append({"type": "GLOBAL_CHAT", "message": "..."}) # Placeholder for actual message
+            for p_target in gs.players:
+                if p_target != player and not p_target.is_neutral:
+                    actions.append({
+                        "type": "PRIVATE_CHAT",
+                        "target_player_name": p_target.name,
+                        "initial_message": "..." # Placeholder
+                    })
+
+            # Diplomacy related actions (PROPOSE_ALLIANCE, BREAK_ALLIANCE)
+            # ACCEPT_ALLIANCE is typically presented by Orchestrator if a proposal is pending.
+            for other_player in gs.players:
+                if other_player == player or other_player.is_neutral:
+                    continue
+
+                diplomatic_key = frozenset({player.name, other_player.name})
+                current_status = gs.diplomacy.get(diplomatic_key)
+
+                if not current_status or current_status == "NEUTRAL":
+                    # Can propose alliance if neutral or no status
+                    actions.append({
+                        "type": "PROPOSE_ALLIANCE",
+                        "target_player_name": other_player.name
+                    })
+
+                # Check for pending proposals TO the current player
+                proposal_details = gs.active_diplomatic_proposals.get(diplomatic_key)
+                if proposal_details and proposal_details.get('target') == player.name:
+                    # Proposal exists, and current player is the target
+                    if proposal_details.get('type') == 'ALLIANCE': # Assuming only alliance proposals for now
+                        actions.append({
+                            "type": "ACCEPT_ALLIANCE",
+                            "proposing_player_name": proposal_details.get('proposer')
+                        })
+                        actions.append({
+                            "type": "REJECT_ALLIANCE",
+                            "proposing_player_name": proposal_details.get('proposer')
+                        })
+
+                if current_status == "ALLIANCE":
+                    actions.append({
+                        "type": "BREAK_ALLIANCE",
+                        "target_player_name": other_player.name
+                    })
 
         return actions
 
 
 if __name__ == '__main__':
     # Basic Test for GameEngine
-    engine = GameEngine(map_file_path="map_config.json") # Assuming map_config.json is in the same directory or path is correct
+    # engine = GameEngine(map_file_path="map_config.json") # Assuming map_config.json is in the same directory or path is correct
 
     # Create a dummy map_config.json for testing if it doesn't exist
-    dummy_map_data = {
-        "continents": [
-            {"name": "North America", "bonus_armies": 5, "territories": ["Alaska", "Alberta", "Western US"]},
-            {"name": "Asia", "bonus_armies": 7, "territories": ["Kamchatka", "Japan"]}
-        ],
-        "territories": {
-            "Alaska": {"continent": "North America", "adjacent_to": ["Alberta", "Kamchatka"]},
-            "Alberta": {"continent": "North America", "adjacent_to": ["Alaska", "Western US"]},
-            "Western US": {"continent": "North America", "adjacent_to": ["Alberta"]},
-            "Kamchatka": {"continent": "Asia", "adjacent_to": ["Alaska", "Japan"]},
-            "Japan": {"continent": "Asia", "adjacent_to": ["Kamchatka"]}
-        }
-    }
-    try:
-        with open("map_config.json", 'w') as f:
-            json.dump(dummy_map_data, f, indent=2)
-        print("Created dummy map_config.json for testing.")
-    except IOError:
-        print("Could not create dummy map_config.json. Ensure you have write permissions or create it manually.")
+    # dummy_map_data = {
+    #     "continents": [
+    #         {"name": "North America", "bonus_armies": 5, "territories": ["Alaska", "Alberta", "Western US"]},
+    #         {"name": "Asia", "bonus_armies": 7, "territories": ["Kamchatka", "Japan"]}
+    #     ],
+    #     "territories": {
+    #         "Alaska": {"continent": "North America", "adjacent_to": ["Alberta", "Kamchatka"]},
+    #         "Alberta": {"continent": "North America", "adjacent_to": ["Alaska", "Western US"]},
+    #         "Western US": {"continent": "North America", "adjacent_to": ["Alberta"]},
+    #         "Kamchatka": {"continent": "Asia", "adjacent_to": ["Alaska", "Japan"]},
+    #         "Japan": {"continent": "Asia", "adjacent_to": ["Kamchatka"]}
+    #     }
+    # }
+    # try:
+    #     with open("map_config.json", 'w') as f:
+    #         json.dump(dummy_map_data, f, indent=2)
+    #     print("Created dummy map_config.json for testing.")
+    # except IOError:
+    #     print("Could not create dummy map_config.json. Ensure you have write permissions or create it manually.")
 
-    players_setup = [
-        {"name": "PlayerA", "color": "Red"},
-        {"name": "PlayerB", "color": "Blue"}
-    ]
-    engine.initialize_board(players_setup)
+    # players_setup = [
+    #     {"name": "PlayerA", "color": "Red"},
+    #     {"name": "PlayerB", "color": "Blue"}
+    # ]
+    # engine.initialize_board(players_setup) # Assuming initialize_board is the new name for initialize_game_from_map or similar
 
-    print("Initial Game State:")
-    print(engine.game_state.to_json())
-    print("-" * 20)
+    # print("Initial Game State:")
+    # print(engine.game_state.to_json())
+    # print("-" * 20)
 
-    current_player = engine.game_state.get_current_player()
-    if current_player:
-        print(f"Current Player: {current_player.name}")
-        reinforcements = engine.calculate_reinforcements(current_player)
-        current_player.armies_to_deploy = reinforcements # Manually assign for this test
-        print(f"{current_player.name} gets {current_player.armies_to_deploy} reinforcements.")
+    # current_player = engine.game_state.get_current_player()
+    # if current_player:
+    #     print(f"Current Player: {current_player.name}")
+    #     reinforcements = engine.calculate_reinforcements(current_player)
+    #     current_player.armies_to_deploy = reinforcements # Manually assign for this test
+    #     print(f"{current_player.name} gets {current_player.armies_to_deploy} reinforcements.")
 
-        # Simulate deploying armies
-        if current_player.armies_to_deploy > 0 and current_player.territories:
-            deploy_territory = current_player.territories[0]
-            deploy_amount = current_player.armies_to_deploy
-            deploy_territory.army_count += deploy_amount
-            print(f"{current_player.name} deployed {deploy_amount} armies to {deploy_territory.name} (new count: {deploy_territory.army_count})")
-            current_player.armies_to_deploy = 0
+    #     # Simulate deploying armies
+    #     if current_player.armies_to_deploy > 0 and current_player.territories:
+    #         deploy_territory = current_player.territories[0]
+    #         deploy_amount = current_player.armies_to_deploy
+    #         deploy_territory.army_count += deploy_amount
+    #         print(f"{current_player.name} deployed {deploy_amount} armies to {deploy_territory.name} (new count: {deploy_territory.army_count})")
+    #         current_player.armies_to_deploy = 0
 
-        engine.game_state.current_game_phase = "ATTACK"
-        print(f"Game phase set to: {engine.game_state.current_game_phase}")
+    #     engine.game_state.current_game_phase = "ATTACK"
+    #     print(f"Game phase set to: {engine.game_state.current_game_phase}")
 
-        # Try a test attack if possible
-        attacker_territory = None
-        defender_territory = None
-        for t in current_player.territories:
-            if t.army_count > 1:
-                for adj_t in t.adjacent_territories:
-                    if adj_t.owner != current_player:
-                        attacker_territory = t
-                        defender_territory = adj_t
-                        break
-            if attacker_territory:
-                break
+    #     # Try a test attack if possible
+    #     attacker_territory = None
+    #     defender_territory = None
+    #     for t in current_player.territories:
+    #         if t.army_count > 1:
+    #             for adj_t in t.adjacent_territories:
+    #                 if adj_t.owner != current_player:
+    #                     attacker_territory = t
+    #                     defender_territory = adj_t
+    #                     break
+    #         if attacker_territory:
+    #             break
 
-        if attacker_territory and defender_territory:
-            num_attackers = attacker_territory.army_count - 1
-            print(f"\n{current_player.name} attacking from {attacker_territory.name} ({attacker_territory.army_count} armies) to {defender_territory.name} ({defender_territory.army_count} armies, owner: {defender_territory.owner.name}) with {num_attackers} armies.")
-            attack_result = engine.perform_attack(attacker_territory.name, defender_territory.name, num_attackers)
-            print("Attack Result:")
-            print(json.dumps(attack_result, indent=2))
-            print(f"State after attack: {attacker_territory.name} has {attacker_territory.army_count}, {defender_territory.name} has {defender_territory.army_count}")
-        else:
-            print("\nNo valid attack opportunity found for testing.")
+    #     if attacker_territory and defender_territory:
+    #         num_attackers = attacker_territory.army_count - 1
+    #         print(f"\n{current_player.name} attacking from {attacker_territory.name} ({attacker_territory.army_count} armies) to {defender_territory.name} ({defender_territory.army_count} armies, owner: {defender_territory.owner.name}) with {num_attackers} armies.")
+    #         attack_result = engine.perform_attack(attacker_territory.name, defender_territory.name, num_attackers)
+    #         print("Attack Result:")
+    #         print(json.dumps(attack_result, indent=2))
+    #         print(f"State after attack: {attacker_territory.name} has {attacker_territory.army_count}, {defender_territory.name} has {defender_territory.army_count}")
+    #     else:
+    #         print("\nNo valid attack opportunity found for testing.")
 
-        engine.game_state.current_game_phase = "FORTIFY"
-        # Try a test fortify
-        if len(current_player.territories) >= 2:
-            from_t = current_player.territories[0]
-            to_t = None
-            for t_potential_to in current_player.territories[1:]:
-                 if engine._are_territories_connected(from_t, t_potential_to, current_player):
-                     to_t = t_potential_to
-                     break
+    #     engine.game_state.current_game_phase = "FORTIFY"
+    #     # Try a test fortify
+    #     if len(current_player.territories) >= 2:
+    #         from_t = current_player.territories[0]
+    #         to_t = None
+    #         for t_potential_to in current_player.territories[1:]:
+    #              if engine._are_territories_connected(from_t, t_potential_to, current_player):
+    #                  to_t = t_potential_to
+    #                  break
 
-            if from_t and to_t and from_t.army_count > 1:
-                armies_to_move = 1
-                print(f"\n{current_player.name} fortifying from {from_t.name} to {to_t.name} with {armies_to_move} army.")
-                fortify_result = engine.perform_fortify(from_t.name, to_t.name, armies_to_move)
-                print("Fortify Result:")
-                print(json.dumps(fortify_result, indent=2))
-                print(f"State after fortify: {from_t.name} has {from_t.army_count}, {to_t.name} has {to_t.army_count}")
-            else:
-                print("\nNo valid fortify opportunity for testing or from_territory has only 1 army.")
-        else:
-            print("\nNot enough territories to test fortify.")
+    #         if from_t and to_t and from_t.army_count > 1:
+    #             armies_to_move = 1
+    #             print(f"\n{current_player.name} fortifying from {from_t.name} to {to_t.name} with {armies_to_move} army.")
+    #             fortify_result = engine.perform_fortify(from_t.name, to_t.name, armies_to_move)
+    #             print("Fortify Result:")
+    #             print(json.dumps(fortify_result, indent=2))
+    #             print(f"State after fortify: {from_t.name} has {from_t.army_count}, {to_t.name} has {to_t.army_count}")
+    #         else:
+    #             print("\nNo valid fortify opportunity for testing or from_territory has only 1 army.")
+    #     else:
+    #         print("\nNot enough territories to test fortify.")
 
 
-        engine.next_turn()
-        print("-" * 20)
-        print("After next_turn():")
-        new_current_player = engine.game_state.get_current_player()
-        if new_current_player:
-            print(f"New Current Player: {new_current_player.name}")
-            print(f"Turn: {engine.game_state.current_turn_number}, Phase: {engine.game_state.current_game_phase}")
-            print(f"{new_current_player.name} has {new_current_player.armies_to_deploy} reinforcements calculated.")
+    #     engine.next_turn()
+    #     print("-" * 20)
+    #     print("After next_turn():")
+    #     new_current_player = engine.game_state.get_current_player()
+    #     if new_current_player:
+    #         print(f"New Current Player: {new_current_player.name}")
+    #         print(f"Turn: {engine.game_state.current_turn_number}, Phase: {engine.game_state.current_game_phase}")
+    #         print(f"{new_current_player.name} has {new_current_player.armies_to_deploy} reinforcements calculated.")
 
-        print("\nFinal Game State:")
-        print(engine.game_state.to_json())
+    #     print("\nFinal Game State:")
+    #     print(engine.game_state.to_json())
 
-        winner = engine.is_game_over()
-        if winner:
-            print(f"\nGame Over! Winner is {winner.name}")
-        else:
-            print("\nGame is not over.")
+    #     winner = engine.is_game_over()
+    #     if winner:
+    #         print(f"\nGame Over! Winner is {winner.name}")
+    #     else:
+    #         print("\nGame is not over.")
 
-    else:
-        print("No current player to test with.")
+    # else:
+    #     print("No current player to test with.")
+    pass # Comment out __main__ for now

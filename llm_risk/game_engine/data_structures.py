@@ -106,6 +106,12 @@ class GameState:
 
         # State for mandatory card trading after eliminating another player
         self.elimination_card_trade_player_name: str | None = None
+        # Diplomatic state between pairs of players
+        self.diplomacy: dict[frozenset[str], str] = {} # e.g. {frozenset({'PlayerA', 'PlayerB'}): "ALLIANCE"}
+        # Stores active proposals, key is frozenset({proposer, target}), value is {'proposer': name, 'target': name, 'type': type, 'turn': turn}
+        self.active_diplomatic_proposals: dict[frozenset[str], dict] = {}
+        # History of key game events
+        self.event_history: list[dict] = []
 
     def get_current_player(self) -> Player | None: # For regular game turns
         if not self.players or self.current_player_index < 0 or self.current_player_index >= len(self.players):
@@ -127,6 +133,16 @@ class GameState:
         return self.player_setup_order[self.current_setup_player_index]
 
     def to_dict(self):
+        # Convert frozenset keys to sorted tuples of strings for JSON serialization
+        diplomacy_serializable = {
+            "_".join(sorted(list(k))): v for k, v in self.diplomacy.items()
+        }
+        active_proposals_serializable = {
+            "_".join(sorted(list(k))): v for k, v in self.active_diplomatic_proposals.items()
+        }
+        # Event history is already a list of dicts, so it's directly serializable.
+        # However, for very long games, we might want to only serialize recent history.
+        # For now, serialize all.
         return {
             "territories": {name: t.to_dict() for name, t in self.territories.items()},
             "continents": {name: c.to_dict() for name, c in self.continents.items()},
@@ -140,108 +156,22 @@ class GameState:
             "unclaimed_territory_count": len(self.unclaimed_territory_names),
             "current_setup_player": self.get_current_setup_player().name if self.get_current_setup_player() else None,
             "first_player_of_game": self.first_player_of_game.name if self.first_player_of_game else None,
-            "elimination_card_trade_player_name": self.elimination_card_trade_player_name
+            "elimination_card_trade_player_name": self.elimination_card_trade_player_name,
+            "diplomacy": diplomacy_serializable,
+            "active_diplomatic_proposals": active_proposals_serializable,
+            "event_history_count": len(self.event_history) # Provide count, actual history not in summary
         }
 
-    def to_json(self) -> str:
-        return json.dumps(self.to_dict(), indent=2)
-            "name": self.name,
-            "color": self.color,
-            "armies_to_deploy": self.armies_to_deploy,
-            "initial_armies_pool": self.initial_armies_pool,
-            "armies_placed_in_setup": self.armies_placed_in_setup,
-            "territories": [t.name for t in self.territories],
-            "hand": [card.to_dict() for card in self.hand],
-            "has_fortified_this_turn": self.has_fortified_this_turn,
-            "has_conquered_territory_this_turn": self.has_conquered_territory_this_turn
-        }
+    def to_json_with_history(self) -> str: # New method to include full history if needed
+        full_dict = self.to_dict() # This now includes serialized active_diplomatic_proposals
+        full_dict["event_history"] = self.event_history # Add full history here
+        # Remove count if full history is present
+        if "event_history_count" in full_dict and "event_history" in full_dict :
+            del full_dict["event_history_count"]
+        return json.dumps(full_dict, indent=2)
 
-class GameState:
-    def __init__(self):
-        self.territories: dict[str, Territory] = {}
-        self.continents: dict[str, Continent] = {}
-        self.players: list[Player] = []
-        self.current_turn_number: int = 1
-        # Game Phases: SETUP_START, SETUP_DETERMINE_ORDER, SETUP_CLAIM_TERRITORIES, SETUP_PLACE_ARMIES, REINFORCE, ATTACK, FORTIFY, GAME_OVER
-        self.current_game_phase: str = "SETUP_START"
-        self.deck: list[Card] = []
-        self.current_player_index: int = 0 # Index for self.players for regular game turns
-        self.requires_post_attack_fortify: bool = False
-        self.conquest_context: dict | None = None
-
-        # Setup specific state
-        self.unclaimed_territory_names: list[str] = [] # List of names for territories yet to be claimed
-        self.player_setup_order: list[Player] = [] # Order of players for setup actions
-        self.current_setup_player_index: int = 0 # Index for self.player_setup_order
-        self.first_player_of_game: Player | None = None # Player who will take the first actual game turn
-
-        # State for mandatory card trading after eliminating another player
-        self.elimination_card_trade_player_name: str | None = None # Name of player who must trade cards
-
-    def get_current_player(self) -> Player | None: # For regular game turns
-        if not self.players or self.current_player_index < 0 or self.current_player_index >= len(self.players):
-            return None
-        return self.players[self.current_player_index]
-
-    def to_dict(self):
-        return {
-            "territories": {name: t.to_dict() for name, t in self.territories.items()},
-            "continents": {name: c.to_dict() for name, c in self.continents.items()},
-            "players": [p.to_dict() for p in self.players],
-            "current_turn_number": self.current_turn_number,
-            "current_game_phase": self.current_game_phase,
-            "deck_size": len(self.deck), # Don't reveal actual cards in deck
-            "current_player": self.get_current_player().name if self.get_current_player() else None,
-            "requires_post_attack_fortify": self.requires_post_attack_fortify,
-            "conquest_context": self.conquest_context # This will be None if not active, or a dict if active
-        }
-
-    def to_json(self) -> str:
+    def to_json(self) -> str: # Default to_json will not include the potentially large event_history
         return json.dumps(self.to_dict(), indent=2)
 
-if __name__ == '__main__':
-    # Example Usage (Optional basic test)
-    p1 = Player("Player 1", "Red")
-    p2 = Player("Player 2", "Blue")
-
-    alaska = Territory("Alaska")
-    alberta = Territory("Alberta")
-    western_us = Territory("Western US")
-
-    alaska.adjacent_territories = [alberta]
-    alberta.adjacent_territories = [alaska, western_us]
-    western_us.adjacent_territories = [alberta]
-
-    north_america = Continent("North America", 5)
-    north_america.territories = [alaska, alberta, western_us]
-
-    alaska.continent = north_america
-    alberta.continent = north_america
-    western_us.continent = north_america
-
-    alaska.owner = p1
-    alaska.army_count = 3
-    p1.territories.append(alaska)
-
-    alberta.owner = p2
-    alberta.army_count = 2
-    p2.territories.append(alberta)
-
-    western_us.owner = p1
-    western_us.army_count = 1
-    p1.territories.append(western_us)
-
-    gs = GameState()
-    gs.territories = {"Alaska": alaska, "Alberta": alberta, "Western US": western_us}
-    gs.continents = {"North America": north_america}
-    gs.players = [p1, p2]
-    gs.deck = [Card("Alaska", "Infantry"), Card(None, "Wildcard")]
-
-    p1.hand.append(Card("Alberta", "Cavalry"))
-
-    print(gs.to_json())
-
-    # Test current player
-    print(f"Current player: {gs.get_current_player().name if gs.get_current_player() else 'None'}")
-    gs.current_player_index = 1
-    print(f"Current player after change: {gs.get_current_player().name if gs.get_current_player() else 'None'}")
+# The second GameState class definition and the if __name__ == '__main__': block are removed as they are duplicates or outdated.
+# Ensure the first GameState class is the one being actively developed and used.
