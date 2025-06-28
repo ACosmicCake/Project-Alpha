@@ -108,99 +108,107 @@ class BaseAIAgent(ABC):
             print(f"Validation Error: Action type '{llm_action_type}' not found in valid_actions. Action: {action_dict}")
             return False
 
-        # --- Start of Hyper-Focused Debugging Validation Logic ---
+        # --- Final Simplified and Corrected Validation Logic ---
         print(f"[VALIDATE_ACTION_DEBUG] Start validation for action: {action_dict}, llm_action_type: {llm_action_type}")
 
         if llm_action_type == "SETUP_2P_PLACE_ARMIES_TURN":
             print(f"[VALIDATE_ACTION_DEBUG] Entered SETUP_2P_PLACE_ARMIES_TURN specific handler.")
 
+            # Validate 'own_army_placements'
             own_placements = action_dict.get("own_army_placements")
             if not isinstance(own_placements, list):
-                print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'own_army_placements' is not a list. Type: {type(own_placements)}")
+                print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'own_army_placements' is missing or not a list. Found: {type(own_placements)}. Action: {action_dict}")
                 return False
 
-            # It's okay for own_army_placements to be empty if player_armies_to_place_this_turn is 0.
-            # The sum of armies placed is validated by the game engine, not here.
-            # Here, we only validate the structure if placements are provided.
-            if not own_placements and len(action_dict.get("player_owned_territories", [])) > 0 : # If has territories but chose to place 0
-                 # This case is tricky; if player_armies_to_place_this_turn was > 0, engine would reject.
-                 # If it was 0, then empty list is fine. For now, allow empty list here.
-                 pass # print(f"[VALIDATE_ACTION_DEBUG] 'own_army_placements' is empty, assuming valid if allowed by game logic.")
-
+            # own_placements can be an empty list if player_armies_to_place_this_turn is 0.
+            # The game engine will validate if the sum of armies matches player_armies_to_place_this_turn.
+            # This validation step primarily checks the structure of provided placements.
             for i, item in enumerate(own_placements):
                 if not (isinstance(item, list) and len(item) == 2 and isinstance(item[0], str) and isinstance(item[1], int)):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Invalid item #{i} in 'own_army_placements': {item}. Expected [str, int].")
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Item #{i} in 'own_army_placements' ({item}) is not a list of [String, Integer]. Action: {action_dict}")
                     return False
-                if item[1] <= 0: # Armies placed must be positive if an entry exists
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Armies in 'own_army_placements' item #{i} must be > 0. Got: {item[1]}.")
+                if item[1] <= 0: # Number of armies to place in a single entry must be positive.
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Armies in 'own_army_placements' item #{i} ({item}) must be a positive integer. Got: {item[1]}. Action: {action_dict}")
                     return False
 
+            # Validate 'neutral_army_placement' - can be null, or a list of [String, 1]
             neutral_placement = action_dict.get("neutral_army_placement")
-            if neutral_placement is not None:
+            if neutral_placement is not None: # Only validate if it's not null
                 if not (isinstance(neutral_placement, list) and len(neutral_placement) == 2 and isinstance(neutral_placement[0], str) and isinstance(neutral_placement[1], int)):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Invalid 'neutral_army_placement': {neutral_placement}. Expected [str, int] or null.")
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' ({neutral_placement}) is not a list of [String, Integer]. Action: {action_dict}")
                     return False
                 if neutral_placement[1] != 1: # Neutral placement, if specified, must be for exactly 1 army.
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' armies must be 1. Got: {neutral_placement[1]}.")
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' ({neutral_placement}) armies must be 1. Got: {neutral_placement[1]}. Action: {action_dict}")
                     return False
 
-            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (SETUP_2P_PLACE_ARMIES_TURN): Action structure is valid.")
-            return True
+            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (SETUP_2P_PLACE_ARMIES_TURN): Action structure appears valid. Action: {action_dict}")
+            return True # This action type is structurally validated. Game engine handles logical validation.
 
-        # --- Generic Validation for other action types (Simplified for clarity) ---
-        print(f"[VALIDATE_ACTION_DEBUG] Action type '{llm_action_type}' not SETUP_2P_PLACE_ARMIES_TURN. Proceeding to generic validation.")
+        # --- Generic Validation for other action types ---
+        print(f"[VALIDATE_ACTION_DEBUG] Action type '{llm_action_type}' is not SETUP_2P_PLACE_ARMIES_TURN. Proceeding to generic validation.")
 
-        # Check if the action matches any of the provided valid_actions templates.
-        # This is a direct match for simple actions or actions where LLM just fills numbers.
+        if not matching_type_actions: # Should have been caught earlier, but defensive check.
+            print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic): No matching action templates found for type '{llm_action_type}'.")
+            return False
+
+        # Try to find an exact match in valid_actions (useful for simple actions like END_TURN)
         if action_dict in matching_type_actions:
-            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Exact Match): Action matches a template in valid_actions.")
+            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Exact Match): Action {action_dict} found in valid_actions.")
             return True
 
-        # Fallback for complex actions where LLM might add numeric fields (e.g. num_armies)
-        # to a template that didn't explicitly list them but implied them.
+        # For complex actions that are not SETUP_2P_PLACE_ARMIES_TURN, try template matching
         for template in matching_type_actions:
-            # Check if action_dict contains all keys from template with same non-numeric values
-            template_keys = set(template.keys())
-            action_keys = set(action_dict.keys())
-
-            if not template_keys.issubset(action_keys): # Must have at least all keys from template
-                # print(f"[VALIDATE_ACTION_DEBUG] Template {template} keys not subset of action {action_dict} keys.")
-                continue
-
-            param_mismatch = False
+            print(f"[VALIDATE_ACTION_DEBUG] Comparing action {action_dict} with template {template}")
+            # Check if all keys from template are in action_dict and non-numeric/non-bool values match
+            params_match = True
             for key, template_value in template.items():
-                # Only compare non-numeric values from template strictly. Numeric are filled by AI.
-                if not isinstance(template_value, (int, float, bool)):
+                if key not in action_dict:
+                    print(f"[VALIDATE_ACTION_DEBUG] Key '{key}' from template missing in action.")
+                    params_match = False
+                    break
+                if not isinstance(template_value, (int, float, bool)): # Strict match for non-numeric/bool template values
                     if action_dict[key] != template_value:
-                        param_mismatch = True
+                        print(f"[VALIDATE_ACTION_DEBUG] Value mismatch for key '{key}'. Template: '{template_value}', Action: '{action_dict[key]}'.")
+                        params_match = False
                         break
-            if param_mismatch:
-                # print(f"[VALIDATE_ACTION_DEBUG] Template {template} non-numeric values mismatch with action {action_dict}.")
-                continue
+            if not params_match:
+                continue # Try next template
 
-            # Check specific required numeric fields for certain complex types
+            # Check if action_dict has extra keys not in template (ignoring numeric/bool keys AI might add)
+            extra_keys_invalid = False
+            for key, action_value in action_dict.items():
+                if key not in template:
+                    if not isinstance(action_value, (int, float, bool)): # AI should only add numeric/bool values
+                        print(f"[VALIDATE_ACTION_DEBUG] Action has extra non-numeric/bool key '{key}' not in template.")
+                        extra_keys_invalid = True
+                        break
+            if extra_keys_invalid:
+                continue # Try next template
+
+            # Type-specific required field and basic value checks for fields AI adds
+            type_specific_checks_pass = True
             if llm_action_type == "ATTACK":
                 if not (isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", 0) > 0):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (ATTACK): 'num_armies' missing, not int, or not > 0. Value: {action_dict.get('num_armies')}")
-                    continue # Fail this template, try next
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (ATTACK): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
+                    type_specific_checks_pass = False
             elif llm_action_type == "DEPLOY":
                 if not (isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", 0) > 0):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (DEPLOY): 'num_armies' missing, not int, or not > 0. Value: {action_dict.get('num_armies')}")
-                    continue
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (DEPLOY): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
+                    type_specific_checks_pass = False
             elif llm_action_type == "FORTIFY":
-                if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >=0 ): # Allow 0 for "no move"
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (FORTIFY): 'num_armies' missing, not int, or < 0. Value: {action_dict.get('num_armies')}")
-                    continue
+                if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >= 0): # Allow 0
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (FORTIFY): 'num_armies' missing, not int, or <0. Value: {action_dict.get('num_armies')}")
+                    type_specific_checks_pass = False
             elif llm_action_type == "POST_ATTACK_FORTIFY":
-                 if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >=0 ): # Engine validates min/max
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (POST_ATTACK_FORTIFY): 'num_armies' missing or not int. Value: {action_dict.get('num_armies')}")
-                    continue
+                 if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >= 0): # Engine validates min/max
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (POST_ATTACK_FORTIFY): 'num_armies' missing, not int or <0. Value: {action_dict.get('num_armies')}")
+                    type_specific_checks_pass = False
 
-            # If we made it here, this template is a potential match for a complex action.
-            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Complex Match): Action {action_dict} matches template {template} with field checks.")
-            return True
+            if type_specific_checks_pass:
+                print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Complex Match): Action {action_dict} conforms to template {template} with type checks.")
+                return True
 
-        print(f"[VALIDATE_ACTION_DEBUG] FAIL (Fallback): Action {action_dict} (type: {llm_action_type}) did not conform to any valid action templates in {matching_type_actions} or failed type-specific checks.")
+        print(f"[VALIDATE_ACTION_DEBUG] FAIL (Fallback): Action {action_dict} (type: {llm_action_type}) did not conform to any valid action templates in {matching_type_actions} or failed its type-specific checks.")
         return False
 
 
