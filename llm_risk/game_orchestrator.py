@@ -52,7 +52,7 @@ class GameOrchestrator:
         # Initialize the game board in the engine
         # The engine will internally create a Neutral player if is_two_player_mode is True.
         self.engine.initialize_game_from_map(
-            players_data=[{"name": p.name, "color": p.color} for p in human_players], # Pass only human player data
+            players_data=[{"name": p.name, "color": p.color} for p in human_player_configs], # Pass only human player data
             is_two_player_game=self.is_two_player_mode
         )
 
@@ -238,9 +238,25 @@ class GameOrchestrator:
         acting_player_obj: GamePlayer | None = None
 
         if current_phase in ["SETUP_CLAIM_TERRITORIES", "SETUP_PLACE_ARMIES"] and not gs.is_two_player_game:
-            acting_player_obj = gs.get_current_setup_player()
+            # acting_player_obj = gs.get_current_setup_player() # Replaced due to AttributeError
+            current_player_obj_temp: GamePlayer | None = None
+            if not gs.player_setup_order or \
+               gs.current_setup_player_index < 0 or \
+               gs.current_setup_player_index >= len(gs.player_setup_order):
+                current_player_obj_temp = None
+            else:
+                current_player_obj_temp = gs.player_setup_order[gs.current_setup_player_index]
+            acting_player_obj = current_player_obj_temp
         elif current_phase == "SETUP_2P_PLACE_REMAINING" and gs.is_two_player_game:
-            acting_player_obj = gs.get_current_setup_player() # This will be one of the two human players
+            # acting_player_obj = gs.get_current_setup_player() # Replaced due to AttributeError
+            current_player_obj_temp: GamePlayer | None = None
+            if not gs.player_setup_order or \
+               gs.current_setup_player_index < 0 or \
+               gs.current_setup_player_index >= len(gs.player_setup_order):
+                current_player_obj_temp = None
+            else:
+                current_player_obj_temp = gs.player_setup_order[gs.current_setup_player_index]
+            acting_player_obj = current_player_obj_temp # This will be one of the two human players
         elif current_phase not in ["SETUP_START", "SETUP_DETERMINE_ORDER", "SETUP_2P_DEAL_CARDS"]: # Regular game turn
             acting_player_obj = gs.get_current_player()
 
@@ -316,9 +332,18 @@ class GameOrchestrator:
 
     def _get_current_setup_player_and_agent(self) -> tuple[GamePlayer | None, BaseAIAgent | None]:
         gs = self.engine.game_state
-        current_setup_player_obj = gs.get_current_setup_player()
+        # current_setup_player_obj = gs.get_current_setup_player() # Replaced due to AttributeError
+
+        current_setup_player_obj: GamePlayer | None = None
+        if not gs.player_setup_order or \
+           gs.current_setup_player_index < 0 or \
+           gs.current_setup_player_index >= len(gs.player_setup_order):
+            current_setup_player_obj = None
+        else:
+            current_setup_player_obj = gs.player_setup_order[gs.current_setup_player_index]
+
         if not current_setup_player_obj:
-            self.log_turn_info(f"Error: No current setup player in phase {gs.current_game_phase}")
+            self.log_turn_info(f"Error: No current setup player identified in phase {gs.current_game_phase} using player_setup_order and current_setup_player_index.")
             return None, None
 
         current_setup_agent = self.get_agent_for_player(current_setup_player_obj)
