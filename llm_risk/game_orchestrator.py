@@ -634,7 +634,8 @@ class GameOrchestrator:
                       f"({action_template['player_owned_territories']}). "
                       f"Also, if neutral can place ({action_template['neutral_can_place']}), "
                       f"place 1 neutral army on a neutral territory ({action_template['neutral_owned_territories']}). "
-                      "Provide action as: {'type': 'SETUP_2P_PLACE_ARMIES_TURN', 'own_army_placements': [('T1', count1), ...], 'neutral_army_placement': ('NT1', 1) or null}")
+                      "Provide action as: {'type': 'SETUP_2P_PLACE_ARMIES_TURN', 'own_army_placements': [['T1', count1], ['T2', count2], ...], 'neutral_army_placement': ['NT1', 1] or null}. "
+                      "Ensure placements are lists of two elements (e.g., [\"TerritoryName\", number_of_armies]).")
         self._execute_ai_turn_async(current_setup_agent, gs.to_json(), valid_actions, self.game_rules, prompt_add)
         return True
 

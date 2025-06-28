@@ -108,6 +108,24 @@ class BaseAIAgent(ABC):
             print(f"Validation Error: Action type '{llm_action_type}' not found in valid_actions. Action: {action_dict}")
             return False
 
+        # Specific handling for SETUP_2P_PLACE_ARMIES_TURN
+        if llm_action_type == "SETUP_2P_PLACE_ARMIES_TURN":
+            if "own_army_placements" not in action_dict or not isinstance(action_dict["own_army_placements"], list):
+                print(f"Validation Error: SETUP_2P_PLACE_ARMIES_TURN action missing or invalid 'own_army_placements'. Action: {action_dict}")
+                return False
+            for item in action_dict["own_army_placements"]:
+                if not (isinstance(item, list) and len(item) == 2 and isinstance(item[0], str) and isinstance(item[1], int)):
+                    print(f"Validation Error: Invalid item in 'own_army_placements' for SETUP_2P_PLACE_ARMIES_TURN. Must be list of [str, int]. Item: {item}. Action: {action_dict}")
+                    return False
+
+            if "neutral_army_placement" in action_dict and action_dict["neutral_army_placement"] is not None:
+                item = action_dict["neutral_army_placement"]
+                if not (isinstance(item, list) and len(item) == 2 and isinstance(item[0], str) and isinstance(item[1], int)):
+                    print(f"Validation Error: Invalid 'neutral_army_placement' for SETUP_2P_PLACE_ARMIES_TURN. Must be null or list of [str, int]. Item: {item}. Action: {action_dict}")
+                    return False
+            # Engine will validate sums and actual territory ownership.
+            return True
+
         # For simple actions (e.g., END_TURN, often only has 'type'), type match is sufficient.
         # A simple action template typically only has the "type" key.
         # Check if ALL templates for this action type are simple (i.e. only have 'type' key)
