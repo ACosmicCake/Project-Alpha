@@ -140,6 +140,7 @@ class BaseAIAgent(ABC):
 
             print(f"[DEBUG _validate_action] SETUP_2P_PLACE_ARMIES_TURN action passed specific structural validation.")
             # Engine will validate sums and actual territory ownership against game state.
+            # This validation ensures the AI provides the necessary fields with correct basic data types.
             return True
 
         # For simple actions (e.g., END_TURN, often only has 'type'), type match is sufficient.
