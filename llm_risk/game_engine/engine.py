@@ -1110,9 +1110,10 @@ class GameEngine:
             return None
 
         if gs.is_two_player_game:
-            # In 2-player mode, game isn't over if still in initial territory dealing or very start.
-            if gs.current_game_phase == "SETUP_2P_DEAL_CARDS" or gs.current_game_phase == "SETUP_START":
-                return None
+            # In 2-player mode, game isn't over if still in very early setup phases before territories are assigned.
+            initial_2p_setup_phases = ["SETUP_START", "SETUP_DETERMINE_ORDER", "SETUP_2P_DEAL_CARDS"]
+            if gs.current_game_phase in initial_2p_setup_phases:
+                return None # Game cannot be over yet
 
             human_players_with_territories = [p for p in gs.players if not p.is_neutral and p.territories]
             if len(human_players_with_territories) == 1:
@@ -1120,9 +1121,9 @@ class GameEngine:
                 # Neutral territories don't need to be conquered.
                 return human_players_with_territories[0]
             elif not human_players_with_territories:
-                # If this state is reached *after* SETUP_2P_DEAL_CARDS, it's an issue or draw.
-                # The phases check above should prevent this message during initial setup.
-                print("Error: 2-player game, no human players with territories found (and not in initial dealing phase).")
+                # This is an unusual state if we are past initial territory dealing.
+                # Could be a draw or an error state if no one has territories after setup.
+                print(f"Warning: In 2-player game (phase: {gs.current_game_phase}), no human players were found with territories.")
                 return None
             else: # More than one human player still has territories
                 return None

@@ -110,20 +110,36 @@ class BaseAIAgent(ABC):
 
         # Specific handling for SETUP_2P_PLACE_ARMIES_TURN
         if llm_action_type == "SETUP_2P_PLACE_ARMIES_TURN":
-            if "own_army_placements" not in action_dict or not isinstance(action_dict["own_army_placements"], list):
-                print(f"Validation Error: SETUP_2P_PLACE_ARMIES_TURN action missing or invalid 'own_army_placements'. Action: {action_dict}")
-                return False
-            for item in action_dict["own_army_placements"]:
-                if not (isinstance(item, list) and len(item) == 2 and isinstance(item[0], str) and isinstance(item[1], int)):
-                    print(f"Validation Error: Invalid item in 'own_army_placements' for SETUP_2P_PLACE_ARMIES_TURN. Must be list of [str, int]. Item: {item}. Action: {action_dict}")
-                    return False
+            print(f"[DEBUG _validate_action] Entered SETUP_2P_PLACE_ARMIES_TURN specific handler. Action: {action_dict}")
 
+            own_placements_valid = True
+            if "own_army_placements" not in action_dict or not isinstance(action_dict["own_army_placements"], list):
+                print(f"[DEBUG _validate_action] 'own_army_placements' missing or not a list.")
+                own_placements_valid = False
+            else:
+                for i, item in enumerate(action_dict["own_army_placements"]):
+                    if not (isinstance(item, list) and len(item) == 2 and isinstance(item[0], str) and isinstance(item[1], int)):
+                        print(f"[DEBUG _validate_action] Invalid item #{i} in 'own_army_placements': {item}. Must be [str, int].")
+                        own_placements_valid = False
+                        break
+
+            if not own_placements_valid:
+                print(f"Validation Error: SETUP_2P_PLACE_ARMIES_TURN action invalid 'own_army_placements'. Action: {action_dict}")
+                return False
+
+            neutral_placement_valid = True
             if "neutral_army_placement" in action_dict and action_dict["neutral_army_placement"] is not None:
                 item = action_dict["neutral_army_placement"]
                 if not (isinstance(item, list) and len(item) == 2 and isinstance(item[0], str) and isinstance(item[1], int)):
-                    print(f"Validation Error: Invalid 'neutral_army_placement' for SETUP_2P_PLACE_ARMIES_TURN. Must be null or list of [str, int]. Item: {item}. Action: {action_dict}")
-                    return False
-            # Engine will validate sums and actual territory ownership.
+                    print(f"[DEBUG _validate_action] Invalid 'neutral_army_placement': {item}. Must be null or [str, int].")
+                    neutral_placement_valid = False
+
+            if not neutral_placement_valid:
+                print(f"Validation Error: SETUP_2P_PLACE_ARMIES_TURN action invalid 'neutral_army_placement'. Action: {action_dict}")
+                return False
+
+            print(f"[DEBUG _validate_action] SETUP_2P_PLACE_ARMIES_TURN action passed specific structural validation.")
+            # Engine will validate sums and actual territory ownership against game state.
             return True
 
         # For simple actions (e.g., END_TURN, often only has 'type'), type match is sufficient.
