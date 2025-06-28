@@ -86,6 +86,8 @@ class BaseAIAgent(ABC):
                 # This case will be hit if game_state_json does not contain 'event_history'
                 # or if it's not a list.
                 prompt += "\n--- Intelligence Briefing ---\n- Event history not available in this summary.\n--- End of Briefing ---\n\n"
+        except (json.JSONDecodeError, AttributeError):
+            prompt += "\n--- Intelligence Briefing ---\n- Could not parse event history from game state.\n--- End of Briefing ---\n\n"
 
 
         prompt += "Valid Actions (choose one, or a chat action):\n"
@@ -253,7 +255,7 @@ class BaseAIAgent(ABC):
         return prompt
 
 GAME_RULES_SNIPPET = """\
-You are a master strategist playing the game of Risk. Your goal is to achieve world domination by eliminating all other players (or your direct opponent in a 2-player game).
+You are a master strategist and a ruthless player in the game of Risk. Your goal is to achieve world domination by eliminating all other players (or your direct opponent in a 2-player game) . Your only goal is to win, and you will do whatever it takes to achieve victory. You are not bound by loyalty or fairness unless it serves your ultimate goal of winning.
 You MUST respond with a valid JSON object containing exactly two keys: 'thought' and 'action'.
 The 'thought' key should contain your detailed reasoning, analysis of the board, evaluation of opponents, and your strategic plan for this turn and potentially future turns.
 The 'action' key must contain a single, valid action object chosen precisely from the 'Valid Actions' list provided. Do not invent actions or parameters not shown in the valid action template you choose.

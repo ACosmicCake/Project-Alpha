@@ -1,3 +1,5 @@
+from .game_engine.data_structures import Player as GamePlayer
+
 def _process_diplomatic_action(self, player: GamePlayer, action: dict) -> bool:
     """
     Handles processing of ACCEPT_ALLIANCE and REJECT_ALLIANCE actions.

@@ -1507,7 +1507,7 @@ class GameOrchestrator:
         self.log_turn_info(f"{player.name} REINFORCE action: {action_type} - Details: {action}")
 
         # Handle diplomatic actions first if chosen
-        if self._process_diplomatic_action(player, action):
+        if _process_diplomatic_action(player, action):
             self.ai_is_thinking = False # Diplomatic action taken, AI can make another move in Reinforce
             if self.gui: self._update_gui_full_state()
             return
