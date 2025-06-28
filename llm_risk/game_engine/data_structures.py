@@ -145,7 +145,16 @@ class GameState:
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2)
-
+            "name": self.name,
+            "color": self.color,
+            "armies_to_deploy": self.armies_to_deploy,
+            "initial_armies_pool": self.initial_armies_pool,
+            "armies_placed_in_setup": self.armies_placed_in_setup,
+            "territories": [t.name for t in self.territories],
+            "hand": [card.to_dict() for card in self.hand],
+            "has_fortified_this_turn": self.has_fortified_this_turn,
+            "has_conquered_territory_this_turn": self.has_conquered_territory_this_turn
+        }
 
 class GameState:
     def __init__(self):
