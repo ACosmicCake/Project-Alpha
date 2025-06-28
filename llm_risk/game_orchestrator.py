@@ -369,14 +369,38 @@ class GameOrchestrator:
             self.engine.game_state.current_setup_player_index = 0 # Reset for next phase
             return True
 
-        if self.ai_is_thinking: return True # AI is busy for this phase
+        # Check if an AI action is currently being awaited
+        if self.ai_is_thinking:
+            if self.current_ai_thread and self.current_ai_thread.is_alive():
+                # AI is still thinking. Log if needed (already done by GUI loop implicitly).
+                # print(f"Orchestrator: AI for {self.active_ai_player_name} is still thinking (SETUP_CLAIM_TERRITORIES).")
+                return True # Still busy, orchestrator will call this handler again via advance_game_turn
 
-        # If AI has finished, process its action
+            # If self.ai_is_thinking was true, but thread is NOT alive, it means thread just finished.
+            # So, action_result should be available. We must set ai_is_thinking to False.
+            if self.active_ai_player_name: # Check if there was an active AI
+                self.log_turn_info(f"Orchestrator: AI ({self.active_ai_player_name}) thread finished (detected in _handle_setup_claim_territories).")
+            else:
+                self.log_turn_info(f"Orchestrator: AI thread finished (detected in _handle_setup_claim_territories, no active_ai_player_name).")
+            self.ai_is_thinking = False
+            # Fall through to process self.ai_action_result below.
+            # No 'return True' here, because we want to process the result in this same call to the handler.
+
+        # If AI has finished (either detected above, or ai_is_thinking was already false and result is pending from a previous tick)
         if self.ai_action_result:
             action_to_process = self.ai_action_result
-            self.ai_action_result = None # Clear it
-            player_name_who_acted = self.active_ai_player_name
-            self.active_ai_player_name = None # Clear active AI
+            player_name_who_acted = self.active_ai_player_name # Should have been set when AI call was made
+
+            # Clear context related to the completed AI action
+            self.ai_action_result = None
+            self.active_ai_player_name = None
+            self.current_ai_context = None # Clear the context as well
+
+            if not player_name_who_acted:
+                self.log_turn_info("Error: AI action result found, but no active_ai_player_name. Cannot process claim.")
+                # This is an inconsistent state. Might need to decide how to recover or if game should stall.
+                # For now, returning True will cause this handler to be called again, hopefully state resolves or next player is initiated.
+                return True
 
             action = action_to_process.get("action")
             if action and action.get("type") == "SETUP_CLAIM":
@@ -432,13 +456,29 @@ class GameOrchestrator:
                  if first_game_player: first_game_player.armies_to_deploy = self.engine.calculate_reinforcements(first_game_player)
             return True
 
-        if self.ai_is_thinking: return True
+        # Check if an AI action is currently being awaited
+        if self.ai_is_thinking:
+            if self.current_ai_thread and self.current_ai_thread.is_alive():
+                return True # Still busy
+
+            if self.active_ai_player_name:
+                self.log_turn_info(f"Orchestrator: AI ({self.active_ai_player_name}) thread finished (detected in _handle_setup_place_armies).")
+            else:
+                self.log_turn_info(f"Orchestrator: AI thread finished (detected in _handle_setup_place_armies, no active_ai_player_name).")
+            self.ai_is_thinking = False
+            # Fall through to process self.ai_action_result
 
         if self.ai_action_result:
             action_to_process = self.ai_action_result
-            self.ai_action_result = None
             player_name_who_acted = self.active_ai_player_name
+
+            self.ai_action_result = None
             self.active_ai_player_name = None
+            self.current_ai_context = None # Clear context
+
+            if not player_name_who_acted:
+                self.log_turn_info("Error: AI action result found (SETUP_PLACE_ARMIES), but no active_ai_player_name.")
+                return True # Loop again, hopefully state resolves or next player is picked up
 
             action = action_to_process.get("action")
             if action and action.get("type") == "SETUP_PLACE_ARMY":
@@ -519,13 +559,29 @@ class GameOrchestrator:
                  # For now, assume engine handles it. If orchestrator finds itself here and all done, it's a sync issue.
             return True # Let main loop pick up new REINFORCE phase.
 
-        if self.ai_is_thinking: return True
+        # Check if an AI action is currently being awaited
+        if self.ai_is_thinking:
+            if self.current_ai_thread and self.current_ai_thread.is_alive():
+                return True # Still busy
+
+            if self.active_ai_player_name:
+                self.log_turn_info(f"Orchestrator: AI ({self.active_ai_player_name}) thread finished (detected in _handle_setup_2p_place_remaining).")
+            else:
+                self.log_turn_info(f"Orchestrator: AI thread finished (detected in _handle_setup_2p_place_remaining, no active_ai_player_name).")
+            self.ai_is_thinking = False
+            # Fall through to process self.ai_action_result
 
         if self.ai_action_result:
             action_to_process = self.ai_action_result
-            self.ai_action_result = None
             player_name_who_acted = self.active_ai_player_name
+
+            self.ai_action_result = None
             self.active_ai_player_name = None
+            self.current_ai_context = None # Clear context
+
+            if not player_name_who_acted:
+                self.log_turn_info("Error: AI action result found (SETUP_2P_PLACE_REMAINING), but no active_ai_player_name.")
+                return True
 
             action_data = action_to_process.get("action")
             # AI's action for "SETUP_2P_PLACE_ARMIES_TURN" should be a dict containing
