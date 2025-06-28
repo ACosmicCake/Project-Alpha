@@ -1,70 +1,26 @@
 from abc import ABC, abstractmethod
+import json # Added for potential use if action is a string that needs parsing, though Gemini part handles it.
 
 class BaseAIAgent(ABC):
     def __init__(self, player_name: str, player_color: str):
-        """
-        Initialize the base AI agent.
-        player_name: The name of the player this agent represents.
-        player_color: The color assigned to this player.
-        """
         self.player_name = player_name
         self.player_color = player_color
-        # API-specific setup will be handled in concrete implementations
 
     @abstractmethod
     def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str, system_prompt_addition: str = "") -> dict:
-        """
-        The core method. Takes the game state, valid actions, game rules, and an optional addition to the system prompt,
-        and returns a structured action.
-
-        Args:
-            game_state_json: A JSON string representing the current game state.
-            valid_actions: A list of valid action dictionaries the AI can choose from.
-            game_rules: A string describing the rules of the game and expected JSON output format.
-            system_prompt_addition: Optional string to append to the core system prompt for this specific call.
-
-        Returns:
-            A dictionary like:
-            {
-                "thought": "My reasoning process...",
-                "action": {"type": "ATTACK", "from": "Ukraine", "to": "Southern Europe", "num_armies": 3}
-            }
-            The action must be one of the actions provided in `valid_actions` or a correctly formatted chat action.
-        """
         pass
 
     @abstractmethod
     def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str, recipient_name: str, system_prompt_addition: str = "") -> str:
-        """
-        Handles a 1-on-1 conversation turn.
-
-        Args:
-            history: A list of message dictionaries representing the conversation so far.
-                     Each dict: {"sender": "PlayerName", "message": "text"}
-            game_state_json: A JSON string representing the current game state.
-            game_rules: A string describing the rules of the game and context.
-            recipient_name: The name of the player this agent is chatting with.
-            system_prompt_addition: Optional string to append to the core system prompt for this specific call.
-
-
-        Returns:
-            A string containing the agent's response message.
-        """
         pass
 
     def _construct_system_prompt(self, base_prompt: str, game_rules: str, additional_text: str = "") -> str:
-        """
-        Helper method to construct the full system prompt.
-        """
         prompt = f"{base_prompt}\n\nYou are {self.player_name}, playing as the {self.player_color} pieces.\n\n{game_rules}"
         if additional_text:
             prompt += f"\n\n{additional_text}"
         return prompt
 
     def _construct_user_prompt_for_action(self, game_state_json: str, valid_actions: list, turn_chat_log: list = None) -> str:
-        """
-        Helper method to construct the user prompt for get_thought_and_action.
-        """
         prompt = f"Current Game State:\n{game_state_json}\n\n"
         if turn_chat_log:
             prompt += "Recent Global Chat Messages (last 10):\n"
@@ -73,7 +29,6 @@ class BaseAIAgent(ABC):
             prompt += "\n"
 
         prompt += "Valid Actions (choose one, or a chat action):\n"
-        # Prettify valid actions for the prompt
         for i, action in enumerate(valid_actions):
             prompt += f"{i+1}. {action}\n"
         prompt += "\nIf you want to chat globally, use action: {'type': 'GLOBAL_CHAT', 'message': 'your message here'}\n"
@@ -89,133 +44,146 @@ class BaseAIAgent(ABC):
         return prompt
 
     def _validate_chosen_action(self, action_dict: dict, valid_actions: list) -> bool:
-        """
-        Validates the LLM's chosen action_dict against the list of valid_actions templates.
-        - Checks if the action type is valid.
-        - For complex actions (DEPLOY, ATTACK, FORTIFY), verifies that non-numeric parameters
-          (like territory, from, to) match an existing template in valid_actions.
-        - Numeric parameters chosen by the LLM (e.g., num_armies) are not validated here for range,
-          as that's the engine's responsibility, but their presence might be implied by the template.
-        """
+        print(f"[VALIDATE_ACTION_DEBUG] _validate_chosen_action: Start validation for action_dict: {action_dict}")
+        print(f"[VALIDATE_ACTION_DEBUG] _validate_chosen_action: valid_actions provided: {valid_actions}")
+
         if not action_dict or not isinstance(action_dict, dict) or "type" not in action_dict:
-            print(f"Validation Error: Action dictionary is malformed or missing 'type'. Action: {action_dict}")
+            print(f"[VALIDATE_ACTION_DEBUG] FAIL: Action dictionary is malformed or missing 'type'. Action: {action_dict}")
             return False
 
         llm_action_type = action_dict.get("type")
+        print(f"[VALIDATE_ACTION_DEBUG] llm_action_type: {llm_action_type}")
+
         matching_type_actions = [va for va in valid_actions if va.get("type") == llm_action_type]
-
         if not matching_type_actions:
-            print(f"Validation Error: Action type '{llm_action_type}' not found in valid_actions. Action: {action_dict}")
+            print(f"[VALIDATE_ACTION_DEBUG] FAIL: Action type '{llm_action_type}' not found in any template in valid_actions. Action: {action_dict}")
             return False
+        print(f"[VALIDATE_ACTION_DEBUG] Found {len(matching_type_actions)} matching template(s) for type '{llm_action_type}'.")
 
-        # --- Final Simplified and Corrected Validation Logic ---
-        print(f"[VALIDATE_ACTION_DEBUG] Start validation for action: {action_dict}, llm_action_type: {llm_action_type}")
-
+        # Prioritized handler for SETUP_2P_PLACE_ARMIES_TURN
         if llm_action_type == "SETUP_2P_PLACE_ARMIES_TURN":
-            print(f"[VALIDATE_ACTION_DEBUG] Entered SETUP_2P_PLACE_ARMIES_TURN specific handler.")
+            print(f"[VALIDATE_ACTION_DEBUG] Entered specific validator for SETUP_2P_PLACE_ARMIES_TURN.")
 
-            # Validate 'own_army_placements'
             own_placements = action_dict.get("own_army_placements")
             if not isinstance(own_placements, list):
-                print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'own_army_placements' is missing or not a list. Found: {type(own_placements)}. Action: {action_dict}")
+                print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'own_army_placements' is NOT A LIST. Actual type: {type(own_placements)}. Action: {action_dict}")
                 return False
+            print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): 'own_army_placements' is a list. Length: {len(own_placements)}.")
 
-            # own_placements can be an empty list if player_armies_to_place_this_turn is 0.
-            # The game engine will validate if the sum of armies matches player_armies_to_place_this_turn.
-            # This validation step primarily checks the structure of provided placements.
             for i, item in enumerate(own_placements):
-                if not (isinstance(item, list) and len(item) == 2 and isinstance(item[0], str) and isinstance(item[1], int)):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Item #{i} in 'own_army_placements' ({item}) is not a list of [String, Integer]. Action: {action_dict}")
+                if not (isinstance(item, list) and len(item) == 2):
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Item #{i} in 'own_army_placements' ({item}) is NOT A LIST OF LENGTH 2. Action: {action_dict}")
                     return False
-                if item[1] <= 0: # Number of armies to place in a single entry must be positive.
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Armies in 'own_army_placements' item #{i} ({item}) must be a positive integer. Got: {item[1]}. Action: {action_dict}")
+                if not isinstance(item[0], str):
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Territory name in 'own_army_placements' item #{i} ('{item[0]}') is NOT A STRING. Type: {type(item[0])}. Action: {action_dict}")
                     return False
+                if not isinstance(item[1], int):
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Army count in 'own_army_placements' item #{i} ('{item[1]}') is NOT AN INTEGER. Type: {type(item[1])}. Action: {action_dict}")
+                    return False
+                if item[1] <= 0:
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Army count in 'own_army_placements' item #{i} ({item[1]}) must be POSITIVE. Action: {action_dict}")
+                    return False
+            print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): 'own_army_placements' items structure is OK.")
 
-            # Validate 'neutral_army_placement' - can be null, or a list of [String, 1]
             neutral_placement = action_dict.get("neutral_army_placement")
-            if neutral_placement is not None: # Only validate if it's not null
-                if not (isinstance(neutral_placement, list) and len(neutral_placement) == 2 and isinstance(neutral_placement[0], str) and isinstance(neutral_placement[1], int)):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' ({neutral_placement}) is not a list of [String, Integer]. Action: {action_dict}")
+            if neutral_placement is not None:
+                print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): Validating 'neutral_army_placement': {neutral_placement}")
+                if not (isinstance(neutral_placement, list) and len(neutral_placement) == 2):
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' ({neutral_placement}) is NOT A LIST OF LENGTH 2 (if not null). Action: {action_dict}")
                     return False
-                if neutral_placement[1] != 1: # Neutral placement, if specified, must be for exactly 1 army.
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' ({neutral_placement}) armies must be 1. Got: {neutral_placement[1]}. Action: {action_dict}")
+                if not isinstance(neutral_placement[0], str):
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Territory name in 'neutral_army_placement' ('{neutral_placement[0]}') is NOT A STRING. Type: {type(neutral_placement[0])}. Action: {action_dict}")
                     return False
+                if not isinstance(neutral_placement[1], int):
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Army count in 'neutral_army_placement' ('{neutral_placement[1]}') is NOT AN INTEGER. Type: {type(neutral_placement[1])}. Action: {action_dict}")
+                    return False
+                if neutral_placement[1] != 1:
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' ({neutral_placement}) armies must be EXACTLY 1 if specified. Got: {neutral_placement[1]}. Action: {action_dict}")
+                    return False
+            else:
+                print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): 'neutral_army_placement' is null, which is acceptable.")
 
-            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (SETUP_2P_PLACE_ARMIES_TURN): Action structure appears valid. Action: {action_dict}")
-            return True # This action type is structurally validated. Game engine handles logical validation.
+            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (SETUP_2P_PLACE_ARMIES_TURN): Action structure is VALID. Action: {action_dict}")
+            return True
 
         # --- Generic Validation for other action types ---
         print(f"[VALIDATE_ACTION_DEBUG] Action type '{llm_action_type}' is not SETUP_2P_PLACE_ARMIES_TURN. Proceeding to generic validation.")
 
-        if not matching_type_actions: # Should have been caught earlier, but defensive check.
-            print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic): No matching action templates found for type '{llm_action_type}'.")
-            return False
-
         # Try to find an exact match in valid_actions (useful for simple actions like END_TURN)
-        if action_dict in matching_type_actions:
-            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Exact Match): Action {action_dict} found in valid_actions.")
+        # This is the primary validation for actions that are not SETUP_2P_PLACE_ARMIES_TURN and are expected to match a template.
+        if action_dict in matching_type_actions: # matching_type_actions contains templates of the same type
+            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Exact Match): Action {action_dict} found in valid_actions_templates.")
             return True
 
-        # For complex actions that are not SETUP_2P_PLACE_ARMIES_TURN, try template matching
+        # Fallback for complex actions where LLM might add numeric fields (e.g. num_armies)
+        # to a template that didn't explicitly list them but implied them.
         for template in matching_type_actions:
-            print(f"[VALIDATE_ACTION_DEBUG] Comparing action {action_dict} with template {template}")
-            # Check if all keys from template are in action_dict and non-numeric/non-bool values match
+            print(f"[VALIDATE_ACTION_DEBUG] (Generic) Comparing action {action_dict} with template {template}")
+
+            # Check if action_dict contains all keys from template and non-numeric/non-bool values match
             params_match = True
             for key, template_value in template.items():
                 if key not in action_dict:
-                    print(f"[VALIDATE_ACTION_DEBUG] Key '{key}' from template missing in action.")
+                    print(f"[VALIDATE_ACTION_DEBUG] (Generic) Key '{key}' from template missing in action.")
                     params_match = False
                     break
-                if not isinstance(template_value, (int, float, bool)): # Strict match for non-numeric/bool template values
+                # For non-fillable fields (not numbers/booleans that AI would set, but strings like territory names)
+                if not isinstance(template_value, (int, float, bool)):
                     if action_dict[key] != template_value:
-                        print(f"[VALIDATE_ACTION_DEBUG] Value mismatch for key '{key}'. Template: '{template_value}', Action: '{action_dict[key]}'.")
+                        print(f"[VALIDATE_ACTION_DEBUG] (Generic) Value mismatch for key '{key}'. Template: '{template_value}', Action: '{action_dict[key]}'.")
                         params_match = False
                         break
             if not params_match:
-                continue # Try next template
+                print(f"[VALIDATE_ACTION_DEBUG] (Generic) Template non-fillable fields mismatch. Trying next template.")
+                continue
 
             # Check if action_dict has extra keys not in template (ignoring numeric/bool keys AI might add)
+            # This is to prevent AI from adding arbitrary non-expected string keys, for example.
             extra_keys_invalid = False
             for key, action_value in action_dict.items():
-                if key not in template:
-                    if not isinstance(action_value, (int, float, bool)): # AI should only add numeric/bool values
-                        print(f"[VALIDATE_ACTION_DEBUG] Action has extra non-numeric/bool key '{key}' not in template.")
+                if key not in template: # If a key is in action_dict but not in template
+                    # AI is allowed to add numeric/boolean fields (like 'num_armies' or a flag)
+                    if not isinstance(action_value, (int, float, bool)):
+                        print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action has extra non-numeric/bool key '{key}' not in template '{template}'.")
                         extra_keys_invalid = True
                         break
             if extra_keys_invalid:
-                continue # Try next template
+                print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action has unexpected extra non-numeric/bool keys. Trying next template.")
+                continue
 
-            # Type-specific required field and basic value checks for fields AI adds
+            # If template fields match and no unexpected extra fields, check type-specific required numeric fields
             type_specific_checks_pass = True
             if llm_action_type == "ATTACK":
                 if not (isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", 0) > 0):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (ATTACK): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - ATTACK): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
                     type_specific_checks_pass = False
             elif llm_action_type == "DEPLOY":
                 if not (isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", 0) > 0):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (DEPLOY): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - DEPLOY): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
                     type_specific_checks_pass = False
             elif llm_action_type == "FORTIFY":
                 if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >= 0): # Allow 0
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (FORTIFY): 'num_armies' missing, not int, or <0. Value: {action_dict.get('num_armies')}")
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - FORTIFY): 'num_armies' missing, not int, or <0. Value: {action_dict.get('num_armies')}")
                     type_specific_checks_pass = False
             elif llm_action_type == "POST_ATTACK_FORTIFY":
-                 if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >= 0): # Engine validates min/max
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (POST_ATTACK_FORTIFY): 'num_armies' missing, not int or <0. Value: {action_dict.get('num_armies')}")
+                 if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >= 0):
+                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - POST_ATTACK_FORTIFY): 'num_armies' missing, not int or <0. Value: {action_dict.get('num_armies')}")
                     type_specific_checks_pass = False
 
             if type_specific_checks_pass:
                 print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Complex Match): Action {action_dict} conforms to template {template} with type checks.")
                 return True
+            else:
+                print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action {action_dict} matched template {template} on fixed fields, but failed type-specific checks (e.g. num_armies).")
+                # This means this template was the right one, but the AI filled something incorrectly.
+                # We should return False here as it matched the template type but failed specific content.
+                return False
+
 
         print(f"[VALIDATE_ACTION_DEBUG] FAIL (Fallback): Action {action_dict} (type: {llm_action_type}) did not conform to any valid action templates in {matching_type_actions} or failed its type-specific checks.")
         return False
 
-
     def _construct_user_prompt_for_private_chat(self, history: list[dict], game_state_json: str, recipient_name: str) -> str:
-        """
-        Helper method to construct the user prompt for engage_in_private_chat.
-        """
         prompt = f"You are in a private conversation with {recipient_name}.\n"
         prompt += f"Current Game State:\n{game_state_json}\n\nConversation History:\n"
         for msg in history:
