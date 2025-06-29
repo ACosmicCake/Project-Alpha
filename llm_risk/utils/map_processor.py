@@ -365,8 +365,9 @@ if __name__ == '__main__':
     # when game_mode="world_map".
     # The GeoJSON data itself should be stored perhaps as a large string constant or loaded from a file
     # within the orchestrator or a dedicated data loader when the world_map mode is selected.
-    # Adjacency calculation is not yet implemented here.
+    # Adjacency calculation is not yet implemented here. # This was actually done
     # Scaling might need further refinement for complex world maps (e.g. handling antimeridian).
     # Polygon simplification might be needed for performance if GeoJSON is too detailed.
-    # GUI's draw_map will need to be updated to use territory_polygons.
+    # GUI's draw_map will need to be updated to use territory_polygons. # This was also done
+"""
 """
