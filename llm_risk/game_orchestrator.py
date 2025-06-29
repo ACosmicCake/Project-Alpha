@@ -25,13 +25,18 @@ class GameOrchestrator:
     def __init__(self,
                  map_file: str = "map_config.json",
                  player_configs_override: list | None = None,
-                 default_player_setup_file: str = "player_config.json"):
-        self.engine = GameEngine(map_file_path=map_file)
+                 default_player_setup_file: str = "player_config.json",
+                 game_mode_override = None): # Added game_mode_override
+
+        # If a game_mode_override is provided, use it. Otherwise, GameEngine creates a default GameMode.
+        self.game_mode = game_mode_override
+        self.engine = GameEngine(map_file_path=map_file, game_mode_override=self.game_mode)
+
         self.global_chat = GlobalChat()
         self.private_chat_manager = PrivateChatManager(max_exchanges_per_conversation=3)
 
         self.gui = None
-        self.setup_gui()
+        self.setup_gui() # Calls the new setup_gui method
 
         self.ai_agents: dict[str, BaseAIAgent] = {}
         self.player_map: dict[GamePlayer, BaseAIAgent] = {} # Maps GamePlayer objects to their AI agents
@@ -1495,7 +1500,12 @@ class GameOrchestrator:
     def setup_gui(self):
         try:
             if not self.gui:
-                self.gui = GameGUI(self.engine, self)
+                map_bounds_for_gui = None
+                if self.game_mode and hasattr(self.game_mode, 'map_bounds') and self.game_mode.map_bounds:
+                    map_bounds_for_gui = self.game_mode.map_bounds
+                    print(f"Orchestrator: Passing map_bounds to GUI: {map_bounds_for_gui}")
+
+                self.gui = GameGUI(self.engine, self, map_bounds=map_bounds_for_gui)
                 print("GUI setup complete. GUI is active.")
         except Exception as e:
             print(f"Failed to initialize GUI, will run in headless mode. Error: {e}")

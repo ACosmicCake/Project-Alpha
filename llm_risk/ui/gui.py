@@ -44,9 +44,12 @@ PLAYER_INFO_PANEL_HEIGHT = 50 # New panel
 TAB_HEIGHT = 30
 TAB_FONT_SIZE = 20
 
+# Import RealWorldGameMode for type checking
+from game_modes import RealWorldGameMode
+
 
 class GameGUI:
-    def __init__(self, engine: GameEngine, orchestrator):
+    def __init__(self, engine: GameEngine, orchestrator, map_bounds=None): # Added map_bounds
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("LLM Risk Game")
@@ -77,12 +80,13 @@ class GameGUI:
         self.thought_tab_rects: dict[str, pygame.Rect] = {}
         self.chat_tab_rects: dict[str, pygame.Rect] = {}
 
+        self.map_bounds = map_bounds # Store map_bounds for RealWorldGameMode scaling
+
         self.fps = 30
         self.running = False
         self.colors = DEFAULT_PLAYER_COLORS
 
-    def _load_map_config(self, config_file: str = "map_display_config.json"): # Removed map_image_path
-        # No longer loading a map image. The background will be drawn procedurally.
+    def _load_map_config(self, config_file: str = "map_display_config.json"):
         # self.map_image is no longer used.
         print(f"Attempting to load territory coordinates from '{config_file}'")
         try:
@@ -127,63 +131,145 @@ class GameGUI:
         self.screen.fill(self.ocean_color, map_area_rect)
 
         if not gs_to_draw or not gs_to_draw.territories:
-            # Optionally draw a message if no game state or territories
             no_map_text = self.large_font.render("Map Data Unavailable", True, WHITE)
             self.screen.blit(no_map_text, no_map_text.get_rect(center=map_area_rect.center))
             return
 
-        # Draw adjacency lines first, so they are behind territories
-        drawn_adjacencies = set() # To avoid drawing a line from A to B and then B to A
-        for terr_name, territory_obj in gs_to_draw.territories.items():
-            coords1 = self.territory_coordinates.get(terr_name)
-            if not coords1:
-                # print(f"Warning: No coordinates for territory {terr_name} for adjacency lines.")
-                continue
+        # Check if the game mode is RealWorldGameMode for polygon rendering
+        is_real_world_mode = hasattr(self.orchestrator, 'game_mode') and \
+                             self.orchestrator.game_mode is not None and \
+                             isinstance(self.orchestrator.game_mode, RealWorldGameMode)
 
-            # Correctly access the list of adjacent Territory objects and then their names
-            for adj_territory_object in territory_obj.adjacent_territories:
-                adj_name = adj_territory_object.name # Get name from the Territory object
 
-                # Ensure pair is unique (e.g. (A,B) is same as (B,A))
-                adj_pair = tuple(sorted((terr_name, adj_name)))
-                if adj_pair in drawn_adjacencies:
-                    continue
+        if is_real_world_mode:
+            # Draw polygons for RealWorldGameMode
+            min_x, max_x, min_y, max_y = float('inf'), float('-inf'), float('inf'), float('-inf')
+            for territory_obj in gs_to_draw.territories.values():
+                if territory_obj.geometry and territory_obj.geometry['type'] == 'Polygon':
+                    for poly_coords in territory_obj.geometry['coordinates']:
+                        for lon, lat in poly_coords:
+                            min_x, max_x = min(min_x, lon), max(max_x, lon)
+                            min_y, max_y = min(min_y, lat), max(lat, lat)
 
-                coords2 = self.territory_coordinates.get(adj_name)
-                if not coords2:
-                    # print(f"Warning: No coordinates for adjacent territory {adj_name} (from {terr_name}).")
-                    continue
+            # Basic scaling - this might need significant adjustment
+            # to fit the map area and handle different GeoJSON extents.
 
-                pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 2)
-                drawn_adjacencies.add(adj_pair)
+            # Use pre-calculated map_bounds if available (for RealWorldGameMode)
+            current_map_bounds = self.map_bounds
+            if not current_map_bounds:
+                # Fallback: calculate bounds dynamically if not provided (e.g., for default mode)
+                min_lon_dyn, max_lon_dyn, min_lat_dyn, max_lat_dyn = float('inf'), float('-inf'), float('inf'), float('-inf')
+                for territory_obj_dyn in gs_to_draw.territories.values():
+                    if territory_obj_dyn.geometry and territory_obj_dyn.geometry.get('type') in ['Polygon', 'MultiPolygon']:
+                        coords_to_check = []
+                        if territory_obj_dyn.geometry['type'] == 'Polygon':
+                            coords_to_check.extend(territory_obj_dyn.geometry['coordinates'])
+                        elif territory_obj_dyn.geometry['type'] == 'MultiPolygon':
+                            for poly in territory_obj_dyn.geometry['coordinates']:
+                                coords_to_check.extend(poly)
 
-        # Draw territories
-        for terr_name, territory_obj in gs_to_draw.territories.items():
-            coords = self.territory_coordinates.get(terr_name)
-            if not coords:
-                # print(f"Warning: No coordinates for territory {terr_name}. Skipping draw.")
-                continue # Skip if no coordinates
+                        for poly_coords_dyn in coords_to_check:
+                            for lon_dyn, lat_dyn in poly_coords_dyn:
+                                min_lon_dyn, max_lon_dyn = min(min_lon_dyn, lon_dyn), max(max_lon_dyn, lon_dyn)
+                                min_lat_dyn, max_lat_dyn = min(min_lat_dyn, lat_dyn), max(max_lat_dyn, lat_dyn)
+                if min_lon_dyn != float('inf'): # Check if any valid coords were found
+                    current_map_bounds = (min_lon_dyn, min_lat_dyn, max_lon_dyn, max_lat_dyn)
+                else: # No valid coordinates found at all, cannot scale
+                    print("Warning: No valid coordinates in territories for dynamic scaling.")
+                    # Draw a message and return, or handle as error
+                    no_coords_text = self.large_font.render("No geo coordinates for map", True, WHITE)
+                    self.screen.blit(no_coords_text, no_coords_text.get_rect(center=map_area_rect.center))
+                    return
 
-            owner_color = GREY # Default color if no owner or owner color not found
-            if territory_obj.owner and territory_obj.owner.color:
-                owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
 
-            # Draw territory circle
-            pygame.draw.circle(self.screen, owner_color, coords, 20) # Main color
-            pygame.draw.circle(self.screen, BLACK, coords, 20, 2)    # Black border
+            def scale_coords(lon, lat):
+                # Flip latitude for Pygame's coordinate system (y increases downwards)
+                # Normalize and scale longitude
+                min_x, min_y, max_x, max_y = current_map_bounds # Use the determined bounds
 
-            # Draw army count
-            army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE # Contrast for text
-            army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
-            self.screen.blit(army_text, army_text.get_rect(center=coords))
+                # Add a small padding to prevent division by zero if all points are collinear
+                padding_x = (max_x - min_x) * 0.01 if (max_x - min_x) == 0 else 0
+                padding_y = (max_y - min_y) * 0.01 if (max_y - min_y) == 0 else 0
 
-            # Draw territory name slightly above the circle
-            name_surf = self.font.render(terr_name, True, WHITE) # White name for visibility on blue
-            name_rect = name_surf.get_rect(center=(coords[0], coords[1] - 30)) # Adjusted y-offset
-            # Simple background for name text for better readability
-            name_bg_rect = name_rect.inflate(4, 4)
-            pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
-            self.screen.blit(name_surf, name_rect)
+                range_x = (max_x - min_x) + padding_x
+                range_y = (max_y - min_y) + padding_y
+
+
+                scaled_x = MAP_AREA_WIDTH * (lon - min_x) / range_x if range_x != 0 else MAP_AREA_WIDTH / 2
+                # Normalize and scale latitude (and flip y-axis)
+                scaled_y = SCREEN_HEIGHT * (1 - (lat - min_y) / range_y) if range_y != 0 else SCREEN_HEIGHT / 2
+                return int(scaled_x), int(scaled_y)
+
+            for terr_name, territory_obj in gs_to_draw.territories.items():
+                owner_color = GREY
+                if territory_obj.owner and territory_obj.owner.color:
+                    owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
+
+                if territory_obj.geometry and territory_obj.geometry['type'] == 'Polygon':
+                    for poly_coords_list in territory_obj.geometry['coordinates']:
+                        # GeoJSON polygons can have multiple rings (outer, inner holes)
+                        # This simple version assumes the first ring is the outer boundary.
+                        # A more robust solution would handle multi-polygons and inner rings.
+
+                        # Check if poly_coords_list is a list of coordinate pairs or a list of lists of pairs
+                        # A simple Polygon will have coordinates like: [[[lon, lat], [lon, lat], ...]]
+                        # A MultiPolygon or Polygon with holes will have more nesting.
+                        # This example handles simple Polygons and the first ring of MultiPolygons.
+
+                        current_poly_coords = poly_coords_list
+                        if isinstance(poly_coords_list[0][0], list): # Likely a MultiPolygon or Polygon with holes
+                             current_poly_coords = poly_coords_list[0] # Use the first ring
+
+                        scaled_poly = [scale_coords(lon, lat) for lon, lat in current_poly_coords]
+
+                        if len(scaled_poly) > 2: # Need at least 3 points for a polygon
+                            pygame.draw.polygon(self.screen, owner_color, scaled_poly)
+                            pygame.draw.polygon(self.screen, BLACK, scaled_poly, 2) # Border
+
+                            # Calculate centroid for text (simple average, may not be accurate for complex polygons)
+                            avg_x = sum(p[0] for p in scaled_poly) / len(scaled_poly)
+                            avg_y = sum(p[1] for p in scaled_poly) / len(scaled_poly)
+
+                            army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
+                            army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
+                            self.screen.blit(army_text, army_text.get_rect(center=(int(avg_x), int(avg_y))))
+
+                            name_surf = self.font.render(terr_name, True, WHITE)
+                            name_rect = name_surf.get_rect(center=(int(avg_x), int(avg_y) - 20))
+                            name_bg_rect = name_rect.inflate(4,4)
+                            pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
+                            self.screen.blit(name_surf, name_rect)
+        else:
+            # Original drawing logic for default map (circles and lines)
+            drawn_adjacencies = set()
+            for terr_name, territory_obj in gs_to_draw.territories.items():
+                coords1 = self.territory_coordinates.get(terr_name)
+                if not coords1: continue
+                for adj_territory_object in territory_obj.adjacent_territories:
+                    adj_name = adj_territory_object.name
+                    adj_pair = tuple(sorted((terr_name, adj_name)))
+                    if adj_pair in drawn_adjacencies: continue
+                    coords2 = self.territory_coordinates.get(adj_name)
+                    if not coords2: continue
+                    pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 2)
+                    drawn_adjacencies.add(adj_pair)
+
+            for terr_name, territory_obj in gs_to_draw.territories.items():
+                coords = self.territory_coordinates.get(terr_name)
+                if not coords: continue
+                owner_color = GREY
+                if territory_obj.owner and territory_obj.owner.color:
+                    owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
+                pygame.draw.circle(self.screen, owner_color, coords, 20)
+                pygame.draw.circle(self.screen, BLACK, coords, 20, 2)
+                army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
+                army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
+                self.screen.blit(army_text, army_text.get_rect(center=coords))
+                name_surf = self.font.render(terr_name, True, WHITE)
+                name_rect = name_surf.get_rect(center=(coords[0], coords[1] - 30))
+                name_bg_rect = name_rect.inflate(4, 4)
+                pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
+                self.screen.blit(name_surf, name_rect)
 
     def draw_player_info_panel(self, game_state: GameState):
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, SCREEN_HEIGHT - PLAYER_INFO_PANEL_HEIGHT, SIDE_PANEL_WIDTH, PLAYER_INFO_PANEL_HEIGHT)

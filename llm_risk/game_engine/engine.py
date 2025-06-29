@@ -1,80 +1,191 @@
 from .data_structures import GameState, Player, Territory, Continent, Card
+# Import GameMode if it's defined in a way that GameEngine needs to know about it directly.
+# For now, assuming GameOrchestrator handles passing the correct game_mode instance.
+from game_modes import GameMode # Assuming game_modes.py is at the root
 import json
 import random
 
 class GameEngine:
-    def __init__(self, map_file_path: str = "map_config.json"):
+    def __init__(self, map_file_path: str = "map_config.json", game_mode_override: GameMode | None = None): # Type hint for game_mode_override
         self.game_state = GameState()
         self.map_file_path = map_file_path
         self.card_trade_bonus_index = 0
         self.card_trade_bonuses = [4, 6, 8, 10, 12, 15]
+        self.game_mode = game_mode_override
+        # Note: self.game_mode.territories might be populated here if RealWorldGameMode's __init__
+        # already called its initialize_territories (which it does in the current game_modes.py).
+        # However, it does so without the player list.
+        # The definitive territory setup for RealWorldGameMode (with player assignments)
+        # will happen in initialize_game_from_map.
+
 
     def initialize_game_from_map(self, players_data: list[dict], is_two_player_game: bool = False):
-        """
-        Initializes continents, territories (unowned), creates players,
-        allocates initial army pools, and prepares the deck.
-        This method sets up the game for the interactive setup phases.
-        If is_two_player_game is True, specific 2-player setup rules are applied.
-        """
         gs = self.game_state
-        gs.current_game_phase = "SETUP_START" # Ensure fresh start
-        gs.is_two_player_game = is_two_player_game # Store this mode
+        gs.current_game_phase = "SETUP_START"
+        gs.is_two_player_game = is_two_player_game
+
+        if gs.is_two_player_game and len(players_data) != 2:
+            print("Error: Two-player game mode selected, but players_data does not contain 2 players.")
+            gs.current_game_phase = "ERROR"; return
+
+        # 1. Create Players (needed by RealWorldGameMode for territory assignment)
+        gs.players.clear()
+        human_players = [Player(name=p_info["name"], color=p_info["color"]) for p_info in players_data]
+        gs.players.extend(human_players)
 
         if gs.is_two_player_game:
-            if len(players_data) != 2:
-                print("Error: Two-player game mode selected, but players_data does not contain 2 players.")
-                gs.current_game_phase = "ERROR"
-                return
-            print("Initializing for 2-Player Game Rules (Neutral player will be added by orchestrator/rules).")
+            used_colors = [p.color.lower() for p in human_players]
+            neutral_color = "Gray"
+            if "gray" in used_colors:
+                neutral_color = next((c for c in ["LightBlue", "Brown", "Pink", "Orange"] if c.lower() not in used_colors), "DarkGray")
+            gs.players.append(Player(name="Neutral", color=neutral_color, is_neutral=True))
+
+        if not gs.players: gs.current_game_phase = "ERROR"; return
+
+        # --- Map and Territory Initialization ---
+        map_data_loaded = False
+        map_data = {"continents": [], "territories": {}} # Default empty map_data
+
+        # Determine if we are using RealWorldGameMode logic
+        # Need to import RealWorldGameMode to use isinstance
+        from game_modes import RealWorldGameMode as RWM_check # Alias to avoid conflict with self.game_mode
+        is_real_world_mode = self.game_mode and isinstance(self.game_mode, RWM_check)
 
 
-        try:
-            with open(self.map_file_path, 'r') as f:
-                map_data = json.load(f)
-        except FileNotFoundError:
-            print(f"Error: Map file '{self.map_file_path}' not found.")
-            gs.current_game_phase = "ERROR"
-            return
-        except json.JSONDecodeError:
-            print(f"Error: Could not decode JSON from map file '{self.map_file_path}'.")
-            gs.current_game_phase = "ERROR"
-            return
+        if is_real_world_mode:
+            print("Engine: RealWorldGameMode detected. Initializing territories via game mode, passing players.")
+            # Re-initialize territories within the game_mode instance, this time with players
+            # This assumes RealWorldGameMode's initialize_territories can be called multiple times or handles this.
+            # A better design might be for the game_mode to have a separate method for player assignment
+            # or for its __init__ to take players directly if they are available at that point.
+            # For now, we re-call initialize_territories with the created players.
+            self.game_mode.territories.clear() # Clear any previously self-initialized territories
+            self.game_mode.initialize_territories(gs.players) # Pass the actual game players
 
-        # 1. Create Continents
-        gs.continents.clear()
-        for cont_data in map_data.get("continents", []):
-            continent = Continent(name=cont_data["name"], bonus_armies=cont_data["bonus_armies"])
-            gs.continents[continent.name] = continent
+            if not self.game_mode.territories:
+                 print("CRITICAL ERROR: RealWorldGameMode has no territories after its re-initialization with players.")
+                 gs.current_game_phase = "ERROR"; return
 
-        # 2. Create Territories (unowned) and assign them to Continents
-        gs.territories.clear()
-        gs.unclaimed_territory_names.clear()
-        for terr_name, terr_data in map_data.get("territories", {}).items():
-            continent_name = terr_data.get("continent")
-            continent = gs.continents.get(continent_name)
-            if not continent:
-                print(f"Warning: Continent '{continent_name}' for territory '{terr_name}' not found. Skipping continent assignment.")
+            gs.territories.clear() # Ensure GameState territories are clean before populating
+            for territory_obj_from_mode in self.game_mode.territories:
+                gs.territories[territory_obj_from_mode.name] = territory_obj_from_mode
+                # Link player to their territories
+                if territory_obj_from_mode.owner and territory_obj_from_mode.owner in gs.players:
+                    if territory_obj_from_mode not in territory_obj_from_mode.owner.territories:
+                        territory_obj_from_mode.owner.territories.append(territory_obj_from_mode)
 
-            territory = Territory(name=terr_name, continent=continent, owner=None, army_count=0) # Initially unowned
-            gs.territories[territory.name] = territory
-            gs.unclaimed_territory_names.append(terr_name)
-            if continent:
-                continent.territories.append(territory)
-        random.shuffle(gs.unclaimed_territory_names) # Shuffle for fairness if multiple AIs pick simultaneously
+            gs.unclaimed_territory_names = [] # All territories are pre-assigned
+            gs.continents.clear() # RealWorldGameMode currently doesn't define continents for the engine
+            print("Engine: RealWorldGameMode - Adjacencies and Continents are not used from map_config.json for this mode.")
+            # Adjacency linking for RealWorldGameMode would need a different strategy (e.g., geographic)
+            # or be part of the RealWorldGameMode's own data. For now, left unlinked by map_config.
 
-        # 3. Link adjacent territories
-        for terr_name, terr_data in map_data.get("territories", {}).items():
-            territory = gs.territories.get(terr_name)
-            if territory:
-                territory.adjacent_territories.clear() # Clear previous links if any
-                for adj_name in terr_data.get("adjacent_to", []):
-                    adj_territory = gs.territories.get(adj_name)
-                    if adj_territory:
-                        territory.adjacent_territories.append(adj_territory)
-                    else:
-                        print(f"Warning: Adjacent territory '{adj_name}' for '{terr_name}' not found during linking.")
+        else: # Default game mode: Load from map_config.json
+            try:
+                with open(self.map_file_path, 'r') as f:
+                    map_data = json.load(f)
+                map_data_loaded = True
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                print(f"Error: Problem loading map_config.json ('{self.map_file_path}'): {e}.")
+                gs.current_game_phase = "ERROR"; return
 
-        # 4. Create Players and allocate initial armies
+            gs.continents.clear()
+            if map_data_loaded:
+                for cont_data in map_data.get("continents", []):
+                    continent = Continent(name=cont_data["name"], bonus_armies=cont_data["bonus_armies"])
+                    gs.continents[continent.name] = continent
+
+            gs.territories.clear()
+            gs.unclaimed_territory_names.clear()
+            for terr_name, terr_data in map_data.get("territories", {}).items():
+                continent_name = terr_data.get("continent")
+                continent = gs.continents.get(continent_name)
+                territory = Territory(name=terr_name, continent=continent, owner=None, army_count=0)
+                gs.territories[territory.name] = territory
+                gs.unclaimed_territory_names.append(terr_name)
+                if continent: continent.territories.append(territory)
+            random.shuffle(gs.unclaimed_territory_names)
+
+            if map_data_loaded: # Link adjacencies for default mode
+                for terr_name, terr_data in map_data.get("territories", {}).items():
+                    territory = gs.territories.get(terr_name)
+                    if territory:
+                        territory.adjacent_territories.clear()
+                        for adj_name in terr_data.get("adjacent_to", []):
+                            adj_territory = gs.territories.get(adj_name)
+                            if adj_territory: territory.adjacent_territories.append(adj_territory)
+
+        # --- Army Allocation ---
+        num_actual_players_for_army_calc = len(players_data)
+        if gs.is_two_player_game: # This includes RealWorldGameMode if 2 players are configured
+            initial_armies_per_entity = 40
+            for player in gs.players:
+                player.initial_armies_pool = initial_armies_per_entity
+                player.armies_placed_in_setup = 0 # Will be updated by setup phases or RWM init
+                if is_real_world_mode and not player.is_neutral: # For RWM, sum armies from owned territories
+                    player.armies_placed_in_setup = sum(t.army_count for t in player.territories)
+                elif is_real_world_mode and player.is_neutral: # Neutral also starts with armies on its territories
+                     player.armies_placed_in_setup = sum(t.army_count for t in player.territories)
+
+
+        elif not is_real_world_mode: # Standard game (3-6 players), not RealWorld
+            army_map = {3: 35, 4: 30, 5: 25, 6: 20}
+            initial_armies_per_player = army_map.get(num_actual_players_for_army_calc)
+            if not initial_armies_per_player:
+                print(f"Error: Invalid num players ({num_actual_players_for_army_calc}) for standard game."); gs.current_game_phase = "ERROR"; return
+            for player in human_players: # Only human players
+                player.initial_armies_pool = initial_armies_per_player
+                player.armies_placed_in_setup = 0
+
+        elif is_real_world_mode: # RealWorldMode with > 2 players
+            # Armies are already on territories. initial_armies_pool is for reinforcements.
+            # armies_placed_in_setup should reflect armies on board.
+            for player in human_players:
+                player.armies_placed_in_setup = sum(t.army_count for t in player.territories)
+                player.initial_armies_pool = player.armies_placed_in_setup # Or another logic for initial pool if needed
+                                                                         # This implies no "pool" to place from initially.
+
+        # --- Card Deck ---
+        gs.deck.clear()
+        symbols = ["Infantry", "Cavalry", "Artillery"]
+        territory_names_for_cards = list(gs.territories.keys())
+        if not territory_names_for_cards:
+            print("Warning: No territories for card deck.")
+        else:
+            for i, terr_name in enumerate(territory_names_for_cards):
+                gs.deck.append(Card(terr_name, symbols[i % 3]))
+
+            if not gs.is_two_player_game or (gs.is_two_player_game and gs.current_game_phase != "SETUP_2P_DEAL_CARDS" and not is_real_world_mode) :
+                 gs.deck.append(Card(None, "Wildcard"))
+                 gs.deck.append(Card(None, "Wildcard"))
+            random.shuffle(gs.deck)
+
+        # --- Determine Next Phase ---
+        if is_real_world_mode:
+            gs.current_game_phase = "REINFORCE" # Skip standard setup phases
+            # Determine first player (e.g., first in players_data, or random)
+            gs.first_player_of_game = human_players[0] if human_players else None
+            if gs.first_player_of_game:
+                gs.current_player_index = gs.players.index(gs.first_player_of_game)
+                # Calculate initial reinforcements for the first player
+                current_player_obj = gs.get_current_player()
+                if current_player_obj and not current_player_obj.is_neutral: # Should be the case
+                    reinforcements, _ = self.calculate_reinforcements(current_player_obj)
+                    current_player_obj.armies_to_deploy = reinforcements
+            else: # Should not happen if players_data was valid
+                print("Error: No human players to start RealWorldGameMode. Defaulting to first player.")
+                gs.current_player_index = 0
+
+
+        elif gs.is_two_player_game:
+            gs.current_game_phase = "SETUP_2P_DEAL_CARDS"
+        else:
+            gs.current_game_phase = "SETUP_DETERMINE_ORDER"
+
+        print(f"Game initialized. Game Mode: {'RealWorld' if is_real_world_mode else 'Default'}. Phase: {gs.current_game_phase}. Players: {[p.name for p in gs.players]}. Territories: {len(gs.territories)}.")
+
+
+        # 4. Create Players and allocate initial armies (Same logic as before)
         if not players_data:
             print("Error: No player data provided for initialization.")
             gs.current_game_phase = "ERROR"
@@ -442,19 +553,23 @@ class GameEngine:
             return log
 
         territory = gs.territories.get(territory_name)
-        if not territory: # Should not happen if unclaimed_territory_names is synced with territories
+        if not territory:
             log["message"] = f"Territory object for '{territory_name}' not found (internal error)."
             return log
 
         if current_setup_player.armies_placed_in_setup >= current_setup_player.initial_armies_pool:
             log["message"] = f"{player_name} has no more armies in their initial pool to place for claiming."
-            # This implies an issue with initial army counts or logic, as claiming should use 1 army.
             return log
 
         territory.owner = current_setup_player
-        territory.army_count = 1
+        # Refinement: If territory already has armies (e.g. from RealWorldGameMode), add to them.
+        if territory.army_count > 0:
+            territory.army_count += 1 # Add claiming player's one army
+        else:
+            territory.army_count = 1 # Standard claim
+
         current_setup_player.territories.append(territory)
-        current_setup_player.armies_placed_in_setup += 1
+        current_setup_player.armies_placed_in_setup += 1 # Player always places 1 of their pool armies to claim
         gs.unclaimed_territory_names.remove(territory_name)
 
         log["success"] = True
@@ -502,32 +617,49 @@ class GameEngine:
             # The orchestrator should only offer this action if player has armies left.
             # We should still advance turn if this state is reached.
             log["success"] = True # No action taken, but not an error for this player.
+            log["message"] = f"{player_name} has no more armies to place. Total placed: {current_setup_player.armies_placed_in_setup}/{current_setup_player.initial_armies_pool}."
+
         else:
             territory.army_count += 1
             current_setup_player.armies_placed_in_setup += 1
             log["success"] = True
-            log["message"] = f"{player_name} placed 1 army on {territory_name} (now {territory.army_count}). Total placed by {player_name}: {current_setup_player.armies_placed_in_setup}/{current_setup_player.initial_armies_pool}."
+            log["message"] = f"{player_name} placed 1 army on {territory.name} (now {territory.army_count}). Total placed by {player_name}: {current_setup_player.armies_placed_in_setup}/{current_setup_player.initial_armies_pool}."
 
         # Advance to next player in setup order, only if current player successfully placed or had no more to place.
-        if log["success"]:
+        if log["success"]: # This condition is now met even if player had no armies left, ensuring turn advances
             gs.current_setup_player_index = (gs.current_setup_player_index + 1) % len(gs.player_setup_order)
 
-        if self._all_initial_armies_placed():
-            gs.current_game_phase = "REINFORCE" # First game phase after setup
+        # Check if all players are done placing their initial armies
+        all_done_placing = True
+        for p in gs.player_setup_order: # Iterate through human players in setup order
+            if p.armies_placed_in_setup < p.initial_armies_pool:
+                all_done_placing = False
+                break
+
+        if all_done_placing: # self._all_initial_armies_placed() might be better if it considers all non-neutral players
+            gs.current_game_phase = "REINFORCE"
             try:
                 gs.current_player_index = gs.players.index(gs.first_player_of_game)
+                if gs.players[gs.current_player_index].is_neutral: # Should not happen
+                    first_human = next((p for p_idx, p in enumerate(gs.players) if not p.is_neutral), None)
+                    if first_human: gs.current_player_index = gs.players.index(first_human)
+                    else: gs.current_player_index = 0 # Fallback
             except ValueError:
-                print(f"Error: First player of game '{gs.first_player_of_game.name if gs.first_player_of_game else 'None'}' not found in players list. Defaulting to index 0.")
-                gs.current_player_index = 0
+                print(f"Error: First player of game '{gs.first_player_of_game.name if gs.first_player_of_game else 'None'}' not found. Defaulting.")
+                # Find first non-neutral player as fallback
+                first_human_idx = next((p_idx for p_idx, p in enumerate(gs.players) if not p.is_neutral), 0)
+                gs.current_player_index = first_human_idx
+
 
             first_player_for_turn = gs.get_current_player()
-            if first_player_for_turn:
-                first_player_for_turn.armies_to_deploy = self.calculate_reinforcements(first_player_for_turn)
+            if first_player_for_turn and not first_player_for_turn.is_neutral:
+                reinforcements, controlled_continents = self.calculate_reinforcements(first_player_for_turn)
+                first_player_for_turn.armies_to_deploy = reinforcements
                 log["message"] += f" All initial armies placed. Game starts! First turn: {first_player_for_turn.name}. Reinforcements: {first_player_for_turn.armies_to_deploy}."
                 print(f"All initial armies placed. Phase: REINFORCE. First player: {first_player_for_turn.name}")
-            else: # Should not happen
-                log["message"] += " All initial armies placed. Game starts! Error finding first player."
-                print("All initial armies placed. Phase: REINFORCE. Error finding first player.")
+            else:
+                log["message"] += " All initial armies placed. Game starts! Error finding first non-neutral player for turn."
+                print("All initial armies placed. Phase: REINFORCE. Error finding first non-neutral player.")
 
         return log
 

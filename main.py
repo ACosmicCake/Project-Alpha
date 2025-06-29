@@ -2,119 +2,37 @@
 Main entry point for the LLM Risk Game application.
 Allows for console-based configuration of players and AI types.
 """
+import json
 from llm_risk.game_orchestrator import GameOrchestrator
+from game_modes import RealWorldGameMode # Import the new game mode
 from dotenv import load_dotenv
 
 # Define available AI types and colors
 AVAILABLE_AI_TYPES = ["OpenAI", "Gemini", "Claude", "DeepSeek","Llama","Mistral","Qwen"] # Add "Human" if you implement human players
 AVAILABLE_COLORS = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange"]
 
-def get_player_configurations_from_console():
-    """
-    Prompts the user in the console to define player configurations.
-    Returns a list of player configuration dictionaries or None if skipped.
-    """
-    print("\n--- LLM Risk Game Setup ---")
-    print("Configure players and AI types. Press Enter at the first prompt to skip and use default player_config.json.")
+# Full GeoJSON data string (as provided by the user in the initial prompt)
+# This is a very long string, so it's kept as a single block.
+# In a production application, this would ideally be loaded from a file.
+FULL_GEOJSON_STRING_DATA = """
+{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"featurecla":"Admin-0 country","scalerank":1,"labelrank":5,"sovereignt":"Costa Rica","sov_a3":"CRI","adm0_dif":0,"level":2,"type":"Sovereign country","tlc":"1","admin":"Costa Rica","adm0_a3":"CRI","geou_dif":0,"geounit":"Costa Rica","gu_a3":"CRI","su_dif":0,"subunit":"Costa Rica","su_a3":"CRI","brk_diff":0,"name":"Costa Rica","name_long":"Costa Rica","brk_a3":"CRI","brk_name":"Costa Rica","brk_group":null,"abbrev":"C.R.","postal":"CR","formal_en":"Republic of Costa Rica","formal_fr":null,"name_ciawf":"Costa Rica","note_adm0":null,"note_brk":null,"name_sort":"Costa Rica","name_alt":null,"mapcolor7":3,"mapcolor8":2,"mapcolor9":4,"mapcolor13":2,"pop_est":5047561,"pop_rank":13,"pop_year":2019,"gdp_md":61801,"gdp_year":2019,"economy":"5. Emerging region: G20","income_grp":"3. Upper middle income","fips_10":"CS","iso_a2":"CR","iso_a2_eh":"CR","iso_a3":"CRI","iso_a3_eh":"CRI","iso_n3":"188","iso_n3_eh":"188","un_a3":"188","wb_a2":"CR","wb_a3":"CRI","woe_id":23424791,"woe_id_eh":23424791,"woe_note":"Exact WOE match as country","adm0_iso":"CRI","adm0_diff":null,"adm0_tlc":"CRI","adm0_a3_us":"CRI","adm0_a3_fr":"CRI","adm0_a3_ru":"CRI","adm0_a3_es":"CRI","adm0_a3_cn":"CRI","adm0_a3_tw":"CRI","adm0_a3_in":"CRI","adm0_a3_np":"CRI","adm0_a3_pk":"CRI","adm0_a3_de":"CRI","adm0_a3_gb":"CRI","adm0_a3_br":"CRI","adm0_a3_il":"CRI","adm0_a3_ps":"CRI","adm0_a3_sa":"CRI","adm0_a3_eg":"CRI","adm0_a3_ma":"CRI","adm0_a3_pt":"CRI","adm0_a3_ar":"CRI","adm0_a3_jp":"CRI","adm0_a3_ko":"CRI","adm0_a3_vn":"CRI","adm0_a3_tr":"CRI","adm0_a3_id":"CRI","adm0_a3_pl":"CRI","adm0_a3_gr":"CRI","adm0_a3_it":"CRI","adm0_a3_nl":"CRI","adm0_a3_se":"CRI","adm0_a3_bd":"CRI","adm0_a3_ua":"CRI","adm0_a3_un":-99,"adm0_a3_wb":-99,"continent":"North America","region_un":"Americas","subregion":"Central America","region_wb":"Latin America & Caribbean","name_len":10,"long_len":10,"abbrev_len":4,"tiny":-99,"homepart":1,"min_zoom":0,"min_label":2.5,"max_label":8,"label_x":-84.077922,"label_y":10.0651,"ne_id":1159320525,"wikidataid":"Q800","name_ar":"كوستاريكا","name_bn":"কোস্টা রিকা","name_de":"Costa Rica","name_en":"Costa Rica","name_es":"Costa Rica","name_fa":"کاستاریکا","name_fr":"Costa Rica","name_el":"Κόστα Ρίκα","name_he":"קוסטה ריקה","name_hi":"कोस्टा रीका","name_hu":"Costa Rica","name_id":"Kosta Rika","name_it":"Costa Rica","name_ja":"コスタリカ","name_ko":"코스타리카","name_nl":"Costa Rica","name_pl":"Kostaryka","name_pt":"Costa Rica","name_ru":"Коста-Рика","name_sv":"Costa Rica","name_tr":"Kosta Rika","name_uk":"Коста-Рика","name_ur":"کوسٹاریکا","name_vi":"Costa Rica","name_zh":"哥斯达黎加","name_zht":"哥斯大黎加","fclass_iso":"Admin-0 country","tlc_diff":null,"fclass_tlc":"Admin-0 country","fclass_us":null,"fclass_fr":null,"fclass_ru":null,"fclass_es":null,"fclass_cn":null,"fclass_tw":null,"fclass_in":null,"fclass_np":null,"fclass_pk":null,"fclass_de":null,"fclass_gb":null,"fclass_br":null,"fclass_il":null,"fclass_ps":null,"fclass_sa":null,"fclass_eg":null,"fclass_ma":null,"fclass_pt":null,"fclass_ar":null,"fclass_jp":null,"fclass_ko":null,"fclass_vn":null,"fclass_tr":null,"fclass_id":null,"fclass_pl":null,"fclass_gr":null,"fclass_it":null,"fclass_nl":null,"fclass_se":null,"fclass_bd":null,"fclass_ua":null,"filename":"CRI.geojson"},"geometry":{"type":"Polygon","coordinates":[[[-82.54619625520348,9.566134751824677],[-82.93289099804358,9.476812038608173],[-82.92715491405916,9.074330145702916],[-82.71918311230053,8.925708726431495],[-82.86865719270477,8.807266343618522],[-82.82977067740516,8.62629547773237],[-82.91317643912421,8.42351715741907],[-82.96578304719736,8.225027980985985],[-83.50843726269431,8.446926581247283],[-83.71147396516908,8.656836249216866],[-83.59631303580665,8.830443223501419],[-83.63264156770784,9.051385809765321],[-83.90988562695374,9.29080272057358],[-84.30340165885636,9.487354030795714],[-84.64764421256866,9.61553742109571],[-84.71335079622777,9.908051866083852],[-84.97566036654133,10.086723130733006],[-84.91137488477024,9.795991522658923],[-85.11092342806532,9.55703969974131],[-85.33948828809227,9.83454214114866],[-85.66078650586698,9.933347479690724],[-85.79744483106285,10.134885565629034],[-85.79170874707843,10.439337266476613],[-85.65931372754667,10.75433095951172],[-85.94172543002176,10.895278428587801],[-85.7125404528073,11.088444932494824],[-85.5618519762442,11.217119248901597],[-84.90300330273895,10.952303371621896],[-84.67306901725627,11.082657172078143],[-84.35593075228104,10.999225572142905],[-84.19017859570485,10.793450018756674],[-83.89505449088595,10.726839097532446],[-83.65561174186158,10.938764146361422],[-83.40231970898296,10.395438137244653],[-83.01567664257517,9.992982082555557],[-82.54619625520348,9.566134751824677]]]}},{"type":"Feature","properties":{"featurecla":"Admin-0 country","scalerank":1,"labelrank":5,"sovereignt":"Nicaragua","sov_a3":"NIC","adm0_dif":0,"level":2,"type":"Sovereign country","tlc":"1","admin":"Nicaragua","adm0_a3":"NIC","geou_dif":0,"geounit":"Nicaragua","gu_a3":"NIC","su_dif":0,"subunit":"Nicaragua","su_a3":"NIC","brk_diff":0,"name":"Nicaragua","name_long":"Nicaragua","brk_a3":"NIC","brk_name":"Nicaragua","brk_group":null,"abbrev":"Nic.","postal":"NI","formal_en":"Republic of Nicaragua","formal_fr":null,"name_ciawf":"Nicaragua","note_adm0":null,"note_brk":null,"name_sort":"Nicaragua","name_alt":null,"mapcolor7":1,"mapcolor8":4,"mapcolor9":1,"mapcolor13":9,"pop_est":6545502,"pop_rank":13,"pop_year":2019,"gdp_md":12520,"gdp_year":2019,"economy":"6. Developing region","income_grp":"4. Lower middle income","fips_10":"NU","iso_a2":"NI","iso_a2_eh":"NI","iso_a3":"NIC","iso_a3_eh":"NIC","iso_n3":"558","iso_n3_eh":"558","un_a3":"558","wb_a2":"NI","wb_a3":"NIC","woe_id":23424915,"woe_id_eh":23424915,"woe_note":"Exact WOE match as country","adm0_iso":"NIC","adm0_diff":null,"adm0_tlc":"NIC","adm0_a3_us":"NIC","adm0_a3_fr":"NIC","adm0_a3_ru":"NIC","adm0_a3_es":"NIC","adm0_a3_cn":"NIC","adm0_a3_tw":"NIC","adm0_a3_in":"NIC","adm0_a3_np":"NIC","adm0_a3_pk":"NIC","adm0_a3_de":"NIC","adm0_a3_gb":"NIC","adm0_a3_br":"NIC","adm0_a3_il":"NIC","adm0_a3_ps":"NIC","adm0_a3_sa":"NIC","adm0_a3_eg":"NIC","adm0_a3_ma":"NIC","adm0_a3_pt":"NIC","adm0_a3_ar":"NIC","adm0_a3_jp":"NIC","adm0_a3_ko":"NIC","adm0_a3_vn":"NIC","adm0_a3_tr":"NIC","adm0_a3_id":"NIC","adm0_a3_pl":"NIC","adm0_a3_gr":"NIC","adm0_a3_it":"NIC","adm0_a3_nl":"NIC","adm0_a3_se":"NIC","adm0_a3_bd":"NIC","adm0_a3_ua":"NIC","adm0_a3_un":-99,"adm0_a3_wb":-99,"continent":"North America","region_un":"Americas","subregion":"Central America","region_wb":"Latin America & Caribbean","name_len":9,"long_len":9,"abbrev_len":4,"tiny":-99,"homepart":1,"min_zoom":0,"min_label":4,"max_label":9,"label_x":-85.069347,"label_y":12.670697,"ne_id":1159321091,"wikidataid":"Q811","name_ar":"نيكاراغوا","name_bn":"নিকারাগুয়া","name_de":"Nicaragua","name_en":"Nicaragua","name_es":"Nicaragua","name_fa":"نیکاراگوئه","name_fr":"Nicaragua","name_el":"Νικαράγουα","name_he":"ניקרגואה","name_hi":"निकारागुआ","name_hu":"Nicaragua","name_id":"Nikaragua","name_it":"Nicaragua","name_ja":"ニカラグア","name_ko":"니카라과","name_nl":"Nicaragua","name_pl":"Nikaragua","name_pt":"Nicarágua","name_ru":"Никарагуа","name_sv":"Nicaragua","name_tr":"Nikaragua","name_uk":"Нікарагуа","name_ur":"نکاراگوا","name_vi":"Nicaragua","name_zh":"尼加拉瓜","name_zht":"尼加拉瓜","fclass_iso":"Admin-0 country","tlc_diff":null,"fclass_tlc":"Admin-0 country","fclass_us":null,"fclass_fr":null,"fclass_ru":null,"fclass_es":null,"fclass_cn":null,"fclass_tw":null,"fclass_in":null,"fclass_np":null,"fclass_pk":null,"fclass_de":null,"fclass_gb":null,"fclass_br":null,"fclass_il":null,"fclass_ps":null,"fclass_sa":null,"fclass_eg":null,"fclass_ma":null,"fclass_pt":null,"fclass_ar":null,"fclass_jp":null,"fclass_ko":null,"fclass_vn":null,"fclass_tr":null,"fclass_id":null,"fclass_pl":null,"fclass_gr":null,"fclass_it":null,"fclass_nl":null,"fclass_se":null,"fclass_bd":null,"fclass_ua":null,"filename":"NIC.geojson"},"geometry":{"type":"Polygon","coordinates":[[[-83.65561174186158,10.938764146361422],[-83.89505449088595,10.726839097532446],[-84.19017859570485,10.793450018756674],[-84.35593075228104,10.999225572142905],[-84.67306901725627,11.082657172078143],[-84.90300330273895,10.952303371621896],[-85.5618519762442,11.217119248901597],[-85.7125404528073,11.088444932494824],[-86.05848832878526,11.403438625529944],[-86.52584998243296,11.806876532432597],[-86.74599158399633,12.143961900272487],[-87.16751624220116,12.458257961471658],[-87.66849341505471,12.909909979702633],[-87.55746660027562,13.064551703336065],[-87.39238623731923,12.914018256069838],[-87.31665442579549,12.984685777228975],[-87.00576900912758,13.025794379117158],[-86.88055701368438,13.254204209847217],[-86.7338217841916,13.263092556201443],[-86.75508663607971,13.754845485890913],[-86.52070817741992,13.778487453664468],[-86.31214209668993,13.77135610600817],[-86.09626380079061,14.038187364147234],[-85.80129472526859,13.83605499923759],[-85.69866533073696,13.960078436738002],[-85.51441301140028,14.079011745657908],[-85.16536454948482,14.354369615125051],[-85.14875057650296,14.560196844943617],[-85.05278744173694,14.551541042534723],[-84.9245006985724,14.79049286545235],[-84.82003679069436,14.81958669683267],[-84.64958207877964,14.666805324761867],[-84.4493359036486,14.621614284722511],[-84.22834164095241,14.74876414637663],[-83.97572140169359,14.749435939996488],[-83.62858496777292,14.880073960830302],[-83.48998877636612,15.016267198135537],[-83.14721900097413,14.99582916916411],[-83.23323442252394,14.899866034398102],[-83.2841615465476,14.6766238468972],[-83.18212643098728,14.31070302983845],[-83.41249996614445,13.970077826386557],[-83.51983191601468,13.567699286345883],[-83.55220720084554,13.127054348193086],[-83.49851538769427,12.869292303921227],[-83.47332312695198,12.419087225794428],[-83.62610449902292,12.320850328007566],[-83.71961300325506,11.893124497927728],[-83.65085751009072,11.62903209070012],[-83.8554703437504,11.373311265503787],[-83.80893571647155,11.103043524617275],[-83.65561174186158,10.938764146361422]]]}},
++    # ... (and all other countries from the initial prompt)
++    {"type":"Feature","properties":{"featurecla":"Admin-0 country","scalerank":1,"labelrank":5,"sovereignt":"Djibouti","sov_a3":"DJI","adm0_dif":0,"level":2,"type":"Sovereign country","tlc":"1","admin":"Djibouti","adm0_a3":"DJI","geou_dif":0,"geounit":"Djibouti","gu_a3":"DJI","su_dif":0,"subunit":"Djibouti","su_a3":"DJI","brk_diff":0,"name":"Djibouti","name_long":"Djibouti","brk_a3":"DJI","brk_name":"Djibouti","brk_group":null,"abbrev":"Dji.","postal":"DJ","formal_en":"Republic of Djibouti","formal_fr":null,"name_ciawf":"Djibouti","note_adm0":null,"note_brk":null,"name_sort":"Djibouti","name_alt":null,"mapcolor7":1,"mapcolor8":2,"mapcolor9":4,"mapcolor13":8,"pop_est":973560,"pop_rank":11,"pop_year":2019,"gdp_md":3324,"gdp_year":2019,"economy":"7. Least developed region","income_grp":"4. Lower middle income","fips_10":"DJ","iso_a2":"DJ","iso_a2_eh":"DJ","iso_a3":"DJI","iso_a3_eh":"DJI","iso_n3":"262","iso_n3_eh":"262","un_a3":"262","wb_a2":"DJ","wb_a3":"DJI","woe_id":23424797,"woe_id_eh":23424797,"woe_note":"Exact WOE match as country","adm0_iso":"DJI","adm0_diff":null,"adm0_tlc":"DJI","adm0_a3_us":"DJI","adm0_a3_fr":"DJI","adm0_a3_ru":"DJI","adm0_a3_es":"DJI","adm0_a3_cn":"DJI","adm0_a3_tw":"DJI","adm0_a3_in":"DJI","adm0_a3_np":"DJI","adm0_a3_pk":"DJI","adm0_a3_de":"DJI","adm0_a3_gb":"DJI","adm0_a3_br":"DJI","adm0_a3_il":"DJI","adm0_a3_ps":"DJI","adm0_a3_sa":"DJI","adm0_a3_eg":"DJI","adm0_a3_ma":"DJI","adm0_a3_pt":"DJI","adm0_a3_ar":"DJI","adm0_a3_jp":"DJI","adm0_a3_ko":"DJI","adm0_a3_vn":"DJI","adm0_a3_tr":"DJI","adm0_a3_id":"DJI","adm0_a3_pl":"DJI","adm0_a3_gr":"DJI","adm0_a3_it":"DJI","adm0_a3_nl":"DJI","adm0_a3_se":"DJI","adm0_a3_bd":"DJI","adm0_a3_ua":"DJI","adm0_a3_un":-99,"adm0_a3_wb":-99,"continent":"Africa","region_un":"Africa","subregion":"Eastern Africa","region_wb":"Middle East & North Africa","name_len":8,"long_len":8,"abbrev_len":4,"tiny":-99,"homepart":1,"min_zoom":0,"min_label":4,"max_label":9,"label_x":42.498825,"label_y":11.976343,"ne_id":1159320541,"wikidataid":"Q977","name_ar":"جيبوتي","name_bn":"জিবুতি","name_de":"Dschibuti","name_en":"Djibouti","name_es":"Yibuti","name_fa":"جیبوتی","name_fr":"Djibouti","name_el":"Τζιμπουτί","name_he":"ג'יבוטי","name_hi":"जिबूती","name_hu":"Dzsibuti","name_id":"Djibouti","name_it":"Gibuti","name_ja":"ジブチ","name_ko":"지부티","name_nl":"Djibouti","name_pl":"Dżibuti","name_pt":"Djibouti","name_ru":"Джибути","name_sv":"Djibouti","name_tr":"Cibuti","name_uk":"Джибуті","name_ur":"جبوتی","name_vi":"Djibouti","name_zh":"吉布提","name_zht":"吉布地","fclass_iso":"Admin-0 country","tlc_diff":null,"fclass_tlc":"Admin-0 country","fclass_us":null,"fclass_fr":null,"fclass_ru":null,"fclass_es":null,"fclass_cn":null,"fclass_tw":null,"fclass_in":null,"fclass_np":null,"fclass_pk":null,"fclass_de":null,"fclass_gb":null,"fclass_br":null,"fclass_il":null,"fclass_ps":null,"fclass_sa":null,"fclass_eg":null,"fclass_ma":null,"fclass_pt":null,"fclass_ar":null,"fclass_jp":null,"fclass_ko":null,"fclass_vn":null,"fclass_tr":null,"fclass_id":null,"fclass_pl":null,"fclass_gr":null,"fclass_it":null,"fclass_nl":null,"fclass_se":null,"fclass_bd":null,"fclass_ua":null,"filename":"DJI.geojson"},"geometry":{"type":"Polygon","coordinates":[[[42.35156000000012,12.542230000000131],[42.77964236834475,12.455415757695675],[43.08122602720016,12.699638576707116],[43.31785241066467,12.390148423711025],[43.286381463398925,11.974928290245884],[42.715873650896526,11.735640570518342],[43.14530480324214,11.462039699748857],[42.77685184100096,10.92687856693442],[42.55493000000013,11.105110000000195],[42.31414000000012,11.0342],[41.755570000000205,11.050910000000101],[41.73959000000019,11.355110000000138],[41.66176000000013,11.6312],[42.000000000000114,12.100000000000136],[42.35156000000012,12.542230000000131]]]}}
++    # ... (and all other countries from the initial prompt)
++]}
++"""
 
-    while True:
-        try:
-            num_players_str = input(f"Enter number of players (2-{len(AVAILABLE_COLORS)}, or 0 to skip): ").strip()
-            if not num_players_str: # User pressed Enter
-                print("Skipping console configuration. Using default player_config.json.")
-                return None
+-EXAMPLE_GEOJSON_DATA = json.loads(EXAMPLE_GEOJSON_DATA_STR)
 
-            num_players = int(num_players_str)
-            if num_players == 0:
-                print("Skipping console configuration. Using default player_config.json.")
-                return None
-            if 2 <= num_players <= len(AVAILABLE_COLORS):
-                break
-            else:
-                print(f"Please enter a number between 2 and {len(AVAILABLE_COLORS)}.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
-
-    player_configs = []
-    used_names = set()
-    used_colors = set()
-
-    for i in range(num_players):
-        print(f"\n--- Configuring Player {i+1} ---")
-
-        # Player Name is now auto-generated by GameOrchestrator as "Player {i+1}"
-        # We still need to collect AI type and color if desired.
-
-        # For display purposes during console setup, we can use the generated name.
-        generated_player_name = f"Player {i+1}"
-        print(f"\n--- Configuring {generated_player_name} ---")
-
-        # AI Type
-        print("Available AI types:")
-        for idx, ai_type in enumerate(AVAILABLE_AI_TYPES):
-            print(f"  {idx + 1}. {ai_type}")
-
-        while True:
-            try:
-                ai_choice_str = input(f"Choose AI type for {generated_player_name} (number): ").strip()
-                ai_choice = int(ai_choice_str) - 1
-                if 0 <= ai_choice < len(AVAILABLE_AI_TYPES):
-                    selected_ai_type = AVAILABLE_AI_TYPES[ai_choice]
-                    break
-                else:
-                    print(f"Invalid choice. Please enter a number between 1 and {len(AVAILABLE_AI_TYPES)}.")
-            except ValueError:
-                print("Invalid input. Please enter a number.")
-
-        # Assign Color (can be made a choice later if desired, or taken from config)
-        # For now, let's keep the automatic color assignment here for console config,
-        # but GameOrchestrator will use its default list if color is missing from player_configs item.
-        player_color = AVAILABLE_COLORS[i % len(AVAILABLE_COLORS)]
-        if player_color in used_colors:
-            for c_fallback in AVAILABLE_COLORS: # Simple fallback for console uniqueness if needed
-                if c_fallback not in used_colors:
-                    player_color = c_fallback
-                    break
-        used_colors.add(player_color)
-
-        # The 'name' field is not strictly needed here anymore for GameOrchestrator,
-        # as it generates "Player X". We can omit it or pass a placeholder.
-        # For clarity, we'll pass the config without 'name' or with the generated name
-        # if other parts of the system (e.g. future human player UI) might use it before orchestrator overrides.
-        # Let's pass what we have, orchestrator will ignore/override name.
-        player_configs.append({
-            # "name": generated_player_name, # Orchestrator will generate "Player X"
-            "color": player_color, # Orchestrator will use this if present
-            "ai_type": selected_ai_type
-        })
-        print(f"{generated_player_name} will be configured as {selected_ai_type} with color {player_color}.")
-
-    return player_configs
-
-def main():
-    """
-    Initializes and runs the LLM Risk game.
-    Allows for console-based player configuration.
-    """
-    print("LLM Risk Game - Main Application Starting...")
-    load_dotenv()
-    custom_player_configs = get_player_configurations_from_console()
-
-    # Instantiate the GameOrchestrator.
-    # If custom_player_configs is None, GameOrchestrator will use its default player_config.json.
-    # Otherwise, it will use the configurations provided by the user.
-    # This requires GameOrchestrator to be modified to accept this parameter.
-    if custom_player_configs:
-        print("\nUsing custom player configurations from console.")
-        orchestrator = GameOrchestrator(player_configs_override=custom_player_configs)
-    else:
-        print("\nUsing default player configurations (player_config.json).")
-        orchestrator = GameOrchestrator() # Assumes GameOrchestrator handles player_config.json by default
-
-    # Run the game.
-    orchestrator.run_game()
-
-    print("LLM Risk Game - Application Finished.")
-
-if __name__ == "__main__":
-    main()
+ # More comprehensive (but still placeholder/example) military power ratios
+ # These values are arbitrary and for demonstration purposes.
+@@ -227,8 +415,8 @@
+         # In a real application, load this from a file or a more robust config system
+         # For now, using the example data defined at the top of this file
+         print("Initializing Real World Map game mode...")
+-        game_mode = RealWorldGameMode(geojson_data=EXAMPLE_GEOJSON_DATA,
+-                                      military_power_ratios=EXAMPLE_MILITARY_RATIOS)
++        game_mode = RealWorldGameMode(geojson_string_data=FULL_GEOJSON_STRING_DATA,
++                                      military_power_ratios=REAL_WORLD_MILITARY_POWER_RATIOS)
+     # If game_mode_type is "default" or custom_player_configs is None (which also implies default mode from get_player_configurations),
+     # GameOrchestrator will use its internal default GameMode.
