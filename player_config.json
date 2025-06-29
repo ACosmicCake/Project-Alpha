@@ -18,5 +18,20 @@
     "name": "PlayerD (DeepSeek)",
     "color": "Yellow",
     "ai_type": "DeepSeek"
+  },
+  {
+    "name": "PlayerE (Llama)",
+    "color": "Purple",
+    "ai_type": "Llama"
+  },
+  {
+    "name": "PlayerF (Qwen)",
+    "color": "Orange",
+    "ai_type": "Qwen"
+  },
+  {
+    "name": "PlayerG (Mistral)",
+    "color": "Cyan",
+    "ai_type": "Mistral"
   }
 ]

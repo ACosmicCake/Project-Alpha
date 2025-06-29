@@ -10,6 +10,9 @@ from .ai.gemini_agent import GeminiAgent
 from .ai.openai_agent import OpenAIAgent
 from .ai.claude_agent import ClaudeAgent
 from .ai.deepseek_agent import DeepSeekAgent
+from .ai.llama_agent import LlamaAgent
+from .ai.qwen_agent import QwenAgent
+from .ai.mistral_agent import MistralAgent
 from .game_orchestrator_diplomacy_helper import _process_diplomatic_action # Import the helper
 import threading # For asynchronous AI calls
 
@@ -191,6 +194,9 @@ class GameOrchestrator:
             elif ai_type == "OpenAI": agent = OpenAIAgent(player_name, player_color)
             elif ai_type == "Claude": agent = ClaudeAgent(player_name, player_color)
             elif ai_type == "DeepSeek": agent = DeepSeekAgent(player_name, player_color)
+            elif ai_type == "Llama": agent = LlamaAgent(player_name, player_color)
+            elif ai_type == "Qwen": agent = QwenAgent(player_name, player_color)
+            elif ai_type == "Mistral": agent = MistralAgent(player_name, player_color)
             else:
                 print(f"Warning: Unknown AI type '{ai_type}' for player {player_name}. Defaulting to Gemini.")
                 agent = GeminiAgent(player_name, player_color)
