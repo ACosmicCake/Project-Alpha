@@ -28,7 +28,7 @@ class ClaudeAgent(BaseAIAgent):
             return {"type": "END_TURN"}
         return valid_actions[0] if valid_actions else {"type": "END_TURN"} # Absolute fallback
 
-    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 1) -> dict:
+    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 4) -> dict:
         default_fallback_action = self._get_default_action(valid_actions)
 
         if not self.client:
@@ -71,18 +71,24 @@ class ClaudeAgent(BaseAIAgent):
                 elif action_data_str.strip().startswith("```"): # More generic ``` stripping
                     action_data_str = action_data_str.strip()[3:-3].strip()
 
-                    action_data_str = action_data_str.strip()[7:-3].strip()
-                elif action_data_str.strip().startswith("```"): # More generic ``` stripping
-                    action_data_str = action_data_str.strip()[3:-3].strip()
-
                 action_data = json.loads(action_data_str) # This should be a dict with 'thought' and 'action'
 
                 if "thought" not in action_data or "action" not in action_data:
                     raise ValueError("Response JSON must contain 'thought' and 'action' keys.")
 
-                action_dict_from_llm = action_data["action"]
-                if not isinstance(action_dict_from_llm, dict):
-                     raise ValueError(f"The 'action' field in the LLM response is not a valid dictionary. Received: {action_dict_from_llm}")
+                # --- FIX: Handle 'action' being either a string or a dict ---
+                action_field = action_data["action"]
+                action_dict_from_llm = None
+                if isinstance(action_field, str):
+                    try:
+                        action_dict_from_llm = json.loads(action_field)
+                    except json.JSONDecodeError:
+                        raise ValueError(f"The 'action' field was a string but not valid JSON. Received: {action_field}")
+                elif isinstance(action_field, dict):
+                    action_dict_from_llm = action_field # It's already a dict
+                else:
+                    raise ValueError(f"The 'action' field is not a valid dictionary or JSON string. Received: {action_field}")
+                # --- END FIX ---
 
                 # Use the validation method from BaseAIAgent
                 if not self._validate_chosen_action(action_dict_from_llm, valid_actions):
@@ -109,7 +115,7 @@ class ClaudeAgent(BaseAIAgent):
         return {"thought": "Reached end of get_thought_and_action unexpectedly after retries.", "action": default_fallback_action}
 
 
-    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 1) -> str:
+    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 4) -> str:
         default_fallback_message = f"My apologies, I am currently unable to respond. (Claude fallback) - to {recipient_name}"
         if not self.client:
             print(f"ClaudeAgent ({self.player_name}): Client not initialized for chat. Returning default message.")

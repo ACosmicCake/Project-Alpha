@@ -3,7 +3,6 @@ import os
 import json
 from google import genai
 import time 
-from dotenv import load_dotenv # Import load_dotenv
 from pydantic import BaseModel
 
 # Define the Pydantic model for the expected response structure
@@ -14,7 +13,7 @@ class AgentResponse(BaseModel):
 class GeminiAgent(BaseAIAgent):
     def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "gemini-2.5-flash-lite-preview-06-17"): # Using flash for speed
         super().__init__(player_name, player_color)
-        load_dotenv()  # Load environment variables from .env
+
         self.api_key = os.getenv("GEMINI_API_KEY") # Use os.getenv
 
         if not self.api_key:
@@ -45,7 +44,7 @@ class GeminiAgent(BaseAIAgent):
             return {"type": "END_TURN"}
         return valid_actions[0] if valid_actions else {"type": "END_TURN"}
 
-    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 1) -> dict:
+    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 4) -> dict:
         default_fallback_action = self._get_default_action(valid_actions)
 
         if not self.client:
@@ -144,7 +143,7 @@ class GeminiAgent(BaseAIAgent):
 
         return {"thought": "Reached end of get_thought_and_action unexpectedly after retries.", "action": default_fallback_action}
 
-    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 1) -> str:
+    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 4) -> str:
         default_fallback_message = f"My apologies, {recipient_name}, I am currently unable to formulate a response. (Gemini fallback)"
         if not self.client:
             print(f"GeminiAgent ({self.player_name}): Client not initialized for chat.")
@@ -182,6 +181,8 @@ class GeminiAgent(BaseAIAgent):
 
                 print(f"GeminiAgent ({self.player_name}): Successfully received chat response.")
                 return chat_response_content
+            
+        
 
             except ( ValueError) as e:
                 error_message = f"API/Validation Error in chat: {e.__class__.__name__}: {e}"

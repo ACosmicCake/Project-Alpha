@@ -28,7 +28,7 @@ class OpenAIAgent(BaseAIAgent):
             return {"type": "END_TURN"}
         return valid_actions[0] if valid_actions else {"type": "END_TURN"} # Absolute fallback
 
-    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 1) -> dict:
+    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 4) -> dict:
         default_fallback_action = self._get_default_action(valid_actions)
 
         if not self.client:
@@ -56,15 +56,20 @@ class OpenAIAgent(BaseAIAgent):
                     response_format={"type": "json_object"} # For newer models that support JSON mode
                 )
                 action_data_str = response.choices[0].message.content
-                action_data_str = response.choices[0].message.content
                 action_data = json.loads(action_data_str) # This should be a dict with 'thought' and 'action'
 
                 if "thought" not in action_data or "action" not in action_data:
                     raise ValueError("Response JSON must contain 'thought' and 'action' keys.")
 
-                action_dict_from_llm = action_data["action"]
-                if not isinstance(action_dict_from_llm, dict): # Ensure 'action' itself is a dictionary
-                    raise ValueError(f"The 'action' field in the LLM response is not a valid dictionary. Received: {action_dict_from_llm}")
+                # --- FIX: Handle 'action' being either a string or a dict ---
+                action_field = action_data["action"]
+                action_dict_from_llm = None
+                if isinstance(action_field, str):
+                    try:
+                        action_dict_from_llm = json.loads(action_field)
+                    except json.JSONDecodeError:
+                        raise ValueError(f"The 'action' field was a string but not valid JSON. Received: {action_field}")
+                
 
                 # Use the validation method from BaseAIAgent
                 if not self._validate_chosen_action(action_dict_from_llm, valid_actions):
@@ -93,7 +98,7 @@ class OpenAIAgent(BaseAIAgent):
         return {"thought": "Reached end of get_thought_and_action unexpectedly after retries.", "action": default_fallback_action}
 
 
-    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 1) -> str:
+    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 4) -> str:
         default_fallback_message = f"Sorry, I'm having trouble connecting. (OpenAI fallback) - to {recipient_name}"
 
         if not self.client:

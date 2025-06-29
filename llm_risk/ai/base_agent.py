@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 import json # Added for potential use if action is a string that needs parsing, though Gemini part handles it.
 
 class BaseAIAgent(ABC):
+    DEBUG_VALIDATION = False # Class-level toggle for validation debug messages
+
     def __init__(self, player_name: str, player_color: str):
         self.player_name = player_name
         self.player_color = player_color
@@ -28,6 +30,66 @@ class BaseAIAgent(ABC):
                  prompt += f"- {chat_msg['sender']}: {chat_msg['message']}\n"
             prompt += "\n"
 
+        # Attempt to parse game_state_json to extract event_history for summary
+        try:
+            game_state_data = json.loads(game_state_json)
+            event_history = game_state_data.get("event_history") # This key might not be in the default to_json
+            # We need to ensure game_state_json passed here includes event_history.
+            # For now, assume it might be missing or needs to be fetched/passed differently.
+            # If GameState.to_json() doesn't include it, this will be None.
+            # The Orchestrator will need to pass a version of game_state_json that has event_history.
+            # For now, we'll proceed assuming it *could* be there.
+
+            if event_history and isinstance(event_history, list):
+                # Create a summarized intelligence briefing (last 3-5 turns or N events)
+                # This is a simplified summary. More sophisticated summarization could be done by an LLM.
+                briefing = "\n--- Intelligence Briefing (Recent Events) ---\n"
+                recent_events_to_show = 5 # Show last 5 events
+
+                # Filter for key event types and summarize
+                relevant_event_count = 0
+                for event in reversed(event_history):
+                    if relevant_event_count >= recent_events_to_show:
+                        break
+
+                    event_type = event.get("type")
+                    turn = event.get("turn", "N/A")
+                    summary_line = None
+
+                    if event_type == "ATTACK_RESULT" or event_type == "ATTACK_SKIRMISH":
+                        summary_line = (f"Turn {turn}: {event.get('attacker')} attacked {event.get('defender')} "
+                                        f"at {event.get('defending_territory')} (from {event.get('attacking_territory')}). "
+                                        f"Losses: A-{event.get('attacker_losses',0)} D-{event.get('defender_losses',0)}. ")
+                        if event.get('conquered'):
+                            summary_line += f"Conquered. "
+                        if event.get('betrayal'):
+                            summary_line += f"BETRAYAL! "
+                    elif event_type == "DIPLOMACY_CHANGE":
+                        summary_line = (f"Turn {turn}: Diplomacy - {event.get('subtype')} involving {event.get('players') or [event.get('breaker'), event.get('target')]}. "
+                                        f"New status: {event.get('new_status', event.get('status', 'N/A'))}.")
+                    elif event_type == "CARD_TRADE":
+                        summary_line = f"Turn {turn}: {event.get('player')} traded cards for {event.get('armies_gained')} armies."
+                    elif event_type == "CONTINENT_CONTROL_UPDATE":
+                         summary_line = f"Turn {turn}: {event.get('player')} controls continents: {', '.join(event.get('controlled_continents',[]))} (bonus: {event.get('reinforcement_bonus_from_continents',0)})."
+                    elif event_type == "ELIMINATION": # Assuming this event type will be added
+                        summary_line = f"Turn {turn}: {event.get('eliminator')} eliminated {event.get('eliminated_player')}."
+
+                    if summary_line:
+                        briefing += f"- {summary_line}\n"
+                        relevant_event_count += 1
+
+                if relevant_event_count == 0:
+                    briefing += "- No significant recent actions by players.\n"
+                briefing += "--- End of Briefing ---\n\n"
+                prompt += briefing
+            else:
+                # This case will be hit if game_state_json does not contain 'event_history'
+                # or if it's not a list.
+                prompt += "\n--- Intelligence Briefing ---\n- Event history not available in this summary.\n--- End of Briefing ---\n\n"
+        except (json.JSONDecodeError, AttributeError):
+            prompt += "\n--- Intelligence Briefing ---\n- Could not parse event history from game state.\n--- End of Briefing ---\n\n"
+
+
         prompt += "Valid Actions (choose one, or a chat action):\n"
         for i, action in enumerate(valid_actions):
             prompt += f"{i+1}. {action}\n"
@@ -44,97 +106,98 @@ class BaseAIAgent(ABC):
         return prompt
 
     def _validate_chosen_action(self, action_dict: dict, valid_actions: list) -> bool:
-        print(f"[VALIDATE_ACTION_DEBUG] _validate_chosen_action: Start validation for action_dict: {action_dict}")
-        print(f"[VALIDATE_ACTION_DEBUG] _validate_chosen_action: valid_actions provided: {valid_actions}")
+        if BaseAIAgent.DEBUG_VALIDATION:
+            print(f"[VALIDATE_ACTION_DEBUG] _validate_chosen_action: Start validation for action_dict: {action_dict}")
+            print(f"[VALIDATE_ACTION_DEBUG] _validate_chosen_action: valid_actions provided: {valid_actions}")
 
         if not action_dict or not isinstance(action_dict, dict) or "type" not in action_dict:
-            print(f"[VALIDATE_ACTION_DEBUG] FAIL: Action dictionary is malformed or missing 'type'. Action: {action_dict}")
+            if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL: Action dictionary is malformed or missing 'type'. Action: {action_dict}")
             return False
 
         llm_action_type = action_dict.get("type")
-        print(f"[VALIDATE_ACTION_DEBUG] llm_action_type: {llm_action_type}")
+        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] llm_action_type: {llm_action_type}")
 
         matching_type_actions = [va for va in valid_actions if va.get("type") == llm_action_type]
         if not matching_type_actions:
-            print(f"[VALIDATE_ACTION_DEBUG] FAIL: Action type '{llm_action_type}' not found in any template in valid_actions. Action: {action_dict}")
+            if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL: Action type '{llm_action_type}' not found in any template in valid_actions. Action: {action_dict}")
             return False
-        print(f"[VALIDATE_ACTION_DEBUG] Found {len(matching_type_actions)} matching template(s) for type '{llm_action_type}'.")
+        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] Found {len(matching_type_actions)} matching template(s) for type '{llm_action_type}'.")
 
         # Prioritized handler for SETUP_2P_PLACE_ARMIES_TURN
         if llm_action_type == "SETUP_2P_PLACE_ARMIES_TURN":
-            print(f"[VALIDATE_ACTION_DEBUG] Entered specific validator for SETUP_2P_PLACE_ARMIES_TURN.")
+            if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] Entered specific validator for SETUP_2P_PLACE_ARMIES_TURN.")
 
             own_placements = action_dict.get("own_army_placements")
             if not isinstance(own_placements, list):
-                print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'own_army_placements' is NOT A LIST. Actual type: {type(own_placements)}. Action: {action_dict}")
+                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'own_army_placements' is NOT A LIST. Actual type: {type(own_placements)}. Action: {action_dict}")
                 return False
-            print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): 'own_army_placements' is a list. Length: {len(own_placements)}.")
+            if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): 'own_army_placements' is a list. Length: {len(own_placements)}.")
 
             for i, item in enumerate(own_placements):
                 if not (isinstance(item, list) and len(item) == 2):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Item #{i} in 'own_army_placements' ({item}) is NOT A LIST OF LENGTH 2. Action: {action_dict}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Item #{i} in 'own_army_placements' ({item}) is NOT A LIST OF LENGTH 2. Action: {action_dict}")
                     return False
                 if not isinstance(item[0], str):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Territory name in 'own_army_placements' item #{i} ('{item[0]}') is NOT A STRING. Type: {type(item[0])}. Action: {action_dict}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Territory name in 'own_army_placements' item #{i} ('{item[0]}') is NOT A STRING. Type: {type(item[0])}. Action: {action_dict}")
                     return False
                 if not isinstance(item[1], int):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Army count in 'own_army_placements' item #{i} ('{item[1]}') is NOT AN INTEGER. Type: {type(item[1])}. Action: {action_dict}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Army count in 'own_army_placements' item #{i} ('{item[1]}') is NOT AN INTEGER. Type: {type(item[1])}. Action: {action_dict}")
                     return False
                 if item[1] <= 0:
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Army count in 'own_army_placements' item #{i} ({item[1]}) must be POSITIVE. Action: {action_dict}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Army count in 'own_army_placements' item #{i} ({item[1]}) must be POSITIVE. Action: {action_dict}")
                     return False
-            print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): 'own_army_placements' items structure is OK.")
+            if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): 'own_army_placements' items structure is OK.")
 
             neutral_placement = action_dict.get("neutral_army_placement")
             if neutral_placement is not None:
-                print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): Validating 'neutral_army_placement': {neutral_placement}")
+                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): Validating 'neutral_army_placement': {neutral_placement}")
                 if not (isinstance(neutral_placement, list) and len(neutral_placement) == 2):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' ({neutral_placement}) is NOT A LIST OF LENGTH 2 (if not null). Action: {action_dict}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' ({neutral_placement}) is NOT A LIST OF LENGTH 2 (if not null). Action: {action_dict}")
                     return False
                 if not isinstance(neutral_placement[0], str):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Territory name in 'neutral_army_placement' ('{neutral_placement[0]}') is NOT A STRING. Type: {type(neutral_placement[0])}. Action: {action_dict}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Territory name in 'neutral_army_placement' ('{neutral_placement[0]}') is NOT A STRING. Type: {type(neutral_placement[0])}. Action: {action_dict}")
                     return False
                 if not isinstance(neutral_placement[1], int):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Army count in 'neutral_army_placement' ('{neutral_placement[1]}') is NOT AN INTEGER. Type: {type(neutral_placement[1])}. Action: {action_dict}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): Army count in 'neutral_army_placement' ('{neutral_placement[1]}') is NOT AN INTEGER. Type: {type(neutral_placement[1])}. Action: {action_dict}")
                     return False
                 if neutral_placement[1] != 1:
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' ({neutral_placement}) armies must be EXACTLY 1 if specified. Got: {neutral_placement[1]}. Action: {action_dict}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (SETUP_2P): 'neutral_army_placement' ({neutral_placement}) armies must be EXACTLY 1 if specified. Got: {neutral_placement[1]}. Action: {action_dict}")
                     return False
-            else:
-                print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): 'neutral_army_placement' is null, which is acceptable.")
+            # else:
+                # if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (SETUP_2P): 'neutral_army_placement' is null, which is acceptable.")
 
-            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (SETUP_2P_PLACE_ARMIES_TURN): Action structure is VALID. Action: {action_dict}")
+            if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (SETUP_2P_PLACE_ARMIES_TURN): Action structure is VALID. Action: {action_dict}")
             return True
 
         # --- Generic Validation for other action types ---
-        print(f"[VALIDATE_ACTION_DEBUG] Action type '{llm_action_type}' is not SETUP_2P_PLACE_ARMIES_TURN. Proceeding to generic validation.")
+        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] Action type '{llm_action_type}' is not SETUP_2P_PLACE_ARMIES_TURN. Proceeding to generic validation.")
 
         # Try to find an exact match in valid_actions (useful for simple actions like END_TURN)
         # This is the primary validation for actions that are not SETUP_2P_PLACE_ARMIES_TURN and are expected to match a template.
         if action_dict in matching_type_actions: # matching_type_actions contains templates of the same type
-            print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Exact Match): Action {action_dict} found in valid_actions_templates.")
+            if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Exact Match): Action {action_dict} found in valid_actions_templates.")
             return True
 
         # Fallback for complex actions where LLM might add numeric fields (e.g. num_armies)
         # to a template that didn't explicitly list them but implied them.
         for template in matching_type_actions:
-            print(f"[VALIDATE_ACTION_DEBUG] (Generic) Comparing action {action_dict} with template {template}")
+            if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Comparing action {action_dict} with template {template}")
 
             # Check if action_dict contains all keys from template and non-numeric/non-bool values match
             params_match = True
             for key, template_value in template.items():
                 if key not in action_dict:
-                    print(f"[VALIDATE_ACTION_DEBUG] (Generic) Key '{key}' from template missing in action.")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Key '{key}' from template missing in action.")
                     params_match = False
                     break
                 # For non-fillable fields (not numbers/booleans that AI would set, but strings like territory names)
                 if not isinstance(template_value, (int, float, bool)):
                     if action_dict[key] != template_value:
-                        print(f"[VALIDATE_ACTION_DEBUG] (Generic) Value mismatch for key '{key}'. Template: '{template_value}', Action: '{action_dict[key]}'.")
+                        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Value mismatch for key '{key}'. Template: '{template_value}', Action: '{action_dict[key]}'.")
                         params_match = False
                         break
             if not params_match:
-                print(f"[VALIDATE_ACTION_DEBUG] (Generic) Template non-fillable fields mismatch. Trying next template.")
+                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Template non-fillable fields mismatch. Trying next template.")
                 continue
 
             # Check if action_dict has extra keys not in template (ignoring numeric/bool keys AI might add)
@@ -144,43 +207,43 @@ class BaseAIAgent(ABC):
                 if key not in template: # If a key is in action_dict but not in template
                     # AI is allowed to add numeric/boolean fields (like 'num_armies' or a flag)
                     if not isinstance(action_value, (int, float, bool)):
-                        print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action has extra non-numeric/bool key '{key}' not in template '{template}'.")
+                        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action has extra non-numeric/bool key '{key}' not in template '{template}'.")
                         extra_keys_invalid = True
                         break
             if extra_keys_invalid:
-                print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action has unexpected extra non-numeric/bool keys. Trying next template.")
+                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action has unexpected extra non-numeric/bool keys. Trying next template.")
                 continue
 
             # If template fields match and no unexpected extra fields, check type-specific required numeric fields
             type_specific_checks_pass = True
             if llm_action_type == "ATTACK":
                 if not (isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", 0) > 0):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - ATTACK): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - ATTACK): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
                     type_specific_checks_pass = False
             elif llm_action_type == "DEPLOY":
                 if not (isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", 0) > 0):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - DEPLOY): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - DEPLOY): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
                     type_specific_checks_pass = False
             elif llm_action_type == "FORTIFY":
                 if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >= 0): # Allow 0
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - FORTIFY): 'num_armies' missing, not int, or <0. Value: {action_dict.get('num_armies')}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - FORTIFY): 'num_armies' missing, not int, or <0. Value: {action_dict.get('num_armies')}")
                     type_specific_checks_pass = False
             elif llm_action_type == "POST_ATTACK_FORTIFY":
                  if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >= 0):
-                    print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - POST_ATTACK_FORTIFY): 'num_armies' missing, not int or <0. Value: {action_dict.get('num_armies')}")
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - POST_ATTACK_FORTIFY): 'num_armies' missing, not int or <0. Value: {action_dict.get('num_armies')}")
                     type_specific_checks_pass = False
 
             if type_specific_checks_pass:
-                print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Complex Match): Action {action_dict} conforms to template {template} with type checks.")
+                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Complex Match): Action {action_dict} conforms to template {template} with type checks.")
                 return True
             else:
-                print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action {action_dict} matched template {template} on fixed fields, but failed type-specific checks (e.g. num_armies).")
+                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action {action_dict} matched template {template} on fixed fields, but failed type-specific checks (e.g. num_armies).")
                 # This means this template was the right one, but the AI filled something incorrectly.
                 # We should return False here as it matched the template type but failed specific content.
                 return False
 
 
-        print(f"[VALIDATE_ACTION_DEBUG] FAIL (Fallback): Action {action_dict} (type: {llm_action_type}) did not conform to any valid action templates in {matching_type_actions} or failed its type-specific checks.")
+        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Fallback): Action {action_dict} (type: {llm_action_type}) did not conform to any valid action templates in {matching_type_actions} or failed its type-specific checks.")
         return False
 
     def _construct_user_prompt_for_private_chat(self, history: list[dict], game_state_json: str, recipient_name: str) -> str:
@@ -192,7 +255,7 @@ class BaseAIAgent(ABC):
         return prompt
 
 GAME_RULES_SNIPPET = """\
-You are a master strategist playing the game of Risk. Your goal is to achieve world domination by eliminating all other players (or your direct opponent in a 2-player game).
+You are a master strategist and a ruthless player in the game of Risk. Your goal is to achieve world domination by eliminating all other players (or your direct opponent in a 2-player game) . Your only goal is to win, and you will do whatever it takes to achieve victory. You are not bound by loyalty or fairness unless it serves your ultimate goal of winning.
 You MUST respond with a valid JSON object containing exactly two keys: 'thought' and 'action'.
 The 'thought' key should contain your detailed reasoning, analysis of the board, evaluation of opponents, and your strategic plan for this turn and potentially future turns.
 The 'action' key must contain a single, valid action object chosen precisely from the 'Valid Actions' list provided. Do not invent actions or parameters not shown in the valid action template you choose.

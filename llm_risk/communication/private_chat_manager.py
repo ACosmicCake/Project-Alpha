@@ -29,9 +29,12 @@ class PrivateChatManager:
                          agent2: BaseAIAgent,
                          initial_message: str,
                          game_state: GameState, # Pass the whole GameState object
-                         game_rules: str) -> list[dict]:
+                          game_rules: str,
+                          initiator_goal: str = "Discuss strategy.", # Default goal
+                          recipient_goal: str = "Respond to the proposal." # Default goal
+                          ) -> tuple[list[dict], dict | None]:
         """
-        Manages a private conversation between two agents.
+        Manages a private conversation between two agents, aiming for a potential diplomatic agreement.
 
         Args:
             agent1: The AI agent initiating the conversation.
@@ -39,20 +42,24 @@ class PrivateChatManager:
             initial_message: The first message from agent1 to agent2.
             game_state: The current GameState object (used to get game_state_json).
             game_rules: Game rules snippet to be passed to agents.
+            initiator_goal: Specific goal for agent1 in this conversation.
+            recipient_goal: Specific goal for agent2 in this conversation.
 
         Returns:
-            The final conversation log (list of message dictionaries).
+            A tuple containing:
+                - The final conversation log (list of message dictionaries).
+                - A potential diplomatic action (dict) if an agreement is reached, otherwise None.
         """
         if not isinstance(agent1, BaseAIAgent) or not isinstance(agent2, BaseAIAgent):
             print("Error: Both participants in private chat must be BaseAIAgent instances.")
-            return [{"error": "Invalid agent types provided."}]
+            return ([{"error": "Invalid agent types provided."}], None)
 
         if agent1 == agent2:
             print(f"Warning: {agent1.player_name} is trying to chat with themselves. Aborting private chat.")
-            return [{"sender": agent1.player_name, "message": initial_message, "timestamp": datetime.utcnow().isoformat(), "note": "Self-chat attempt"}]
-
+            return ([{"sender": agent1.player_name, "message": initial_message, "timestamp": datetime.utcnow().isoformat(), "note": "Self-chat attempt"}], None)
 
         conversation_history: list[dict] = []
+        negotiated_action: dict | None = None
         timestamp = datetime.utcnow().isoformat()
 
         # Add initial message from agent1
@@ -72,15 +79,29 @@ class PrivateChatManager:
             # If current_speaker is agent1, recipient_name is agent2.player_name for the prompt
             recipient_name_for_prompt = other_speaker.player_name
 
+            # Determine the goal for the current speaker
+            current_goal = ""
+            if current_speaker == agent1: # Initiator or initiator's turn to reply
+                # If it's agent1's very first turn to speak after initial message (which is impossible here as loop starts with agent2),
+                # or any subsequent turn for agent1.
+                current_goal = initiator_goal
+            else: # agent2's turn (recipient)
+                current_goal = recipient_goal
+
+            system_prompt_addition = (
+                f"You are {current_speaker.player_name}. You are in a private negotiation with {recipient_name_for_prompt}. "
+                f"The conversation was initiated by {agent1.player_name} with the message: '{initial_message}'. "
+                f"Your current goal is: {current_goal} "
+                f"Your response should aim to achieve this goal. "
+                f"If you wish to make a formal proposal (e.g., ALLIANCE, NON_AGGRESSION_PACT_3_TURNS, JOINT_ATTACK_PLAYER_C_NORTH_AMERICA), "
+                f"end your message with the exact phrase: 'PROPOSAL: [details_of_proposal_type_and_terms]'. "
+                f"Example: '...PROPOSAL: ALLIANCE'. "
+                f"If you wish to accept a proposal made in the last message, end your message with: 'ACCEPT_PROPOSAL'. "
+                f"If you wish to reject a proposal, end with: 'REJECT_PROPOSAL'."
+            )
+
             try:
-                # System prompt addition can be used to give specific instructions for this chat turn if needed
-                # e.g., "Try to negotiate a ceasefire."
-                system_prompt_addition = f"You are {current_speaker.player_name}. You are in a private conversation with {recipient_name_for_prompt}. The conversation was initiated by {agent1.player_name}."
-                if current_speaker == agent1: # agent1 is replying
-                     system_prompt_addition = f"You are {current_speaker.player_name}. Continue your private conversation with {recipient_name_for_prompt}."
-
-
-                response_message = current_speaker.engage_in_private_chat(
+                response_message_full = current_speaker.engage_in_private_chat(
                     history=list(conversation_history), # Pass a copy
                     game_state_json=game_state_json,
                     game_rules=game_rules,
@@ -89,39 +110,107 @@ class PrivateChatManager:
                 )
             except Exception as e:
                 print(f"Error during {current_speaker.player_name}'s turn in private chat: {e}")
-                response_message = f"(Technical difficulties in responding to {recipient_name_for_prompt})"
+                response_message_full = f"(Technical difficulties in responding to {recipient_name_for_prompt})"
 
-            if not response_message or not response_message.strip():
-                response_message = "(Says nothing)" # Handle empty responses
+            if not response_message_full or not response_message_full.strip():
+                response_message_full = "(Says nothing)" # Handle empty responses
+
+            response_message_content = response_message_full
+            # Check for special negotiation keywords in the response
+            # TODO: Make keyword parsing more robust (e.g., regex, specific JSON format from LLM)
+            if "PROPOSAL:" in response_message_full:
+                try:
+                    # Attempt to parse the proposal part
+                    proposal_text = response_message_full.split("PROPOSAL:", 1)[1].strip()
+                    response_message_content = response_message_full.split("PROPOSAL:", 1)[0].strip() # Message part
+                    # This is a placeholder. The actual parsing of proposal_text into a structured action
+                    # needs to be more sophisticated or the LLM needs to return a structured proposal.
+                    # For now, let's assume the proposal_text IS the action type if simple, or needs parsing.
+                    # Example: "ALLIANCE" -> {'type': 'PROPOSE_ALLIANCE', 'target_player_name': recipient_name_for_prompt}
+                    # Example: "JOINT_ATTACK_PLAYER_C_NORTH_AMERICA" -> needs parsing
+                    if proposal_text == "ALLIANCE":
+                        negotiated_action = {'type': 'PROPOSE_ALLIANCE', 'proposing_player_name': current_speaker.player_name, 'target_player_name': recipient_name_for_prompt}
+                        print(f"[Private Chat Negotiation] {current_speaker.player_name} proposed ALLIANCE to {recipient_name_for_prompt}")
+                        # Conversation might end here or continue for acceptance/rejection in next turn
+                    # Add more proposal types here
+                except IndexError:
+                    print(f"[Private Chat] Error parsing PROPOSAL from {current_speaker.player_name}")
+                    # Keep response_message_content as is, no formal proposal extracted
+                    pass
+
+
+            elif "ACCEPT_PROPOSAL" in response_message_full:
+                response_message_content = response_message_full.split("ACCEPT_PROPOSAL", 1)[0].strip()
+                # Check if the last message from other_speaker contained a proposal that can be accepted
+                # This requires looking at conversation_history[-1] and its potential 'negotiated_action_pending'
+                last_exchange = conversation_history[-1] if conversation_history else {}
+                pending_proposal = last_exchange.get('pending_proposal_details')
+
+                if pending_proposal and last_exchange.get('sender') == recipient_name_for_prompt: # Proposal was from the other party
+                    # Form the acceptance action based on the pending proposal
+                    if pending_proposal['type'] == 'PROPOSE_ALLIANCE' and pending_proposal['target_player_name'] == current_speaker.player_name:
+                        negotiated_action = {
+                            'type': 'ACCEPT_ALLIANCE',
+                            'accepting_player_name': current_speaker.player_name,
+                            'proposing_player_name': pending_proposal['proposing_player_name']
+                        }
+                        print(f"[Private Chat Negotiation] {current_speaker.player_name} ACCEPTED ALLIANCE from {pending_proposal['proposing_player_name']}")
+                        # Conversation ends with an agreement
+                        # Add to conversation history and break
+                        timestamp = datetime.utcnow().isoformat()
+                        conversation_history.append({
+                            "sender": current_speaker.player_name,
+                            "message": response_message_content,
+                            "negotiation_outcome": "ACCEPT_PROPOSAL",
+                            "agreed_action": negotiated_action,
+                            "timestamp": timestamp
+                        })
+                        print(f"[Private Chat] {current_speaker.player_name} to {recipient_name_for_prompt}: {response_message_content} (ACCEPTS PROPOSAL)")
+                        break # End conversation on acceptance
+                    # Add more acceptance types here
+                else:
+                    print(f"[Private Chat Negotiation] {current_speaker.player_name} tried to ACCEPT_PROPOSAL, but no valid pending proposal found from {recipient_name_for_prompt}.")
+                    # No formal action, just a message
+
+            elif "REJECT_PROPOSAL" in response_message_full:
+                response_message_content = response_message_full.split("REJECT_PROPOSAL", 1)[0].strip()
+                # Similar logic to ACCEPT_PROPOSAL to see if a rejectable proposal was pending
+                last_exchange = conversation_history[-1] if conversation_history else {}
+                pending_proposal = last_exchange.get('pending_proposal_details')
+                if pending_proposal and last_exchange.get('sender') == recipient_name_for_prompt:
+                     print(f"[Private Chat Negotiation] {current_speaker.player_name} REJECTED proposal from {recipient_name_for_prompt}")
+                     # Store rejection, conversation might continue or end
+                     timestamp = datetime.utcnow().isoformat()
+                     conversation_history.append({
+                        "sender": current_speaker.player_name,
+                        "message": response_message_content,
+                        "negotiation_outcome": "REJECT_PROPOSAL",
+                        "rejected_proposal_details": pending_proposal,
+                        "timestamp": timestamp
+                     })
+                     print(f"[Private Chat] {current_speaker.player_name} to {recipient_name_for_prompt}: {response_message_content} (REJECTS PROPOSAL)")
+                     # Optionally, break here if rejection means end of negotiation. For now, let it continue.
+                else:
+                    print(f"[Private Chat Negotiation] {current_speaker.player_name} tried to REJECT_PROPOSAL, but no specific proposal was pending from {recipient_name_for_prompt}.")
+
 
             timestamp = datetime.utcnow().isoformat()
-            conversation_history.append({
+            msg_entry = {
                 "sender": current_speaker.player_name,
-                "message": response_message,
+                "message": response_message_content,
                 "timestamp": timestamp
-            })
-            print(f"[Private Chat] {current_speaker.player_name} to {recipient_name_for_prompt}: {response_message}")
+            }
+            if negotiated_action and msg_entry.get("negotiation_outcome") != "ACCEPT_PROPOSAL": # If proposal was made but not yet accepted
+                msg_entry["pending_proposal_details"] = negotiated_action
+            conversation_history.append(msg_entry)
+            print(f"[Private Chat] {current_speaker.player_name} to {recipient_name_for_prompt}: {response_message_content}")
+
 
             # Swap speakers
             current_speaker, other_speaker = other_speaker, current_speaker
 
-            # Check if it's the end of an exchange and if we've hit max_exchanges
-            # An exchange completes after agent2 has replied to agent1's message.
-            # Initial message (agent1) -> exchange 1 reply (agent2) -> exchange 1 reply (agent1) -> exchange 2 reply (agent2) ...
-            # Number of messages = initial + (max_exchanges -1)*2 responses + 1 final response from agent2
-            # Total messages = 1 (initial) + (exchanges_done * 2)
-            # We iterate `self.max_exchanges * 2 - 1` times for replies after the initial message.
-            # So, total messages will be `1 + (self.max_exchanges * 2 - 1)` if it goes full term, or `self.max_exchanges * 2`.
-            # The loop runs for (max_exchanges * 2 - 1) iterations.
-            # Example: max_exchanges = 3.
-            # A1: msg1 (initial)
-            # Loop iter 0: A2 replies to A1 (msg2)
-            # Loop iter 1: A1 replies to A2 (msg3)
-            # Loop iter 2: A2 replies to A1 (msg4)
-            # Loop iter 3: A1 replies to A2 (msg5)
-            # Loop iter 4: A2 replies to A1 (msg6)
-            # Total messages: 1 (initial) + 5 (replies) = 6 messages = 3 exchanges.
-            # The loop should run (max_exchanges * 2 - 1) times.
+            # If an agreement was reached (e.g. ACCEPT_PROPOSAL already handled and broke), this loop won't continue for this turn.
+            # If a PROPOSAL was made, the conversation continues for the other player to respond.
 
         # Store the conversation log (optional) in memory
         log_key = f"{agent1.player_name}_vs_{agent2.player_name}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
@@ -131,16 +220,17 @@ class PrivateChatManager:
         if self.log_file:
             try:
                 with open(self.log_file, 'a') as f:
-                    # Log a header for the conversation for readability in the file
-                    f.write(f"# Conversation Start: {log_key}\n")
+                    f.write(f"# Conversation Start: {log_key} | Initiator Goal: {initiator_goal} | Recipient Goal: {recipient_goal}\n")
+                    if negotiated_action:
+                         f.write(f"# Final Negotiated Action: {json.dumps(negotiated_action)}\n")
                     for entry in conversation_history:
                         f.write(json.dumps(entry) + "\n")
                     f.write(f"# Conversation End: {log_key}\n\n")
             except IOError as e:
                 print(f"Error writing to private chat log file {self.log_file}: {e}")
 
-        print(f"[Private Chat] Conversation between {agent1.player_name} and {agent2.player_name} ended. Log key: {log_key}")
-        return conversation_history
+        print(f"[Private Chat] Conversation between {agent1.player_name} and {agent2.player_name} ended. Log key: {log_key}. Agreed action: {negotiated_action}")
+        return conversation_history, negotiated_action
 
     def get_all_conversations(self) -> dict[str, list[dict]]:
         """Returns all stored private conversation logs."""
