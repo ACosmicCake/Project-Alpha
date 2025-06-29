@@ -155,7 +155,7 @@ def main():
         if args.geojson_file:
             if os.path.exists(args.geojson_file):
                 try:
-                    with open(args.geojson_file, 'r') as f:
+                    with open(args.geojson_file, 'r', encoding='utf-8') as f:
                         geojson_data_str = f.read()
                     print(f"Loaded GeoJSON data from specified file: {args.geojson_file}")
                 except Exception as e:
@@ -170,7 +170,7 @@ def main():
             default_geojson_filename = "map_display_config_polygons.json"
             if os.path.exists(default_geojson_filename):
                 try:
-                    with open(default_geojson_filename, 'r') as f:
+                    with open(default_geojson_filename, 'r', encoding='utf-8') as f:
                         geojson_data_str = f.read()
                     print(f"Loaded GeoJSON data from default file: {default_geojson_filename}")
                 except Exception as e:
