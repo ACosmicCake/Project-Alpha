@@ -106,62 +106,62 @@ class GameGUI:
     def _load_map_config(self, config_file: str = "map_display_config_polygons.json"):
         print(f"Attempting to load territory display data from '{config_file}'")
         try:
-            with open(config_file, 'r') as f:
+            with open(config_file, 'r', encoding='utf-8') as f: # Added encoding
                 self.territory_display_data = json.load(f)
             print(f"Successfully loaded territory display data from '{config_file}'.")
             if not self.territory_display_data:
                  print("Warning: Loaded map display data is empty. Map may not render correctly.")
                  self._create_dummy_polygon_coordinates(config_file, True) # force dummy if empty
-            # Validate structure for one entry (optional)
-            # sample_key = next(iter(self.territory_display_data))
-            # if "polygons" not in self.territory_display_data[sample_key] or \
-            #    "label_position" not in self.territory_display_data[sample_key]:
-            #    print("Warning: Map data structure seems incorrect. Expected {'polygons': ..., 'label_position': ...}")
-
         except FileNotFoundError:
             print(f"Warning: Map display config file '{config_file}' not found. Creating dummy polygon coordinates.")
             self._create_dummy_polygon_coordinates(config_file)
-        except json.JSONDecodeError:
-            print(f"Error decoding JSON from '{config_file}'. Creating dummy polygon coordinates.")
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON from '{config_file}': {e}. Creating dummy polygon coordinates.")
             self._create_dummy_polygon_coordinates(config_file)
+        except Exception as e: # Catch any other potential errors during loading
+            print(f"An unexpected error occurred loading '{config_file}': {e}. Creating dummy polygon coordinates.")
+            self._create_dummy_polygon_coordinates(config_file)
+
 
     def _create_dummy_polygon_coordinates(self, config_file: str, force_if_empty=False):
         if not self.engine.game_state.territories and not force_if_empty:
              print("No territories in game state, cannot create dummy data.")
              return
 
-        # Use territory names from game engine if available, otherwise create some generic ones
         territory_names = list(self.engine.game_state.territories.keys())
-        if not territory_names and force_if_empty: # If called because the file was empty
+        if not territory_names and force_if_empty:
             territory_names = [f"DummyTerritory{i+1}" for i in range(10)]
-
 
         dummy_data = {}
         x_offset, y_offset = 50, 50
         spacing_x, spacing_y = 150, 120
         cols = MAP_AREA_WIDTH // spacing_x
-        if cols == 0: cols = 1 # Avoid division by zero
+        if cols == 0: cols = 1
 
         for i, name in enumerate(territory_names):
             center_x = x_offset + (i % cols) * spacing_x
             center_y = y_offset + (i // cols) * spacing_y
-            # Create a simple square polygon
             square_poly = [
                 [center_x - 40, center_y - 20], [center_x + 40, center_y - 20],
                 [center_x + 40, center_y + 20], [center_x - 40, center_y + 20],
-                [center_x - 40, center_y - 20] # Close the polygon
+                [center_x - 40, center_y - 20]
             ]
             dummy_data[name] = {
-                "polygons": [[square_poly]], # Structure: list of polygons, each polygon is a list of rings (exterior first)
+                "polygons": [[square_poly]],
                 "label_position": [center_x, center_y]
             }
         self.territory_display_data = dummy_data
         try:
-            with open(config_file, 'w') as f:
+            # Ensure the directory exists if config_file includes a path
+            os.makedirs(os.path.dirname(config_file), exist_ok=True)
+            with open(config_file, 'w', encoding='utf-8') as f: # Added encoding
                 json.dump(self.territory_display_data, f, indent=2)
             print(f"Wrote dummy polygon coordinates to '{config_file}'.")
-        except IOError:
-            print(f"Could not write dummy polygon coords to '{config_file}'.")
+        except IOError as e:
+            print(f"Could not write dummy polygon coords to '{config_file}': {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred writing dummy polygon coords to '{config_file}': {e}")
+
 
     def update(self, game_state: GameState, global_chat_log: list[dict], private_chat_conversations: dict):
         self.current_game_state = game_state

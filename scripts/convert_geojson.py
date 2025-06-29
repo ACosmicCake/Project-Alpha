@@ -100,7 +100,7 @@ def normalize_and_scale_coords(coordinates_data, min_lon, max_lon, min_lat, max_
 def main():
     # 1. Load Risk map configuration
     try:
-        with open(MAP_CONFIG_PATH, 'r') as f:
+        with open(MAP_CONFIG_PATH, 'r', encoding='utf-8') as f: # Added encoding
             risk_map_config = json.load(f)
         risk_territories = risk_map_config.get("territories", {}).keys()
         if not risk_territories:
@@ -109,27 +109,28 @@ def main():
     except FileNotFoundError:
         print(f"Error: Risk map config file '{MAP_CONFIG_PATH}' not found.")
         return
-    except json.JSONDecodeError:
-        print(f"Error: Could not decode JSON from '{MAP_CONFIG_PATH}'.")
+    except json.JSONDecodeError as e:
+        print(f"Error: Could not decode JSON from '{MAP_CONFIG_PATH}': {e}.")
+        return
+    except Exception as e:
+        print(f"An unexpected error occurred loading '{MAP_CONFIG_PATH}': {e}.")
         return
 
     # 2. Load GeoJSON data
     geojson_data = None
     try:
-        # Try to load the actual file if it exists
         if os.path.exists(GEOJSON_FILE_PATH):
-            with open(GEOJSON_FILE_PATH, 'r', encoding='utf-8') as f:
+            with open(GEOJSON_FILE_PATH, 'r', encoding='utf-8') as f: # Ensured encoding
                 geojson_data = json.load(f)
+            print(f"Successfully loaded GeoJSON from '{GEOJSON_FILE_PATH}'.")
         else:
-            # Fallback to placeholder if file doesn't exist
             print(f"Warning: GeoJSON file '{GEOJSON_FILE_PATH}' not found. Using placeholder data.")
-            # This is a very simplified placeholder. A real GeoJSON is much more complex.
             geojson_data = {
                 "type": "FeatureCollection",
                 "features": [
                     {
                         "type": "Feature",
-                        "properties": {"ADMIN": "Alaska", "NAME": "Alaska"}, # Common property names
+                        "properties": {"ADMIN": "Alaska", "NAME": "Alaska"},
                         "geometry": {
                             "type": "Polygon",
                             "coordinates": [[[-170, 50], [-170, 70], [-130, 70], [-130, 50], [-170, 50]]]
@@ -137,29 +138,28 @@ def main():
                     },
                     {
                         "type": "Feature",
-                        "properties": {"ADMIN": "Canada", "NAME": "Canada"}, # Example: Canada might map to multiple Risk territories
+                        "properties": {"ADMIN": "Canada", "NAME": "Canada"},
                         "geometry": {
                             "type": "MultiPolygon",
                             "coordinates": [
-                                [[[-140, 50], [-140, 80], [-50, 80], [-50, 50], [-140, 50]]], # Mainland
-                                [[[-70, 40], [-70, 45], [-60, 45], [-60, 40], [-70, 40]]]    # An island
+                                [[[-140, 50], [-140, 80], [-50, 80], [-50, 50], [-140, 50]]],
+                                [[[-70, 40], [-70, 45], [-60, 45], [-60, 40], [-70, 40]]]
                             ]
                         }
                     }
-                    # Add more placeholder features if needed for testing
                 ]
             }
             print("Using placeholder GeoJSON with Alaska and a mock Canada.")
+    except json.JSONDecodeError as e:
+        print(f"Error: Could not decode JSON from '{GEOJSON_FILE_PATH}': {e}.")
+        return # Critical error, cannot proceed without GeoJSON
+    except Exception as e:
+        print(f"An unexpected error occurred loading '{GEOJSON_FILE_PATH}': {e}.")
+        return
 
-    except FileNotFoundError: # This block might be redundant now due to os.path.exists check
-        print(f"Error: GeoJSON file '{GEOJSON_FILE_PATH}' not found and no placeholder mechanism fully implemented here yet beyond basic.")
-        return
-    except json.JSONDecodeError:
-        print(f"Error: Could not decode JSON from '{GEOJSON_FILE_PATH}'.")
-        return
 
     if not geojson_data or "features" not in geojson_data:
-        print("Error: GeoJSON data is invalid or has no features.")
+        print("Error: GeoJSON data is invalid or has no features. Cannot proceed.")
         return
 
     # 3. Pre-calculate overall bounds from GeoJSON for scaling
@@ -191,9 +191,8 @@ def main():
     output_map_data = {}
     found_risk_territories = set()
 
-    # Name variations for matching GeoJSON properties to Risk territory names
-    # (This is crucial and often needs manual adjustment based on the GeoJSON source)
-    name_mapping_priority = ["NAME", "ADMIN", "SOVEREIGNT", "formal_en", "name_long", "admin", "name"]
+    # Ensure "NAME" is the primary key for matching, but keep others as fallbacks.
+    name_mapping_priority = ["NAME", "ADMIN", "SOVEREIGNT", "formal_en", "name_long", "admin"] # "name" lowercase is often too generic
 
     for feature in geojson_data["features"]:
         props = feature.get("properties", {})
@@ -204,41 +203,44 @@ def main():
 
         country_name_from_geojson = None
         for prop_key in name_mapping_priority:
-            if prop_key in props:
+            if prop_key in props and props[prop_key]: # Ensure property exists and is not empty
                 country_name_from_geojson = props[prop_key]
                 break
 
         if not country_name_from_geojson:
-            # print(f"Warning: Feature found with no recognizable name property. Skipping. Properties: {props}")
+            # print(f"Warning: Feature found with no usable name property. Skipping. Properties: {props}")
             continue
 
-        # Attempt to match GeoJSON country name with Risk territory names
-        # This is a simple exact match. More sophisticated matching might be needed (e.g., fuzzy matching, manual map).
+        # Attempt to match GeoJSON country name with Risk territory names from the updated map_config.json
+        # The names in map_config.json should now ideally align with GeoJSON "NAME" properties.
         matched_risk_territory = None
         if country_name_from_geojson in risk_territories:
             matched_risk_territory = country_name_from_geojson
-        else:
-            # Simple check for common variations (e.g., "United States" vs "Western US" / "Eastern US")
-            # This part would need significant expansion for a real map.
-            if "United States" in country_name_from_geojson:
-                # This is a placeholder. A real solution would need to split USA polygon, which is complex.
-                # For now, we might assign the whole USA polygon to one if not careful.
-                # Or, we could try to map based on which Risk territory is still available.
-                if "Western US" in risk_territories and "Western US" not in found_risk_territories:
-                    matched_risk_territory = "Western US"
-                elif "Eastern US" in risk_territories and "Eastern US" not in found_risk_territories:
-                    matched_risk_territory = "Eastern US"
-            elif "Russia" in country_name_from_geojson: # Russia might map to Ukraine, Ural, Siberia etc.
-                # This is also highly complex.
-                pass # Add more specific mapping rules here
+        # else:
+            # Advanced fuzzy matching or manual mapping could be added here if direct matches are insufficient.
+            # For now, we rely on the map_config.json being updated to match GeoJSON names.
+            # print(f"Debug: GeoJSON country '{country_name_from_geojson}' not found in updated Risk territories. Skipping.")
+
 
         if not matched_risk_territory:
-            # print(f"Debug: GeoJSON country '{country_name_from_geojson}' not directly in Risk territories or simple map. Skipping.")
+            # print(f"Debug: GeoJSON country '{country_name_from_geojson}' not directly in Risk territories. Skipping.")
             continue
 
         if matched_risk_territory in found_risk_territories:
-            # print(f"Warning: Risk territory '{matched_risk_territory}' already matched. GeoJSON country '{country_name_from_geojson}' might be a duplicate or requires finer mapping. Skipping.")
-            continue
+            # This can happen if the GeoJSON has multiple features that map to the same Risk territory name
+            # (e.g. mainland and islands, or disputed areas).
+            # We should append polygons in such cases, not skip.
+            # For now, the first match wins for simplicity, but a more robust solution might merge geometries.
+            print(f"Warning: Risk territory '{matched_risk_territory}' already matched. GeoJSON country '{country_name_from_geojson}' might be a duplicate or requires finer mapping. Overwriting/Skipping for now.")
+            # continue # If strictly one-to-one mapping is desired. For now, let it overwrite (last one wins) or consider merging.
+            # Let's allow overwriting for now, assuming the GeoJSON might have multiple features for one "country" (e.g. France and its overseas parts)
+            # but our Risk map wants a single entity. The conversion script's main loop will take the last one.
+            # A better approach for multiple features mapping to one Risk territory would be to collect all their geometries
+            # and pass them all to normalize_and_scale_coords.
+            # However, current_territory_polygons_geo is reset each loop.
+            # This part needs more sophisticated geometry merging if one Risk territory = multiple GeoJSON features.
+            # For the current request (use GeoJSON names), we assume a primary feature per name.
+            pass
 
 
         # Extract and structure coordinates based on geometry type
@@ -288,25 +290,30 @@ def main():
 
     # 6. Save the output
     try:
-        with open(OUTPUT_MAP_DISPLAY_CONFIG_PATH, 'w') as f:
+        # Ensure the directory exists if config_file includes a path
+        os.makedirs(os.path.dirname(OUTPUT_MAP_DISPLAY_CONFIG_PATH), exist_ok=True)
+        with open(OUTPUT_MAP_DISPLAY_CONFIG_PATH, 'w', encoding='utf-8') as f: # Added encoding
             json.dump(output_map_data, f, indent=2)
         print(f"\nSuccessfully created '{OUTPUT_MAP_DISPLAY_CONFIG_PATH}' with {len(output_map_data)} territories.")
-    except IOError:
-        print(f"Error: Could not write output to '{OUTPUT_MAP_DISPLAY_CONFIG_PATH}'.")
+    except IOError as e:
+        print(f"Error: Could not write output to '{OUTPUT_MAP_DISPLAY_CONFIG_PATH}': {e}.")
+    except Exception as e:
+        print(f"An unexpected error occurred writing output to '{OUTPUT_MAP_DISPLAY_CONFIG_PATH}': {e}.")
+
 
 if __name__ == "__main__":
-    # Create dummy map_config.json if it doesn't exist, for standalone script running
+    # Ensure dummy files are written with UTF-8 for consistency if created
     if not os.path.exists(MAP_CONFIG_PATH):
         print(f"Warning: '{MAP_CONFIG_PATH}' not found. Creating a dummy version for script execution.")
         dummy_map_config = {
             "territories": {
-                "Alaska": {}, "Canada": {}, "United States": {} # Simplified for testing
+                "Alaska": {}, "Canada": {}, "United States": {}
             }
         }
-        with open(MAP_CONFIG_PATH, 'w') as f:
+        os.makedirs(os.path.dirname(MAP_CONFIG_PATH), exist_ok=True)
+        with open(MAP_CONFIG_PATH, 'w', encoding='utf-8') as f: # Added encoding
             json.dump(dummy_map_config, f, indent=2)
 
-    # Create a dummy world_countries.geojson if it doesn't exist
     if not os.path.exists(GEOJSON_FILE_PATH):
         print(f"Warning: '{GEOJSON_FILE_PATH}' not found. Creating a dummy version for script execution.")
         dummy_geojson = {
@@ -320,13 +327,14 @@ if __name__ == "__main__":
                     "type": "Feature", "properties": {"ADMIN": "Canada"},
                     "geometry": {"type": "Polygon", "coordinates": [[[-130,50],[-130,80],[-60,80],[-60,50],[-130,50]]]}
                 },
-                 {
-                    "type": "Feature", "properties": {"ADMIN": "United States of America"}, # Test name variation
+                {
+                    "type": "Feature", "properties": {"ADMIN": "United States of America"},
                     "geometry": {"type": "Polygon", "coordinates": [[[-125,25],[-125,49],[-65,49],[-65,25],[-125,25]]]}
                 }
             ]
         }
-        with open(GEOJSON_FILE_PATH, 'w') as f:
+        os.makedirs(os.path.dirname(GEOJSON_FILE_PATH), exist_ok=True)
+        with open(GEOJSON_FILE_PATH, 'w', encoding='utf-8') as f: # Added encoding
             json.dump(dummy_geojson, f, indent=2)
 
     main()

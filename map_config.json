@@ -4,89 +4,95 @@
       "name": "North America",
       "bonus_armies": 5,
       "territories": [
-        "Alaska", "Northwest Territory", "Greenland", "Alberta", "Ontario", "Quebec",
-        "Western US", "Eastern US", "Central America"
+        "Alaska", "Canada", "Greenland", "United States of America", "Mexico"
       ]
     },
     {
       "name": "South America",
       "bonus_armies": 2,
-      "territories": ["Venezuela", "Brazil", "Peru", "Argentina"]
+      "territories": ["Venezuela", "Brazil", "Peru", "Argentina", "Colombia", "Bolivia", "Chile"]
     },
     {
       "name": "Europe",
       "bonus_armies": 5,
       "territories": [
-        "Iceland", "Great Britain", "Western Europe", "Northern Europe",
-        "Central Europe", "Southern Europe", "Ukraine"
+        "Iceland", "United Kingdom", "France", "Spain", "Germany", "Poland", "Italy", "Sweden", "Ukraine", "Romania"
       ]
     },
     {
       "name": "Africa",
       "bonus_armies": 3,
-      "territories": ["North Africa", "Egypt", "East Africa", "Central Africa", "South Africa", "Madagascar"]
+      "territories": ["Egypt", "South Africa", "Madagascar", "Dem. Rep. Congo", "Sudan", "Libya", "Algeria", "Nigeria", "Ethiopia", "Kenya", "Tanzania", "Morocco"]
     },
     {
       "name": "Asia",
       "bonus_armies": 7,
       "territories": [
-        "Middle East", "Afghanistan", "Ural", "Siberia", "Yakutsk", "Kamchatka",
-        "India", "Siam", "China", "Mongolia", "Japan", "Indonesia"
+        "Russia", "China", "India", "Japan", "Mongolia", "Kazakhstan", "Saudi Arabia", "Iran", "Turkey", "Indonesia", "Thailand", "Pakistan", "Afghanistan"
       ]
     },
     {
-      "name": "Australia",
+      "name": "Oceania",
       "bonus_armies": 2,
-      "territories": ["Western Australia", "Eastern Australia", "New Guinea", "New Zealand"]
+      "territories": ["Australia", "New Zealand", "Papua New Guinea", "Fiji"]
     }
   ],
   "territories": {
-    "Alaska": { "continent": "North America", "adjacent_to": ["Northwest Territory", "Alberta", "Kamchatka"] },
-    "Northwest Territory": { "continent": "North America", "adjacent_to": ["Alaska", "Alberta", "Ontario", "Greenland"] },
-    "Greenland": { "continent": "North America", "adjacent_to": ["Northwest Territory", "Ontario", "Quebec", "Iceland"] },
-    "Alberta": { "continent": "North America", "adjacent_to": ["Alaska", "Northwest Territory", "Ontario", "Western US"] },
-    "Ontario": { "continent": "North America", "adjacent_to": ["Northwest Territory", "Alberta", "Western US", "Eastern US", "Quebec", "Greenland"] },
-    "Quebec": { "continent": "North America", "adjacent_to": ["Ontario", "Eastern US", "Greenland"] },
-    "Western US": { "continent": "North America", "adjacent_to": ["Alberta", "Ontario", "Eastern US", "Central America"] },
-    "Eastern US": { "continent": "North America", "adjacent_to": ["Western US", "Ontario", "Quebec", "Central America"] },
-    "Central America": { "continent": "North America", "adjacent_to": ["Western US", "Eastern US", "Venezuela"] },
+    "Alaska": { "continent": "North America", "adjacent_to": ["Canada", "Russia"] },
+    "Canada": { "continent": "North America", "adjacent_to": ["Alaska", "United States of America", "Greenland"] },
+    "Greenland": { "continent": "North America", "adjacent_to": ["Canada", "Iceland"] },
+    "United States of America": { "continent": "North America", "adjacent_to": ["Canada", "Mexico"] },
+    "Mexico": { "continent": "North America", "adjacent_to": ["United States of America", "Colombia", "Venezuela"] },
 
-    "Venezuela": { "continent": "South America", "adjacent_to": ["Central America", "Brazil", "Peru"] },
-    "Brazil": { "continent": "South America", "adjacent_to": ["Venezuela", "Peru", "Argentina", "North Africa"] },
-    "Peru": { "continent": "South America", "adjacent_to": ["Venezuela", "Brazil", "Argentina"] },
-    "Argentina": { "continent": "South America", "adjacent_to": ["Peru", "Brazil"] },
+    "Colombia": { "continent": "South America", "adjacent_to": ["Mexico", "Venezuela", "Brazil", "Peru"] },
+    "Venezuela": { "continent": "South America", "adjacent_to": ["Mexico", "Colombia", "Brazil"] },
+    "Brazil": { "continent": "South America", "adjacent_to": ["Colombia", "Venezuela", "Peru", "Argentina", "Bolivia", "Algeria"] },
+    "Peru": { "continent": "South America", "adjacent_to": ["Colombia", "Brazil", "Bolivia", "Chile"] },
+    "Bolivia": { "continent": "South America", "adjacent_to": ["Peru", "Brazil", "Argentina", "Chile"] },
+    "Chile": { "continent": "South America", "adjacent_to": ["Peru", "Bolivia", "Argentina"] },
+    "Argentina": { "continent": "South America", "adjacent_to": ["Brazil", "Bolivia", "Chile"] },
 
-    "Iceland": { "continent": "Europe", "adjacent_to": ["Greenland", "Great Britain", "Northern Europe"] },
-    "Great Britain": { "continent": "Europe", "adjacent_to": ["Iceland", "Northern Europe", "Western Europe"] },
-    "Western Europe": { "continent": "Europe", "adjacent_to": ["Great Britain", "Northern Europe", "Central Europe", "Southern Europe", "North Africa"] },
-    "Northern Europe": { "continent": "Europe", "adjacent_to": ["Iceland", "Great Britain", "Western Europe", "Central Europe", "Ukraine"] },
-    "Central Europe": { "continent": "Europe", "adjacent_to": ["Western Europe", "Northern Europe", "Southern Europe", "Ukraine"] },
-    "Southern Europe": { "continent": "Europe", "adjacent_to": ["Western Europe", "Central Europe", "Ukraine", "North Africa", "Egypt", "Middle East"] },
-    "Ukraine": { "continent": "Europe", "adjacent_to": ["Northern Europe", "Central Europe", "Southern Europe", "Ural", "Afghanistan", "Middle East"] },
+    "Iceland": { "continent": "Europe", "adjacent_to": ["Greenland", "United Kingdom", "Sweden"] },
+    "United Kingdom": { "continent": "Europe", "adjacent_to": ["Iceland", "Sweden", "Germany", "France"] },
+    "France": { "continent": "Europe", "adjacent_to": ["United Kingdom", "Germany", "Italy", "Spain", "Algeria"] },
+    "Spain": { "continent": "Europe", "adjacent_to": ["France", "Algeria", "Morocco"] },
+    "Germany": { "continent": "Europe", "adjacent_to": ["United Kingdom", "France", "Poland", "Italy", "Sweden"] },
+    "Poland": { "continent": "Europe", "adjacent_to": ["Germany", "Sweden", "Ukraine", "Romania", "Russia"] },
+    "Italy": { "continent": "Europe", "adjacent_to": ["France", "Germany", "Romania", "Libya"] },
+    "Sweden": { "continent": "Europe", "adjacent_to": ["Iceland", "United Kingdom", "Germany", "Poland", "Russia"] },
+    "Ukraine": { "continent": "Europe", "adjacent_to": ["Poland", "Romania", "Turkey", "Russia", "Kazakhstan"] },
+    "Romania": { "continent": "Europe", "adjacent_to": ["Poland", "Italy", "Ukraine", "Turkey"] },
 
-    "North Africa": { "continent": "Africa", "adjacent_to": ["Brazil", "Western Europe", "Southern Europe", "Egypt", "East Africa", "Central Africa"] },
-    "Egypt": { "continent": "Africa", "adjacent_to": ["Southern Europe", "North Africa", "East Africa", "Middle East"] },
-    "East Africa": { "continent": "Africa", "adjacent_to": ["North Africa", "Egypt", "Central Africa", "South Africa", "Madagascar", "Middle East"] },
-    "Central Africa": { "continent": "Africa", "adjacent_to": ["North Africa", "East Africa", "South Africa"] },
-    "South Africa": { "continent": "Africa", "adjacent_to": ["Central Africa", "East Africa", "Madagascar"] },
-    "Madagascar": { "continent": "Africa", "adjacent_to": ["East Africa", "South Africa"] },
+    "Algeria": { "continent": "Africa", "adjacent_to": ["Brazil", "Spain", "France", "Libya", "Sudan", "Nigeria"] },
+    "Libya": { "continent": "Africa", "adjacent_to": ["Algeria", "Egypt", "Sudan", "Italy"] },
+    "Egypt": { "continent": "Africa", "adjacent_to": ["Libya", "Sudan", "Saudi Arabia", "Turkey"] },
+    "Sudan": { "continent": "Africa", "adjacent_to": ["Algeria", "Libya", "Egypt", "Ethiopia", "Dem. Rep. Congo", "Nigeria"] },
+    "Nigeria": { "continent": "Africa", "adjacent_to": ["Algeria", "Sudan", "Dem. Rep. Congo"] },
+    "Ethiopia": { "continent": "Africa", "adjacent_to": ["Sudan", "Kenya", "Saudi Arabia"] },
+    "Kenya": { "continent": "Africa", "adjacent_to": ["Ethiopia", "Tanzania", "Dem. Rep. Congo"] },
+    "Tanzania": { "continent": "Africa", "adjacent_to": ["Kenya", "Dem. Rep. Congo", "South Africa", "Madagascar"] },
+    "Dem. Rep. Congo": { "continent": "Africa", "adjacent_to": ["Nigeria", "Sudan", "Kenya", "Tanzania", "South Africa"] },
+    "South Africa": { "continent": "Africa", "adjacent_to": ["Dem. Rep. Congo", "Tanzania", "Madagascar"] },
+    "Madagascar": { "continent": "Africa", "adjacent_to": ["Tanzania", "South Africa"] },
+    "Morocco": { "continent": "Africa", "adjacent_to": ["Spain", "Algeria"] },
 
-    "Middle East": { "continent": "Asia", "adjacent_to": ["Southern Europe", "Ukraine", "Egypt", "East Africa", "Afghanistan", "India"] },
-    "Afghanistan": { "continent": "Asia", "adjacent_to": ["Ukraine", "Ural", "China", "India", "Middle East"] },
-    "Ural": { "continent": "Asia", "adjacent_to": ["Ukraine", "Afghanistan", "China", "Siberia"] },
-    "Siberia": { "continent": "Asia", "adjacent_to": ["Ural", "Yakutsk", "Mongolia", "China"] },
-    "Yakutsk": { "continent": "Asia", "adjacent_to": ["Siberia", "Kamchatka", "Mongolia"] },
-    "Kamchatka": { "continent": "Asia", "adjacent_to": ["Alaska", "Yakutsk", "Mongolia", "Japan"] },
-    "India": { "continent": "Asia", "adjacent_to": ["Middle East", "Afghanistan", "China", "Siam"] },
-    "Siam": { "continent": "Asia", "adjacent_to": ["India", "China", "Indonesia"] },
-    "China": { "continent": "Asia", "adjacent_to": ["Afghanistan", "Ural", "Siberia", "Mongolia", "India", "Siam"] },
-    "Mongolia": { "continent": "Asia", "adjacent_to": ["Siberia", "Yakutsk", "Kamchatka", "China", "Japan"] },
-    "Japan": { "continent": "Asia", "adjacent_to": ["Kamchatka", "Mongolia"] },
-    "Indonesia": { "continent": "Asia", "adjacent_to": ["Siam", "New Guinea", "Western Australia"] },
+    "Russia": { "continent": "Asia", "adjacent_to": ["Alaska", "Sweden", "Poland", "Ukraine", "Turkey", "Kazakhstan", "Mongolia", "China", "Japan"] },
+    "Kazakhstan": { "continent": "Asia", "adjacent_to": ["Russia", "Ukraine", "Iran", "Afghanistan", "China"] },
+    "Saudi Arabia": { "continent": "Asia", "adjacent_to": ["Egypt", "Ethiopia", "Iran", "Turkey"] },
+    "Turkey": { "continent": "Asia", "adjacent_to": ["Ukraine", "Romania", "Saudi Arabia", "Egypt", "Iran", "Russia"] },
+    "Iran": { "continent": "Asia", "adjacent_to": ["Saudi Arabia", "Turkey", "Kazakhstan", "Afghanistan", "Pakistan", "India"] },
+    "Afghanistan": { "continent": "Asia", "adjacent_to": ["Kazakhstan", "Iran", "Pakistan", "India", "China"] },
+    "Pakistan": { "continent": "Asia", "adjacent_to": ["Iran", "Afghanistan", "India"] },
+    "India": { "continent": "Asia", "adjacent_to": ["Iran", "Afghanistan", "Pakistan", "China", "Thailand"] },
+    "China": { "continent": "Asia", "adjacent_to": ["Russia", "Kazakhstan", "Afghanistan", "India", "Thailand", "Mongolia"] },
+    "Mongolia": { "continent": "Asia", "adjacent_to": ["Russia", "China", "Japan"] },
+    "Thailand": { "continent": "Asia", "adjacent_to": ["India", "China", "Indonesia"] },
+    "Indonesia": { "continent": "Asia", "adjacent_to": ["Thailand", "Australia", "Papua New Guinea"] },
+    "Japan": { "continent": "Asia", "adjacent_to": ["Russia", "Mongolia"] },
 
-    "Western Australia": { "continent": "Australia", "adjacent_to": ["Indonesia", "Eastern Australia", "New Guinea"] },
-    "Eastern Australia": { "continent": "Australia", "adjacent_to": ["Western Australia", "New Guinea", "New Zealand"] },
-    "New Guinea": { "continent": "Australia", "adjacent_to": ["Indonesia", "Western Australia", "Eastern Australia"] },
-    "New Zealand": { "continent": "Australia", "adjacent_to": ["Eastern Australia"] }
+    "Australia": { "continent": "Oceania", "adjacent_to": ["Indonesia", "Papua New Guinea", "New Zealand", "Fiji"] },
+    "Papua New Guinea": { "continent": "Oceania", "adjacent_to": ["Indonesia", "Australia", "Fiji"] },
+    "New Zealand": { "continent": "Oceania", "adjacent_to": ["Australia", "Fiji"] },
+    "Fiji": { "continent": "Oceania", "adjacent_to": ["Australia", "Papua New Guinea", "New Zealand"] }
   }
 }
