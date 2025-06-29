@@ -12,26 +12,151 @@ class MapProcessor:
         self.countries = []
         self.map_config = {"continents": [], "countries": {}} # Using "countries" key for world map
         self.map_display_config = {"territory_polygons": {}, "territory_centroids": {}}
+        self.country_shapes_for_adjacency = {} # To store Shapely objects for adjacency calculation
+        self.country_to_continent_map = {} # To store continent for each country
 
-        self._extract_country_data()
-        self._normalize_and_scale_polygons()
-        self._generate_map_config_entries()
-        # Adjacency calculation will be a separate, more complex step
-        # For now, adjacencies will be empty.
+        self._extract_country_data() # This will now also populate country_to_continent_map
+        self._generate_continent_config() # New method to create continent entries
+        self._calculate_adjacencies() # Calculate after extracting continents
+        self._normalize_and_scale_polygons() # Scaling for display
+        # _generate_map_config_entries is effectively replaced by _calculate_adjacencies and _generate_continent_config
+        # for the structure of map_config.
 
     def _extract_country_data(self):
-        """Extracts country name and geometry from GeoJSON features."""
+        """Extracts country name, geometry, and continent from GeoJSON features."""
+        extracted_continent_names = set()
         for feature in self.geojson_data.get("features", []):
             properties = feature.get("properties", {})
             name = properties.get("NAME")
             if not name:
-                name = properties.get("name") # Fallback for different casing
+                name = properties.get("name")
+
+            # Prioritize "continent" key, fallback to "region_un" or "region_wb" if "continent" is missing/null
+            continent_name = properties.get("continent")
+            if not continent_name: # If "continent" is None or empty string
+                continent_name = properties.get("CONTINENT") # Try all caps
+            if not continent_name:
+                continent_name = properties.get("region_un") # Fallback 1
+            if not continent_name:
+                continent_name = properties.get("region_wb") # Fallback 2
+            if not continent_name:
+                continent_name = "Unknown" # Default if no continent info found
 
             geometry = feature.get("geometry")
             if name and geometry:
-                geom_shape = shape(geometry)
-                self.countries.append({"name": name, "shape": geom_shape, "original_geojson_coords": geometry.get("coordinates")})
-        print(f"MapProcessor: Extracted {len(self.countries)} countries.")
+                try:
+                    geom_shape = shape(geometry)
+                    if geom_shape.is_valid and not geom_shape.is_empty:
+                        self.countries.append({
+                            "name": name,
+                            "shape": geom_shape,
+                            "continent": continent_name, # Store extracted continent name
+                            "original_geojson_coords": geometry.get("coordinates")
+                        })
+                        self.country_shapes_for_adjacency[name] = geom_shape
+                        self.country_to_continent_map[name] = continent_name
+                        if continent_name != "Unknown":
+                             extracted_continent_names.add(continent_name)
+                    else:
+                        print(f"MapProcessor: Invalid or empty geometry for {name} during extraction. Skipping.")
+                except Exception as e:
+                    print(f"MapProcessor: Error processing geometry for {name}: {e}. Skipping.")
+        print(f"MapProcessor: Extracted {len(self.countries)} valid countries with shapes.")
+        print(f"MapProcessor: Found continents in GeoJSON: {list(extracted_continent_names)}")
+
+    def _generate_continent_config(self, default_bonus: int = 3):
+        """Generates the 'continents' part of map_config.json."""
+        gs_continents = {}
+        continent_territories = {} # Temp dict to group territories by continent
+
+        for country_data in self.countries:
+            name = country_data["name"]
+            continent_name = self.country_to_continent_map.get(name, "Unknown")
+            if continent_name == "Unknown":
+                continue # Skip countries with unknown continent for continent config
+
+            if continent_name not in continent_territories:
+                continent_territories[continent_name] = []
+            continent_territories[continent_name].append(name)
+
+        for continent_name, territories in continent_territories.items():
+            # Use a default bonus, or derive one (e.g., based on number of territories)
+            # Standard Risk continent bonuses: NA=5, SA=2, EU=5, AF=3, AS=7, AU=2
+            # For now, let's use a default, can be refined.
+            bonus = default_bonus
+            if continent_name == "Asia": bonus = 7
+            elif continent_name == "Europe": bonus = 5
+            elif continent_name == "North America": bonus = 5
+            elif continent_name == "Africa": bonus = 3
+            elif continent_name == "South America": bonus = 2
+            elif continent_name == "Oceania": bonus = 2 # Assuming "Oceania" might be a value
+
+            gs_continents[continent_name] = {
+                "name": continent_name,
+                "bonus_armies": bonus,
+                "territories": sorted(territories) # List of country names in this continent
+            }
+
+        # Convert dict to list of dicts for map_config.json format
+        self.map_config["continents"] = [cont_data for cont_data in gs_continents.values()]
+        print(f"MapProcessor: Generated continent configurations for {len(self.map_config['continents'])} continents.")
+
+
+    def _calculate_adjacencies(self):
+        """Calculates adjacencies between countries and populates map_config."""
+        print("MapProcessor: Calculating adjacencies...")
+        country_names = list(self.country_shapes_for_adjacency.keys())
+
+        # Initialize/ensure "countries" structure in map_config
+        if "countries" not in self.map_config:
+            self.map_config["countries"] = {}
+
+        for name in country_names:
+            if name not in self.map_config["countries"]:
+                self.map_config["countries"][name] = {
+                    "continent": self.country_to_continent_map.get(name, "Unknown"), # Get from stored map
+                    "adjacent_to": []
+                }
+            else: # Entry might exist from _generate_continent_config if it ran first (though order is changed)
+                 self.map_config["countries"][name]["continent"] = self.country_to_continent_map.get(name, "Unknown")
+                 if "adjacent_to" not in self.map_config["countries"][name]:
+                      self.map_config["countries"][name]["adjacent_to"] = []
+
+
+        for i in range(len(country_names)):
+            for j in range(i + 1, len(country_names)):
+                name1 = country_names[i]
+                name2 = country_names[j]
+                shape1 = self.country_shapes_for_adjacency[name1]
+                shape2 = self.country_shapes_for_adjacency[name2]
+
+                # Using `touches` for shared boundaries.
+                # A very small positive buffer can sometimes help with floating point inaccuracies
+                # if `touches` is too strict, but start without it.
+                # if shape1.is_valid and shape2.is_valid and shape1.touches(shape2):
+                # Using intersects with a small buffer might be more robust for imperfect GeoJSON data
+                # but can also connect things that only touch at a point if buffer is too large.
+                # Let's try with a small intersection check first, as 'touches' can be very strict.
+                # A common approach is to check if intersection is not a Point or LineString (implies area overlap or shared line)
+                # but `touches` is specifically for shared boundaries without interior overlap.
+
+                # Using `intersects` and checking the type of intersection can be more robust.
+                # However, for simplicity and typical adjacency, `touches` is often preferred.
+                # If `touches` fails for some valid adjacencies due to data precision,
+                # then `shape1.buffer(1e-9).intersects(shape2.buffer(1e-9))` could be an alternative.
+                # For now, using `touches`.
+                try:
+                    if shape1.touches(shape2):
+                        self.map_config["countries"][name1]["adjacent_to"].append(name2)
+                        self.map_config["countries"][name2]["adjacent_to"].append(name1)
+                except Exception as e:
+                    print(f"MapProcessor: Error checking adjacency between {name1} and {name2}: {e}")
+
+        for name in country_names:
+            self.map_config["countries"][name]["adjacent_to"].sort() # Keep it tidy
+
+        print(f"MapProcessor: Adjacency calculation complete. Example for {country_names[0] if country_names else 'N/A'}: {self.map_config['countries'].get(country_names[0] if country_names else '', {}).get('adjacent_to')}")
+
 
     def _normalize_and_scale_polygons(self):
         """
