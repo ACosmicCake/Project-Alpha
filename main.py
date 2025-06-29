@@ -98,18 +98,45 @@ def main():
     """
     print("LLM Risk Game - Main Application Starting...")
     load_dotenv()
-    custom_player_configs = get_player_configurations_from_console()
+
+    # --- Bypassing console input for automated testing ---
+    # custom_player_configs = get_player_configurations_from_console()
+    custom_player_configs = [
+        {"name": "PlayerA (Gemini)", "color": "Red", "ai_type": "Gemini"},
+        {"name": "PlayerB (OpenAI)", "color": "Blue", "ai_type": "OpenAI"}
+    ]
+    print("Using hardcoded 2-player configuration for testing.")
+
+    # Game Mode Selection
+    # game_mode_choice_str = input("Choose game mode (1 or 2, default 1): ").strip()
+    game_mode_choice_str = "2" # Defaulting to Truthful World Map for this test
+    print(f"Hardcoded game mode choice: {game_mode_choice_str}")
+
+    game_mode = "standard"
+    # map_file_for_engine is now handled by GameOrchestrator based on game_mode
+
+    if game_mode_choice_str == "2":
+        game_mode = "world_map"
+        # map_file_for_engine = "world_map_config.json" # Orchestrator handles this
+        print("Selected Truthful World Map mode.")
+    else:
+        print("Selected Standard Risk mode.")
+    # --- End of bypass ---
 
     # Instantiate the GameOrchestrator.
-    # If custom_player_configs is None, GameOrchestrator will use its default player_config.json.
-    # Otherwise, it will use the configurations provided by the user.
-    # This requires GameOrchestrator to be modified to accept this parameter.
-    if custom_player_configs:
-        print("\nUsing custom player configurations from console.")
-        orchestrator = GameOrchestrator(player_configs_override=custom_player_configs)
+    # The GameOrchestrator's __init__ will now handle the map_file based on game_mode.
+    if custom_player_configs: # This will be true due to hardcoding above
+        print("\nUsing hardcoded player configurations for testing.")
+        orchestrator = GameOrchestrator(
+            game_mode=game_mode, # Pass the selected game_mode
+            player_configs_override=custom_player_configs
+        )
     else:
+        # This branch will not be hit with the current hardcoding but kept for structure
         print("\nUsing default player configurations (player_config.json).")
-        orchestrator = GameOrchestrator() # Assumes GameOrchestrator handles player_config.json by default
+        orchestrator = GameOrchestrator(
+            game_mode=game_mode # Pass the selected game_mode
+        )
 
     # Run the game.
     orchestrator.run_game()

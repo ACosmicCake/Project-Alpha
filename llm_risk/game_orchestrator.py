@@ -23,10 +23,17 @@ import os # For log directory creation
 
 class GameOrchestrator:
     def __init__(self,
-                 map_file: str = "map_config.json",
+                 game_mode: str = "standard",
                  player_configs_override: list | None = None,
                  default_player_setup_file: str = "player_config.json"):
-        self.engine = GameEngine(map_file_path=map_file)
+
+        self.game_mode = game_mode
+        map_file_for_engine = "map_config.json" # Default for standard and 2_player_standard
+        if game_mode == "world_map":
+            map_file_for_engine = "world_map_config.json"
+
+        # Pass game_mode to GameEngine constructor
+        self.engine = GameEngine(game_mode=self.game_mode, custom_map_file_path=map_file_for_engine)
         self.global_chat = GlobalChat()
         self.private_chat_manager = PrivateChatManager(max_exchanges_per_conversation=3)
 
@@ -54,10 +61,9 @@ class GameOrchestrator:
              raise ValueError("Player setup resulted in no human player configurations.")
 
         # Initialize the game board in the engine
-        # The engine will internally create a Neutral player if is_two_player_mode is True.
+        # The engine now sets its internal is_two_player_game flag based on the game_mode passed to its __init__.
         self.engine.initialize_game_from_map(
-            players_data=[{"name": p.name, "color": p.color} for p in human_player_configs], # Pass only human player data
-            is_two_player_game=self.is_two_player_mode
+            players_data=[{"name": p.name, "color": p.color} for p in human_player_configs] # Pass only human player data
         )
 
         # After engine initializes players (including Neutral if 2P), map all to AI agents

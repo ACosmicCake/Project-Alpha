@@ -1,7 +1,7 @@
 from .base_agent import BaseAIAgent, GAME_RULES_SNIPPET
 import os
 import json
-from google import genai
+import google.generativeai as genai # Corrected import
 import time 
 from pydantic import BaseModel
 

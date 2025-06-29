@@ -1,0 +1,36 @@
+{
+  "continents": [
+    {
+      "name": "World",
+      "bonus_armies": 0,
+      "territories": [
+        "Costa Rica",
+        "Dominican Rep.",
+        "Haiti",
+        "Nicaragua"
+      ]
+    }
+  ],
+  "territories": {
+    "Costa Rica": {
+      "continent": "World",
+      "adjacent_to": ["Nicaragua"],
+      "initial_armies_override": 6
+    },
+    "Nicaragua": {
+      "continent": "World",
+      "adjacent_to": ["Costa Rica"],
+      "initial_armies_override": 3
+    },
+    "Haiti": {
+      "continent": "World",
+      "adjacent_to": ["Dominican Rep."],
+      "initial_armies_override": 3
+    },
+    "Dominican Rep.": {
+      "continent": "World",
+      "adjacent_to": ["Haiti"],
+      "initial_armies_override": 10
+    }
+  }
+}

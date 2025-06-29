@@ -56,17 +56,26 @@ class GameGUI:
         # self.map_image = None # No longer using map_image
         self.ocean_color = OCEAN_BLUE # Set ocean color
         self.clock = pygame.time.Clock()
-        print("Pygame GUI Initialized for procedural map")
 
         self.engine = engine
         self.orchestrator = orchestrator
-        self.current_game_state: GameState = engine.game_state # Initial state
+        self.current_game_state: GameState = engine.game_state
         self.global_chat_messages: list[dict] = []
         self.private_chat_conversations_map: dict[str, list[dict]] = {}
 
+        self.territory_display_data: dict[str, list[list[tuple[int, int]]] | tuple[int, int]] = {} # Can store polygons or points
+        self.is_polygon_map = False
 
-        self.territory_coordinates: dict[str, tuple[int, int]] = {}
-        self._load_map_config()
+        # Determine map display config file based on game mode
+        display_config_file = "map_display_config.json" # Default for standard
+        if self.engine.game_state.is_truthful_world_map_mode:
+            display_config_file = "world_map_display_config.json"
+            self.is_polygon_map = True
+            print(f"Pygame GUI Initialized for Truthful World Map mode with {display_config_file}")
+        else:
+            print(f"Pygame GUI Initialized for Standard mode with {display_config_file}")
+
+        self._load_display_config(display_config_file)
 
         self.action_log: list[str] = ["Game Started."]
         self.ai_thoughts: dict[str, str] = {}
@@ -81,28 +90,50 @@ class GameGUI:
         self.running = False
         self.colors = DEFAULT_PLAYER_COLORS
 
-    def _load_map_config(self, config_file: str = "map_display_config.json"): # Removed map_image_path
-        # No longer loading a map image. The background will be drawn procedurally.
-        # self.map_image is no longer used.
-        print(f"Attempting to load territory coordinates from '{config_file}'")
+    def _load_display_config(self, config_file: str):
+        print(f"Attempting to load territory display data from '{config_file}'")
         try:
-            with open(config_file, 'r') as f: self.territory_coordinates = json.load(f)
-            print(f"Successfully loaded territory coordinates from '{config_file}'.")
-        except FileNotFoundError:
-            print(f"Warning: Map display config file '{config_file}' not found. Creating dummy coordinates.")
-            self._create_dummy_coordinates(config_file)
-        except json.JSONDecodeError: print(f"Error decoding JSON from '{config_file}'.")
+            with open(config_file, 'r') as f:
+                self.territory_display_data = json.load(f)
+            print(f"Successfully loaded territory display data from '{config_file}'.")
+            # Check the type of the first item to confirm if it's polygon data
+            if self.territory_display_data:
+                first_item = next(iter(self.territory_display_data.values()))
+                if isinstance(first_item, list) and isinstance(first_item[0], list) and isinstance(first_item[0][0], list):
+                    self.is_polygon_map = True
+                    print("Polygon data detected in display config.")
+                elif isinstance(first_item, list) and len(first_item) == 2 and isinstance(first_item[0], (int, float)):
+                    self.is_polygon_map = False # It's point data
+                    print("Point coordinate data detected in display config.")
+                else: # Fallback or unknown format
+                    self.is_polygon_map = False
+                    print("Could not definitively determine map data type from first item, assuming points.")
 
-    def _create_dummy_coordinates(self, config_file: str):
+
+        except FileNotFoundError:
+            print(f"Warning: Map display config file '{config_file}' not found. Creating dummy point coordinates.")
+            self.is_polygon_map = False # Can't be polygon if file not found
+            self._create_dummy_display_data(config_file) # This will create point data
+        except json.JSONDecodeError:
+            print(f"Error decoding JSON from '{config_file}'. Defaulting to no display data.")
+            self.territory_display_data = {}
+            self.is_polygon_map = False
+
+
+    def _create_dummy_display_data(self, config_file: str):
+        # This creates dummy POINT coordinates, not polygons.
         if not self.engine.game_state.territories: return
-        dummy_coords = {}
+        dummy_data = {}
         x_offset, y_offset = 50, 50
         for i, name in enumerate(self.engine.game_state.territories.keys()):
-            dummy_coords[name] = (x_offset + (i % 5) * 150, y_offset + (i // 5) * 100)
-        self.territory_coordinates = dummy_coords
+            dummy_data[name] = (x_offset + (i % 5) * 150, y_offset + (i // 5) * 100) # Point data
+        self.territory_display_data = dummy_data
+        self.is_polygon_map = False
         try:
-            with open(config_file, 'w') as f: json.dump(self.territory_coordinates, f, indent=2)
-        except IOError: print(f"Could not write dummy coords to '{config_file}'.")
+            with open(config_file, 'w') as f: json.dump(self.territory_display_data, f, indent=2)
+            print(f"Created dummy point coordinate display data in '{config_file}'.")
+        except IOError: print(f"Could not write dummy display data to '{config_file}'.")
+
 
     def update(self, game_state: GameState, global_chat_log: list[dict], private_chat_conversations: dict):
         self.current_game_state = game_state
@@ -133,57 +164,86 @@ class GameGUI:
             return
 
         # Draw adjacency lines first, so they are behind territories
-        drawn_adjacencies = set() # To avoid drawing a line from A to B and then B to A
+        drawn_adjacencies = set()
         for terr_name, territory_obj in gs_to_draw.territories.items():
-            coords1 = self.territory_coordinates.get(terr_name)
-            if not coords1:
-                # print(f"Warning: No coordinates for territory {terr_name} for adjacency lines.")
-                continue
+            display_item = self.territory_display_data.get(terr_name)
+            if not display_item: continue
 
-            # Correctly access the list of adjacent Territory objects and then their names
+            coords1 = None
+            if self.is_polygon_map and isinstance(display_item, list) and display_item: # List of polygons
+                # For adjacency lines, use the centroid of the first polygon part
+                poly_points = display_item[0]
+                if poly_points:
+                    center_x = sum(p[0] for p in poly_points) / len(poly_points)
+                    center_y = sum(p[1] for p in poly_points) / len(poly_points)
+                    coords1 = (int(center_x), int(center_y))
+            elif not self.is_polygon_map and isinstance(display_item, (list, tuple)) and len(display_item) == 2: # Point
+                coords1 = display_item
+
+            if not coords1: continue
+
             for adj_territory_object in territory_obj.adjacent_territories:
-                adj_name = adj_territory_object.name # Get name from the Territory object
-
-                # Ensure pair is unique (e.g. (A,B) is same as (B,A))
+                adj_name = adj_territory_object.name
                 adj_pair = tuple(sorted((terr_name, adj_name)))
-                if adj_pair in drawn_adjacencies:
-                    continue
+                if adj_pair in drawn_adjacencies: continue
 
-                coords2 = self.territory_coordinates.get(adj_name)
-                if not coords2:
-                    # print(f"Warning: No coordinates for adjacent territory {adj_name} (from {terr_name}).")
-                    continue
+                adj_display_item = self.territory_display_data.get(adj_name)
+                if not adj_display_item: continue
 
-                pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 2)
-                drawn_adjacencies.add(adj_pair)
+                coords2 = None
+                if self.is_polygon_map and isinstance(adj_display_item, list) and adj_display_item:
+                    adj_poly_points = adj_display_item[0]
+                    if adj_poly_points:
+                        adj_center_x = sum(p[0] for p in adj_poly_points) / len(adj_poly_points)
+                        adj_center_y = sum(p[1] for p in adj_poly_points) / len(adj_poly_points)
+                        coords2 = (int(adj_center_x), int(adj_center_y))
+                elif not self.is_polygon_map and isinstance(adj_display_item, (list, tuple)) and len(adj_display_item) == 2:
+                     coords2 = adj_display_item
+
+                if coords2:
+                    pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 2)
+                    drawn_adjacencies.add(adj_pair)
 
         # Draw territories
         for terr_name, territory_obj in gs_to_draw.territories.items():
-            coords = self.territory_coordinates.get(terr_name)
-            if not coords:
-                # print(f"Warning: No coordinates for territory {terr_name}. Skipping draw.")
-                continue # Skip if no coordinates
+            display_item = self.territory_display_data.get(terr_name)
+            if not display_item: continue
 
-            owner_color = GREY # Default color if no owner or owner color not found
+            owner_color = GREY
             if territory_obj.owner and territory_obj.owner.color:
                 owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
 
-            # Draw territory circle
-            pygame.draw.circle(self.screen, owner_color, coords, 20) # Main color
-            pygame.draw.circle(self.screen, BLACK, coords, 20, 2)    # Black border
+            text_pos = None
+            if self.is_polygon_map and isinstance(display_item, list): # List of polygons
+                for polygon_points in display_item:
+                    if len(polygon_points) >= 3:
+                        pygame.draw.polygon(self.screen, owner_color, polygon_points)
+                        pygame.draw.polygon(self.screen, BLACK, polygon_points, 2) # Border
+                # Calculate centroid for text for the first polygon part (simplification)
+                if display_item and display_item[0] and len(display_item[0]) >=3:
+                    poly_points = display_item[0]
+                    center_x = sum(p[0] for p in poly_points) / len(poly_points)
+                    center_y = sum(p[1] for p in poly_points) / len(poly_points)
+                    text_pos = (int(center_x), int(center_y))
 
-            # Draw army count
-            army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE # Contrast for text
-            army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
-            self.screen.blit(army_text, army_text.get_rect(center=coords))
+            elif not self.is_polygon_map and isinstance(display_item, (list, tuple)) and len(display_item) == 2: # Point
+                pygame.draw.circle(self.screen, owner_color, display_item, 20)
+                pygame.draw.circle(self.screen, BLACK, display_item, 20, 2)
+                text_pos = display_item
 
-            # Draw territory name slightly above the circle
-            name_surf = self.font.render(terr_name, True, WHITE) # White name for visibility on blue
-            name_rect = name_surf.get_rect(center=(coords[0], coords[1] - 30)) # Adjusted y-offset
-            # Simple background for name text for better readability
-            name_bg_rect = name_rect.inflate(4, 4)
-            pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
-            self.screen.blit(name_surf, name_rect)
+            if text_pos:
+                army_text_color = BLACK if sum(owner_color[:3]) / 3 > 128 else WHITE
+                army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
+                self.screen.blit(army_text, army_text.get_rect(center=text_pos))
+
+                name_surf = self.font.render(terr_name, True, DARK_GREY) # Dark grey for name
+                name_rect = name_surf.get_rect(center=(text_pos[0], text_pos[1] - (30 if not self.is_polygon_map else 25) )) # Adjust offset
+
+                # Simple background for name text for better readability
+                name_bg_rect = name_rect.inflate(4,2) # Smaller inflation for polygon map
+                pygame.draw.rect(self.screen, LIGHT_GREY, name_bg_rect, border_radius=3) # Lighter background
+                self.screen.blit(name_surf, name_rect)
+
 
     def draw_player_info_panel(self, game_state: GameState):
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, SCREEN_HEIGHT - PLAYER_INFO_PANEL_HEIGHT, SIDE_PANEL_WIDTH, PLAYER_INFO_PANEL_HEIGHT)

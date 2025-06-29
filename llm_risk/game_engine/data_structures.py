@@ -95,6 +95,8 @@ class GameState:
         self.current_game_phase: str = "SETUP_START"
         self.deck: list[Card] = []
         self.current_player_index: int = 0
+        self.is_two_player_game: bool = False # Added default
+        self.is_truthful_world_map_mode: bool = False # Added default
         self.requires_post_attack_fortify: bool = False
         self.conquest_context: dict | None = None
 
