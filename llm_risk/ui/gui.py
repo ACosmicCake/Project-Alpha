@@ -15,63 +15,85 @@ YELLOW = (255, 255, 0)
 GREY = (128, 128, 128)
 LIGHT_GREY = (200, 200, 200)
 DARK_GREY = (50, 50, 50)
+MEDIUM_GREY = (100, 100, 100)
+PANEL_BG_COLOR = (30, 30, 40) # Dark bluish grey for panels
+TEXT_COLOR = WHITE
+HIGHLIGHT_COLOR = YELLOW
+PLAYER_INFO_BG = (40, 40, 50)
 TAB_COLOR_ACTIVE = GREEN
 TAB_COLOR_INACTIVE = GREY
 
 # Define a new color for the ocean
-OCEAN_BLUE = (60, 100, 180) # A pleasant blue for the ocean background
-CONTINENT_COLORS = { # Example colors, can be expanded
-    "North America": (200, 180, 150), # Tan-ish
-    "Asia": (150, 200, 150), # Light green-ish
-    "Default": (100, 100, 100) # Fallback continent color
+OCEAN_BLUE = (20, 60, 120) # Darker, more appealing ocean blue
+CONTINENT_COLORS = { # Example colors, can be expanded - these would ideally be part of map data
+    "North America": (180, 160, 130), # Sandy brown
+    "South America": (120, 180, 90),  # Light green
+    "Europe": (150, 150, 200),       # Light purple/blue
+    "Africa": (210, 140, 80),        # Orange-brown
+    "Asia": (140, 190, 140),         # Sage green
+    "Australia": (200, 120, 120),    # Light red/pink
+    "Default": (100, 100, 100)       # Fallback continent color
 }
-ADJACENCY_LINE_COLOR = (50, 50, 50) # Dark grey for lines
+ADJACENCY_LINE_COLOR = (70, 70, 90) # Slightly lighter for visibility on dark ocean
+TERRITORY_BORDER_COLOR = BLACK
+TERRITORY_BORDER_WIDTH = 1 # Thinner border for polygons
 
 DEFAULT_PLAYER_COLORS = {
-    "Red": RED, "Blue": BLUE, "Green": GREEN, "Yellow": YELLOW,
-    "Purple": (128, 0, 128), "Orange": (255, 165, 0), "Black": BLACK, "White": WHITE # White might be hard to see
+    "Red": (200, 50, 50), "Blue": (50, 100, 200), "Green": (50, 180, 50), "Yellow": (200, 200, 50),
+    "Purple": (150, 80, 150), "Orange": (220, 140, 50), "Black": (80, 80, 80), "White": (220, 220, 220)
 }
 
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 720
-MAP_AREA_WIDTH = 900
+# Screen and Panel Layout Redesign
+SCREEN_WIDTH = 1600  # Increased width for more space
+SCREEN_HEIGHT = 900 # Increased height
+
+# Left side for the map
+MAP_AREA_WIDTH = 1100 # Increased map area
+
+# Right side for information panels
 SIDE_PANEL_WIDTH = SCREEN_WIDTH - MAP_AREA_WIDTH
-ACTION_LOG_HEIGHT = 150 # Adjusted
-THOUGHT_PANEL_HEIGHT = 200 # Adjusted
-CHAT_PANEL_HEIGHT = SCREEN_HEIGHT - ACTION_LOG_HEIGHT - THOUGHT_PANEL_HEIGHT - 50 # Adjusted for player info
-PLAYER_INFO_PANEL_HEIGHT = 50 # New panel
+PLAYER_INFO_HEIGHT = 60
+KEY_ACTIONS_HEIGHT = 180 # New panel for key game developments
+ACTION_LOG_HEIGHT = 150  # General action log
+THOUGHT_PANEL_HEIGHT = 250 # Larger LLM thought panel
+CHAT_PANEL_HEIGHT = SCREEN_HEIGHT - PLAYER_INFO_HEIGHT - KEY_ACTIONS_HEIGHT - ACTION_LOG_HEIGHT - THOUGHT_PANEL_HEIGHT
 
 TAB_HEIGHT = 30
-TAB_FONT_SIZE = 20
+TAB_FONT_SIZE = 18
+DEFAULT_FONT_SIZE = 20
+LARGE_FONT_SIZE = 30
+SMALL_FONT_SIZE = 16
 
 
 class GameGUI:
     def __init__(self, engine: GameEngine, orchestrator):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("LLM Risk Game")
-        self.font = pygame.font.SysFont(None, 24)
-        self.large_font = pygame.font.SysFont(None, 36)
+        pygame.display.set_caption("LLM Risk Game - Advanced UI")
+        self.font = pygame.font.SysFont(None, DEFAULT_FONT_SIZE)
+        self.large_font = pygame.font.SysFont(None, LARGE_FONT_SIZE)
+        self.small_font = pygame.font.SysFont(None, SMALL_FONT_SIZE)
         self.tab_font = pygame.font.SysFont(None, TAB_FONT_SIZE)
-        # self.map_image = None # No longer using map_image
-        self.ocean_color = OCEAN_BLUE # Set ocean color
+
+        self.ocean_color = OCEAN_BLUE
         self.clock = pygame.time.Clock()
-        print("Pygame GUI Initialized for procedural map")
+        print("Pygame GUI Initialized with Advanced Polygon Map")
 
         self.engine = engine
         self.orchestrator = orchestrator
-        self.current_game_state: GameState = engine.game_state # Initial state
+        self.current_game_state: GameState = engine.game_state
         self.global_chat_messages: list[dict] = []
         self.private_chat_conversations_map: dict[str, list[dict]] = {}
 
-
-        self.territory_coordinates: dict[str, tuple[int, int]] = {}
-        self._load_map_config()
+        # This will store the polygon data: {"TerritoryName": {"polygons": [[[...]]], "label_position": [x,y]}}
+        self.territory_display_data: dict[str, dict] = {}
+        self._load_map_config("map_display_config_polygons.json") # Load new polygon config
 
         self.action_log: list[str] = ["Game Started."]
+        self.key_actions_log: list[str] = ["Key Developments:"] # For the new panel
         self.ai_thoughts: dict[str, str] = {}
 
-        self.player_names_for_tabs: list[str] = [] # Will be populated in update or run
+        self.player_names_for_tabs: list[str] = []
         self.active_tab_thought_panel = ""
         self.active_tab_chat_panel = "global"
         self.thought_tab_rects: dict[str, pygame.Rect] = {}
@@ -81,151 +103,219 @@ class GameGUI:
         self.running = False
         self.colors = DEFAULT_PLAYER_COLORS
 
-    def _load_map_config(self, config_file: str = "map_display_config.json"): # Removed map_image_path
-        # No longer loading a map image. The background will be drawn procedurally.
-        # self.map_image is no longer used.
-        print(f"Attempting to load territory coordinates from '{config_file}'")
+    def _load_map_config(self, config_file: str = "map_display_config_polygons.json"):
+        print(f"Attempting to load territory display data from '{config_file}'")
         try:
-            with open(config_file, 'r') as f: self.territory_coordinates = json.load(f)
-            print(f"Successfully loaded territory coordinates from '{config_file}'.")
-        except FileNotFoundError:
-            print(f"Warning: Map display config file '{config_file}' not found. Creating dummy coordinates.")
-            self._create_dummy_coordinates(config_file)
-        except json.JSONDecodeError: print(f"Error decoding JSON from '{config_file}'.")
+            with open(config_file, 'r') as f:
+                self.territory_display_data = json.load(f)
+            print(f"Successfully loaded territory display data from '{config_file}'.")
+            if not self.territory_display_data:
+                 print("Warning: Loaded map display data is empty. Map may not render correctly.")
+                 self._create_dummy_polygon_coordinates(config_file, True) # force dummy if empty
+            # Validate structure for one entry (optional)
+            # sample_key = next(iter(self.territory_display_data))
+            # if "polygons" not in self.territory_display_data[sample_key] or \
+            #    "label_position" not in self.territory_display_data[sample_key]:
+            #    print("Warning: Map data structure seems incorrect. Expected {'polygons': ..., 'label_position': ...}")
 
-    def _create_dummy_coordinates(self, config_file: str):
-        if not self.engine.game_state.territories: return
-        dummy_coords = {}
+        except FileNotFoundError:
+            print(f"Warning: Map display config file '{config_file}' not found. Creating dummy polygon coordinates.")
+            self._create_dummy_polygon_coordinates(config_file)
+        except json.JSONDecodeError:
+            print(f"Error decoding JSON from '{config_file}'. Creating dummy polygon coordinates.")
+            self._create_dummy_polygon_coordinates(config_file)
+
+    def _create_dummy_polygon_coordinates(self, config_file: str, force_if_empty=False):
+        if not self.engine.game_state.territories and not force_if_empty:
+             print("No territories in game state, cannot create dummy data.")
+             return
+
+        # Use territory names from game engine if available, otherwise create some generic ones
+        territory_names = list(self.engine.game_state.territories.keys())
+        if not territory_names and force_if_empty: # If called because the file was empty
+            territory_names = [f"DummyTerritory{i+1}" for i in range(10)]
+
+
+        dummy_data = {}
         x_offset, y_offset = 50, 50
-        for i, name in enumerate(self.engine.game_state.territories.keys()):
-            dummy_coords[name] = (x_offset + (i % 5) * 150, y_offset + (i // 5) * 100)
-        self.territory_coordinates = dummy_coords
+        spacing_x, spacing_y = 150, 120
+        cols = MAP_AREA_WIDTH // spacing_x
+        if cols == 0: cols = 1 # Avoid division by zero
+
+        for i, name in enumerate(territory_names):
+            center_x = x_offset + (i % cols) * spacing_x
+            center_y = y_offset + (i // cols) * spacing_y
+            # Create a simple square polygon
+            square_poly = [
+                [center_x - 40, center_y - 20], [center_x + 40, center_y - 20],
+                [center_x + 40, center_y + 20], [center_x - 40, center_y + 20],
+                [center_x - 40, center_y - 20] # Close the polygon
+            ]
+            dummy_data[name] = {
+                "polygons": [[square_poly]], # Structure: list of polygons, each polygon is a list of rings (exterior first)
+                "label_position": [center_x, center_y]
+            }
+        self.territory_display_data = dummy_data
         try:
-            with open(config_file, 'w') as f: json.dump(self.territory_coordinates, f, indent=2)
-        except IOError: print(f"Could not write dummy coords to '{config_file}'.")
+            with open(config_file, 'w') as f:
+                json.dump(self.territory_display_data, f, indent=2)
+            print(f"Wrote dummy polygon coordinates to '{config_file}'.")
+        except IOError:
+            print(f"Could not write dummy polygon coords to '{config_file}'.")
 
     def update(self, game_state: GameState, global_chat_log: list[dict], private_chat_conversations: dict):
         self.current_game_state = game_state
         self.global_chat_messages = global_chat_log
         self.private_chat_conversations_map = private_chat_conversations
 
-        # Update player names for tabs, in case players are eliminated
         if self.current_game_state and self.current_game_state.players:
             self.player_names_for_tabs = [p.name for p in self.current_game_state.players]
             if self.active_tab_thought_panel not in self.player_names_for_tabs and self.player_names_for_tabs:
                 self.active_tab_thought_panel = self.player_names_for_tabs[0]
             elif not self.player_names_for_tabs:
-                 self.active_tab_thought_panel = ""
-
+                self.active_tab_thought_panel = ""
 
     def draw_map(self, game_state: GameState):
         gs_to_draw = game_state
         if not gs_to_draw: gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
 
-        # Draw the ocean background for the map area
         map_area_rect = pygame.Rect(0, 0, MAP_AREA_WIDTH, SCREEN_HEIGHT)
         self.screen.fill(self.ocean_color, map_area_rect)
 
-        if not gs_to_draw or not gs_to_draw.territories:
-            # Optionally draw a message if no game state or territories
-            no_map_text = self.large_font.render("Map Data Unavailable", True, WHITE)
+        if not gs_to_draw or not gs_to_draw.territories or not self.territory_display_data:
+            no_map_text_str = "Map Data Unavailable"
+            if not self.territory_display_data:
+                no_map_text_str = "Map Display Config Missing/Empty"
+            no_map_text = self.large_font.render(no_map_text_str, True, WHITE)
             self.screen.blit(no_map_text, no_map_text.get_rect(center=map_area_rect.center))
             return
 
-        # Draw adjacency lines first, so they are behind territories
-        drawn_adjacencies = set() # To avoid drawing a line from A to B and then B to A
+        # Adjacency lines (optional with polygons, but can be useful)
+        # Consider drawing these first so polygons draw over them.
+        # For now, let's skip them to simplify, as polygon borders should be clear.
+        # If re-added, use label_position from self.territory_display_data for line endpoints.
+
         for terr_name, territory_obj in gs_to_draw.territories.items():
-            coords1 = self.territory_coordinates.get(terr_name)
-            if not coords1:
-                # print(f"Warning: No coordinates for territory {terr_name} for adjacency lines.")
+            display_data = self.territory_display_data.get(terr_name)
+            if not display_data or "polygons" not in display_data or "label_position" not in display_data:
+                # print(f"Warning: No display data for territory {terr_name}. Skipping draw.")
+                if terr_name not in getattr(self, "_missing_data_warnings", set()): # Avoid spamming console
+                    print(f"Warning: No display data or incomplete data for territory '{terr_name}'. Skipping draw.")
+                    if not hasattr(self, "_missing_data_warnings"): self._missing_data_warnings = set()
+                    self._missing_data_warnings.add(terr_name)
                 continue
 
-            # Correctly access the list of adjacent Territory objects and then their names
-            for adj_territory_object in territory_obj.adjacent_territories:
-                adj_name = adj_territory_object.name # Get name from the Territory object
 
-                # Ensure pair is unique (e.g. (A,B) is same as (B,A))
-                adj_pair = tuple(sorted((terr_name, adj_name)))
-                if adj_pair in drawn_adjacencies:
-                    continue
-
-                coords2 = self.territory_coordinates.get(adj_name)
-                if not coords2:
-                    # print(f"Warning: No coordinates for adjacent territory {adj_name} (from {terr_name}).")
-                    continue
-
-                pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 2)
-                drawn_adjacencies.add(adj_pair)
-
-        # Draw territories
-        for terr_name, territory_obj in gs_to_draw.territories.items():
-            coords = self.territory_coordinates.get(terr_name)
-            if not coords:
-                # print(f"Warning: No coordinates for territory {terr_name}. Skipping draw.")
-                continue # Skip if no coordinates
-
-            owner_color = GREY # Default color if no owner or owner color not found
+            owner_color = GREY
             if territory_obj.owner and territory_obj.owner.color:
-                owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
+                owner_color = self.colors.get(territory_obj.owner.color, GREY)
 
-            # Draw territory circle
-            pygame.draw.circle(self.screen, owner_color, coords, 20) # Main color
-            pygame.draw.circle(self.screen, BLACK, coords, 20, 2)    # Black border
+            # Draw each polygon part of the territory
+            for polygon_structure in display_data["polygons"]:
+                exterior_ring = polygon_structure[0]
+                if len(exterior_ring) < 3: continue # Need at least 3 points for a polygon
 
-            # Draw army count
-            army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE # Contrast for text
+                pygame.draw.polygon(self.screen, owner_color, exterior_ring)
+                pygame.draw.polygon(self.screen, TERRITORY_BORDER_COLOR, exterior_ring, TERRITORY_BORDER_WIDTH)
+
+                # Handle holes if any (though our Risk map might not have them)
+                if len(polygon_structure) > 1:
+                    for interior_ring in polygon_structure[1:]:
+                        if len(interior_ring) < 3: continue
+                        pygame.draw.polygon(self.screen, self.ocean_color, interior_ring) # Fill hole with ocean
+                        pygame.draw.polygon(self.screen, TERRITORY_BORDER_COLOR, interior_ring, TERRITORY_BORDER_WIDTH)
+
+
+            label_pos = display_data["label_position"]
+            army_text_color = BLACK if sum(owner_color[:3]) / 3 > 128 else WHITE # Ensure owner_color is subscriptable
+
+            # Draw army count at label_position
             army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
-            self.screen.blit(army_text, army_text.get_rect(center=coords))
+            army_rect = army_text.get_rect(center=label_pos)
+            self.screen.blit(army_text, army_rect)
 
-            # Draw territory name slightly above the circle
-            name_surf = self.font.render(terr_name, True, WHITE) # White name for visibility on blue
-            name_rect = name_surf.get_rect(center=(coords[0], coords[1] - 30)) # Adjusted y-offset
+            # Draw territory name slightly above the army count
+            name_surf = self.small_font.render(terr_name, True, TEXT_COLOR)
+            name_rect = name_surf.get_rect(center=(label_pos[0], label_pos[1] - 20))
+
             # Simple background for name text for better readability
-            name_bg_rect = name_rect.inflate(4, 4)
+            name_bg_rect = name_rect.inflate(6, 2)
             pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
             self.screen.blit(name_surf, name_rect)
 
     def draw_player_info_panel(self, game_state: GameState):
-        panel_rect = pygame.Rect(MAP_AREA_WIDTH, SCREEN_HEIGHT - PLAYER_INFO_PANEL_HEIGHT, SIDE_PANEL_WIDTH, PLAYER_INFO_PANEL_HEIGHT)
-        pygame.draw.rect(self.screen, (20,20,20), panel_rect)
-        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
+        panel_rect = pygame.Rect(MAP_AREA_WIDTH, 0, SIDE_PANEL_WIDTH, PLAYER_INFO_HEIGHT)
+        pygame.draw.rect(self.screen, PLAYER_INFO_BG, panel_rect)
+        pygame.draw.rect(self.screen, WHITE, panel_rect, 1) # Border
 
         gs_to_draw = game_state
         if not gs_to_draw: gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
         current_player = gs_to_draw.get_current_player()
+
         y_pos = panel_rect.y + 5
         if current_player:
-            info_text = f"Turn: {gs_to_draw.current_turn_number} Player: {current_player.name} ({current_player.color})"
-            info_surface = self.font.render(info_text, True, WHITE)
+            player_color = self.colors.get(current_player.color, WHITE)
+            info_text = f"Player: {current_player.name}"
+            info_surface = self.font.render(info_text, True, player_color)
             self.screen.blit(info_surface, (panel_rect.x + 5, y_pos))
-            y_pos += 20
+
+            turn_text = f"Turn: {gs_to_draw.current_turn_number}"
+            turn_surface = self.font.render(turn_text, True, TEXT_COLOR)
+            turn_rect = turn_surface.get_rect(topright=(panel_rect.right - 5, y_pos))
+            self.screen.blit(turn_surface, turn_rect)
+            y_pos += self.font.get_linesize()
 
             phase_text = f"Phase: {gs_to_draw.current_game_phase}"
             if self.orchestrator and self.orchestrator.ai_is_thinking and self.orchestrator.active_ai_player_name == current_player.name:
                 phase_text += " (Thinking...)"
 
-            cards_text = f"Cards: {len(current_player.hand)}, Deploy: {current_player.armies_to_deploy}, {phase_text}"
-            cards_surface = self.font.render(cards_text, True, WHITE)
-            self.screen.blit(cards_surface, (panel_rect.x + 5, y_pos))
+            cards_text = f"Cards: {len(current_player.hand)} | Deploy: {current_player.armies_to_deploy}"
+
+            phase_surface = self.small_font.render(phase_text, True, TEXT_COLOR)
+            self.screen.blit(phase_surface, (panel_rect.x + 5, y_pos))
+
+            cards_surface = self.small_font.render(cards_text, True, TEXT_COLOR)
+            cards_rect = cards_surface.get_rect(bottomright=(panel_rect.right - 5, panel_rect.bottom - 5))
+            self.screen.blit(cards_surface, cards_rect)
+
         elif self.orchestrator and self.orchestrator.ai_is_thinking and self.orchestrator.active_ai_player_name:
-            # Case where current_player might be None briefly during transitions, but an AI is thinking
             thinking_text = f"AI ({self.orchestrator.active_ai_player_name}) is thinking..."
-            thinking_surface = self.font.render(thinking_text, True, YELLOW) # Yellow to stand out
+            thinking_surface = self.font.render(thinking_text, True, HIGHLIGHT_COLOR)
             self.screen.blit(thinking_surface, (panel_rect.x + 5, y_pos))
 
+    def draw_key_actions_panel(self):
+        base_y = PLAYER_INFO_HEIGHT
+        panel_rect = pygame.Rect(MAP_AREA_WIDTH, base_y, SIDE_PANEL_WIDTH, KEY_ACTIONS_HEIGHT)
+        pygame.draw.rect(self.screen, PANEL_BG_COLOR, panel_rect)
+        pygame.draw.rect(self.screen, WHITE, panel_rect, 1) # Border
+
+        title_text = self.font.render("Key Developments", True, TEXT_COLOR)
+        self.screen.blit(title_text, (panel_rect.x + 10, panel_rect.y + 5))
+
+        y_offset = self.font.get_linesize() + 10
+        max_entries = (KEY_ACTIONS_HEIGHT - y_offset - 5) // (self.small_font.get_linesize() + 2)
+
+        for i, log_entry in enumerate(reversed(self.key_actions_log[-max_entries:])):
+            entry_surface = self.small_font.render(log_entry, True, LIGHT_GREY)
+            self.screen.blit(entry_surface, (panel_rect.x + 10, panel_rect.y + y_offset + i * (self.small_font.get_linesize() + 2)))
 
     def draw_action_log_panel(self):
-        panel_rect = pygame.Rect(MAP_AREA_WIDTH, 0, SIDE_PANEL_WIDTH, ACTION_LOG_HEIGHT)
-        pygame.draw.rect(self.screen, DARK_GREY, panel_rect)
-        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
-        title_text = self.large_font.render("Action Log", True, WHITE)
-        self.screen.blit(title_text, (panel_rect.x + 10, panel_rect.y + 5))
-        y_offset = 35
-        for i, log_entry in enumerate(reversed(self.action_log[-6:])):
-            entry_surface = self.font.render(log_entry, True, LIGHT_GREY)
-            self.screen.blit(entry_surface, (panel_rect.x + 10, panel_rect.y + y_offset + i * 20))
+        base_y = PLAYER_INFO_HEIGHT + KEY_ACTIONS_HEIGHT
+        panel_rect = pygame.Rect(MAP_AREA_WIDTH, base_y, SIDE_PANEL_WIDTH, ACTION_LOG_HEIGHT)
+        pygame.draw.rect(self.screen, PANEL_BG_COLOR, panel_rect) # Use new panel bg color
+        pygame.draw.rect(self.screen, WHITE, panel_rect, 1) # Border
 
-    def _render_text_wrapped(self, surface, text, rect, font, color):
+        title_text = self.font.render("Action Log", True, TEXT_COLOR) # Use themed text color
+        self.screen.blit(title_text, (panel_rect.x + 10, panel_rect.y + 5))
+
+        y_offset = self.font.get_linesize() + 10 # Consistent padding from title
+        max_entries = (ACTION_LOG_HEIGHT - y_offset - 5) // (self.small_font.get_linesize() + 2)
+
+        for i, log_entry in enumerate(reversed(self.action_log[-max_entries:])): # Show more entries if space allows
+            entry_surface = self.small_font.render(log_entry, True, LIGHT_GREY) # Use smaller font for more entries
+            self.screen.blit(entry_surface, (panel_rect.x + 10, panel_rect.y + y_offset + i * (self.small_font.get_linesize() + 2)))
+
+    def _render_text_wrapped(self, surface, text, rect, font, color): # Keep this useful helper
         words = text.split(' ')
         lines = []
         current_line = ""
