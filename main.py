@@ -111,57 +111,92 @@ def main():
     parser.add_argument(
         "--game_mode",
         type=str,
-        default="standard",
+        default=None, # Default to None, so we can check if it was set
         choices=["standard", "world_map"],
-        help="Game mode to play: 'standard' or 'world_map'."
-    )
-    # Add map_file argument for standard mode, but world_map will use its own
-    # This map_file argument is currently NOT directly used by orchestrator if game_mode is set.
-    # Orchestrator internally decides map_file based on game_mode.
-    # Kept for potential future use or if orchestrator logic changes.
-    parser.add_argument(
-        "--map_file",
-        type=str,
-        default="map_config.json",
-        help="Path to the JSON file with map configuration (primarily for 'standard' mode)."
+        help="Game mode to play: 'standard' or 'world_map'. If not provided, you will be prompted."
     )
     parser.add_argument(
         "--geojson_file",
         type=str,
-        default=None, # No default, only used if game_mode is world_map
-        help="Path to the GeoJSON file for 'world_map' mode."
+        default=None,
+        help="Path to the GeoJSON file for 'world_map' mode. If not provided and world_map is chosen interactively, 'map_display_config_polygons.json' will be used."
+    )
+    # map_file argument is less relevant now if game_mode dictates everything, but keep for potential standard mode overrides
+    parser.add_argument(
+        "--map_file",
+        type=str,
+        default="map_config.json",
+        help="Path to the JSON file with map configuration (primarily for 'standard' mode if explicitly specified)."
     )
     args = parser.parse_args()
 
+    selected_game_mode = args.game_mode
     geojson_data_str = None
-    if args.game_mode == "world_map":
-        if args.geojson_file and os.path.exists(args.geojson_file):
-            try:
-                with open(args.geojson_file, 'r') as f:
-                    geojson_data_str = f.read()
-                print(f"Loaded GeoJSON data from: {args.geojson_file}")
-            except Exception as e:
-                print(f"Error reading GeoJSON file '{args.geojson_file}': {e}. World map mode may fail.")
-                # Potentially exit or raise, but for now, let orchestrator handle missing data if it must.
+
+    if not selected_game_mode:
+        print("\n--- Choose Game Mode ---")
+        print("1. Standard Risk Game")
+        print("2. World Map Game")
+        while True:
+            choice = input("Enter choice (1 or 2): ").strip()
+            if choice == '1':
+                selected_game_mode = "standard"
+                break
+            elif choice == '2':
+                selected_game_mode = "world_map"
+                break
+            else:
+                print("Invalid choice. Please enter 1 or 2.")
+
+    print(f"Selected game mode: {selected_game_mode}")
+
+    if selected_game_mode == "world_map":
+        # If geojson_file is provided via CLI, use that
+        if args.geojson_file:
+            if os.path.exists(args.geojson_file):
+                try:
+                    with open(args.geojson_file, 'r') as f:
+                        geojson_data_str = f.read()
+                    print(f"Loaded GeoJSON data from specified file: {args.geojson_file}")
+                except Exception as e:
+                    print(f"Error reading specified GeoJSON file '{args.geojson_file}': {e}. Exiting.")
+                    return 1 # Indicate error
+            else:
+                print(f"Error: Specified GeoJSON file '{args.geojson_file}' not found. Exiting.")
+                return 1 # Indicate error
         else:
-            print("Warning: 'world_map' mode selected but --geojson_file not provided or not found. Orchestrator will raise an error.")
-            # Orchestrator's __init__ will raise ValueError if geojson_data_str is None for world_map mode.
+            # If no geojson_file via CLI, and world_map was chosen (interactively or CLI without file),
+            # try to load 'map_display_config_polygons.json' from root.
+            default_geojson_filename = "map_display_config_polygons.json"
+            if os.path.exists(default_geojson_filename):
+                try:
+                    with open(default_geojson_filename, 'r') as f:
+                        geojson_data_str = f.read()
+                    print(f"Loaded GeoJSON data from default file: {default_geojson_filename}")
+                except Exception as e:
+                    print(f"Error reading default GeoJSON file '{default_geojson_filename}': {e}. Exiting.")
+                    return 1
+            else:
+                print(f"Error: 'world_map' mode selected, but default GeoJSON file '{default_geojson_filename}' not found in root directory and no --geojson_file provided. Exiting.")
+                return 1 # Indicate error
+
+        if not geojson_data_str: # Should be caught above, but as a safeguard
+            print(f"Critical Error: GeoJSON data string is empty for world_map mode. Exiting.")
+            return 1
+
 
     if custom_player_configs:
-        print(f"\nUsing custom player configurations from console for {args.game_mode} mode.")
+        print(f"\nUsing custom player configurations from console for {selected_game_mode} mode.")
         orchestrator = GameOrchestrator(
             player_configs_override=custom_player_configs,
-            game_mode=args.game_mode,
-            geojson_data_str=geojson_data_str
+            game_mode=selected_game_mode,
+            geojson_data_str=geojson_data_str # Will be None if not world_map mode
         )
     else:
-        # If no custom console config, orchestrator's __init__ will try to load
-        # from its default_player_setup_file (e.g., player_config.json)
-        print(f"\nUsing default player configurations (from player_config.json or internal default) for {args.game_mode} mode.")
+        print(f"\nUsing default player configurations (from player_config.json or internal default) for {selected_game_mode} mode.")
         orchestrator = GameOrchestrator(
-            game_mode=args.game_mode,
-            geojson_data_str=geojson_data_str
-            # player_configs_override is None, default_player_setup_file will be used by orchestrator
+            game_mode=selected_game_mode,
+            geojson_data_str=geojson_data_str # Will be None if not world_map mode
         )
 
     # Run the game.
