@@ -71,18 +71,24 @@ class ClaudeAgent(BaseAIAgent):
                 elif action_data_str.strip().startswith("```"): # More generic ``` stripping
                     action_data_str = action_data_str.strip()[3:-3].strip()
 
-                    action_data_str = action_data_str.strip()[7:-3].strip()
-                elif action_data_str.strip().startswith("```"): # More generic ``` stripping
-                    action_data_str = action_data_str.strip()[3:-3].strip()
-
                 action_data = json.loads(action_data_str) # This should be a dict with 'thought' and 'action'
 
                 if "thought" not in action_data or "action" not in action_data:
                     raise ValueError("Response JSON must contain 'thought' and 'action' keys.")
 
-                action_dict_from_llm = action_data["action"]
-                if not isinstance(action_dict_from_llm, dict):
-                     raise ValueError(f"The 'action' field in the LLM response is not a valid dictionary. Received: {action_dict_from_llm}")
+                # --- FIX: Handle 'action' being either a string or a dict ---
+                action_field = action_data["action"]
+                action_dict_from_llm = None
+                if isinstance(action_field, str):
+                    try:
+                        action_dict_from_llm = json.loads(action_field)
+                    except json.JSONDecodeError:
+                        raise ValueError(f"The 'action' field was a string but not valid JSON. Received: {action_field}")
+                elif isinstance(action_field, dict):
+                    action_dict_from_llm = action_field # It's already a dict
+                else:
+                    raise ValueError(f"The 'action' field is not a valid dictionary or JSON string. Received: {action_field}")
+                # --- END FIX ---
 
                 # Use the validation method from BaseAIAgent
                 if not self._validate_chosen_action(action_dict_from_llm, valid_actions):

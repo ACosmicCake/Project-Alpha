@@ -3,7 +3,6 @@ import os
 import json
 from google import genai
 import time 
-from dotenv import load_dotenv # Import load_dotenv
 from pydantic import BaseModel
 
 # Define the Pydantic model for the expected response structure
@@ -14,7 +13,7 @@ class AgentResponse(BaseModel):
 class GeminiAgent(BaseAIAgent):
     def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "gemini-2.5-flash-lite-preview-06-17"): # Using flash for speed
         super().__init__(player_name, player_color)
-        load_dotenv()  # Load environment variables from .env
+
         self.api_key = os.getenv("GEMINI_API_KEY") # Use os.getenv
 
         if not self.api_key:
@@ -139,8 +138,8 @@ class GeminiAgent(BaseAIAgent):
                 if attempt >= max_retries:
                     return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
 
-            print(f"GeminiAgent ({self.player_name}): Retrying in 30 second...")
-            time.sleep(30)
+            print(f"GeminiAgent ({self.player_name}): Retrying in 1 second...")
+            time.sleep(1)
 
         return {"thought": "Reached end of get_thought_and_action unexpectedly after retries.", "action": default_fallback_action}
 

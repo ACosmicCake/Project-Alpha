@@ -1420,8 +1420,7 @@ class GameEngine:
                 for territory in player.territories:
                     actions.append({
                         "type": "SETUP_PLACE_ARMY",
-                        "territory": territory.name,
-                        "armies_left_in_pool": player.initial_armies_pool - player.armies_placed_in_setup
+                        "territory": territory.name
                         })
             else: # Player is done placing their initial armies
                  actions.append({"type": "SETUP_STANDARD_DONE_PLACING"})
@@ -1600,122 +1599,5 @@ class GameEngine:
 
 
 if __name__ == '__main__':
-    # Basic Test for GameEngine
-    # engine = GameEngine(map_file_path="map_config.json") # Assuming map_config.json is in the same directory or path is correct
-
-    # Create a dummy map_config.json for testing if it doesn't exist
-    # dummy_map_data = {
-    #     "continents": [
-    #         {"name": "North America", "bonus_armies": 5, "territories": ["Alaska", "Alberta", "Western US"]},
-    #         {"name": "Asia", "bonus_armies": 7, "territories": ["Kamchatka", "Japan"]}
-    #     ],
-    #     "territories": {
-    #         "Alaska": {"continent": "North America", "adjacent_to": ["Alberta", "Kamchatka"]},
-    #         "Alberta": {"continent": "North America", "adjacent_to": ["Alaska", "Western US"]},
-    #         "Western US": {"continent": "North America", "adjacent_to": ["Alberta"]},
-    #         "Kamchatka": {"continent": "Asia", "adjacent_to": ["Alaska", "Japan"]},
-    #         "Japan": {"continent": "Asia", "adjacent_to": ["Kamchatka"]}
-    #     }
-    # }
-    # try:
-    #     with open("map_config.json", 'w') as f:
-    #         json.dump(dummy_map_data, f, indent=2)
-    #     print("Created dummy map_config.json for testing.")
-    # except IOError:
-    #     print("Could not create dummy map_config.json. Ensure you have write permissions or create it manually.")
-
-    # players_setup = [
-    #     {"name": "PlayerA", "color": "Red"},
-    #     {"name": "PlayerB", "color": "Blue"}
-    # ]
-    # engine.initialize_board(players_setup) # Assuming initialize_board is the new name for initialize_game_from_map or similar
-
-    # print("Initial Game State:")
-    # print(engine.game_state.to_json())
-    # print("-" * 20)
-
-    # current_player = engine.game_state.get_current_player()
-    # if current_player:
-    #     print(f"Current Player: {current_player.name}")
-    #     reinforcements = engine.calculate_reinforcements(current_player)
-    #     current_player.armies_to_deploy = reinforcements # Manually assign for this test
-    #     print(f"{current_player.name} gets {current_player.armies_to_deploy} reinforcements.")
-
-    #     # Simulate deploying armies
-    #     if current_player.armies_to_deploy > 0 and current_player.territories:
-    #         deploy_territory = current_player.territories[0]
-    #         deploy_amount = current_player.armies_to_deploy
-    #         deploy_territory.army_count += deploy_amount
-    #         print(f"{current_player.name} deployed {deploy_amount} armies to {deploy_territory.name} (new count: {deploy_territory.army_count})")
-    #         current_player.armies_to_deploy = 0
-
-    #     engine.game_state.current_game_phase = "ATTACK"
-    #     print(f"Game phase set to: {engine.game_state.current_game_phase}")
-
-    #     # Try a test attack if possible
-    #     attacker_territory = None
-    #     defender_territory = None
-    #     for t in current_player.territories:
-    #         if t.army_count > 1:
-    #             for adj_t in t.adjacent_territories:
-    #                 if adj_t.owner != current_player:
-    #                     attacker_territory = t
-    #                     defender_territory = adj_t
-    #                     break
-    #         if attacker_territory:
-    #             break
-
-    #     if attacker_territory and defender_territory:
-    #         num_attackers = attacker_territory.army_count - 1
-    #         print(f"\n{current_player.name} attacking from {attacker_territory.name} ({attacker_territory.army_count} armies) to {defender_territory.name} ({defender_territory.army_count} armies, owner: {defender_territory.owner.name}) with {num_attackers} armies.")
-    #         attack_result = engine.perform_attack(attacker_territory.name, defender_territory.name, num_attackers)
-    #         print("Attack Result:")
-    #         print(json.dumps(attack_result, indent=2))
-    #         print(f"State after attack: {attacker_territory.name} has {attacker_territory.army_count}, {defender_territory.name} has {defender_territory.army_count}")
-    #     else:
-    #         print("\nNo valid attack opportunity found for testing.")
-
-    #     engine.game_state.current_game_phase = "FORTIFY"
-    #     # Try a test fortify
-    #     if len(current_player.territories) >= 2:
-    #         from_t = current_player.territories[0]
-    #         to_t = None
-    #         for t_potential_to in current_player.territories[1:]:
-    #              if engine._are_territories_connected(from_t, t_potential_to, current_player):
-    #                  to_t = t_potential_to
-    #                  break
-
-    #         if from_t and to_t and from_t.army_count > 1:
-    #             armies_to_move = 1
-    #             print(f"\n{current_player.name} fortifying from {from_t.name} to {to_t.name} with {armies_to_move} army.")
-    #             fortify_result = engine.perform_fortify(from_t.name, to_t.name, armies_to_move)
-    #             print("Fortify Result:")
-    #             print(json.dumps(fortify_result, indent=2))
-    #             print(f"State after fortify: {from_t.name} has {from_t.army_count}, {to_t.name} has {to_t.army_count}")
-    #         else:
-    #             print("\nNo valid fortify opportunity for testing or from_territory has only 1 army.")
-    #     else:
-    #         print("\nNot enough territories to test fortify.")
-
-
-    #     engine.next_turn()
-    #     print("-" * 20)
-    #     print("After next_turn():")
-    #     new_current_player = engine.game_state.get_current_player()
-    #     if new_current_player:
-    #         print(f"New Current Player: {new_current_player.name}")
-    #         print(f"Turn: {engine.game_state.current_turn_number}, Phase: {engine.game_state.current_game_phase}")
-    #         print(f"{new_current_player.name} has {new_current_player.armies_to_deploy} reinforcements calculated.")
-
-    #     print("\nFinal Game State:")
-    #     print(engine.game_state.to_json())
-
-    #     winner = engine.is_game_over()
-    #     if winner:
-    #         print(f"\nGame Over! Winner is {winner.name}")
-    #     else:
-    #         print("\nGame is not over.")
-
-    # else:
-    #     print("No current player to test with.")
-    pass # Comment out __main__ for now
+   
+    pass
