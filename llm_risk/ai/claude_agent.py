@@ -28,7 +28,7 @@ class ClaudeAgent(BaseAIAgent):
             return {"type": "END_TURN"}
         return valid_actions[0] if valid_actions else {"type": "END_TURN"} # Absolute fallback
 
-    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 1) -> dict:
+    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 4) -> dict:
         default_fallback_action = self._get_default_action(valid_actions)
 
         if not self.client:
@@ -115,7 +115,7 @@ class ClaudeAgent(BaseAIAgent):
         return {"thought": "Reached end of get_thought_and_action unexpectedly after retries.", "action": default_fallback_action}
 
 
-    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 1) -> str:
+    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 4) -> str:
         default_fallback_message = f"My apologies, I am currently unable to respond. (Claude fallback) - to {recipient_name}"
         if not self.client:
             print(f"ClaudeAgent ({self.player_name}): Client not initialized for chat. Returning default message.")

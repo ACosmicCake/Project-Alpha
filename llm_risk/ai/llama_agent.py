@@ -6,7 +6,7 @@ import time # For potential retries
 import ast # For safely evaluating string literals
 
 class LlamaAgent(BaseAIAgent):
-    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "meta-llama/llama-3-8b-instruct:free"): # Or specific model version
+    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "meta-llama/llama-4-maverick:free"): # Or specific model version
         super().__init__(player_name, player_color)
         # Updated for OpenRouter API
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
@@ -33,7 +33,7 @@ class LlamaAgent(BaseAIAgent):
             return {"type": "END_TURN"}
         return valid_actions[0] if valid_actions else {"type": "END_TURN"}
 
-    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 1) -> dict:
+    def get_thought_and_action(self, game_state_json: str, valid_actions: list, game_rules: str = GAME_RULES_SNIPPET, system_prompt_addition: str = "", max_retries: int = 4) -> dict:
         default_fallback_action = self._get_default_action(valid_actions)
 
         if not self.api_key:
@@ -140,7 +140,7 @@ class LlamaAgent(BaseAIAgent):
         return {"thought": "Reached end of get_thought_and_action unexpectedly after retries.", "action": default_fallback_action}
 
 
-    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 1) -> str:
+    def engage_in_private_chat(self, history: list[dict], game_state_json: str, game_rules: str = GAME_RULES_SNIPPET, recipient_name: str = "", system_prompt_addition: str = "", max_retries: int = 4) -> str:
         default_fallback_message = f"My apologies to {recipient_name}, I seem to be having technical difficulties. (Llama fallback)"
         if not self.api_key:
             print(f"LlamaAgent ({self.player_name}): API key missing for chat. Returning default message.")
