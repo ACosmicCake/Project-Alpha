@@ -139,8 +139,8 @@ class GeminiAgent(BaseAIAgent):
                 if attempt >= max_retries:
                     return {"thought": f"Error after {max_retries + 1} attempts. {error_message}", "action": default_fallback_action}
 
-            print(f"GeminiAgent ({self.player_name}): Retrying in 1 second...")
-            time.sleep(1)
+            print(f"GeminiAgent ({self.player_name}): Retrying in 30 second...")
+            time.sleep(30)
 
         return {"thought": "Reached end of get_thought_and_action unexpectedly after retries.", "action": default_fallback_action}
 
@@ -182,6 +182,8 @@ class GeminiAgent(BaseAIAgent):
 
                 print(f"GeminiAgent ({self.player_name}): Successfully received chat response.")
                 return chat_response_content
+            
+        
 
             except ( ValueError) as e:
                 error_message = f"API/Validation Error in chat: {e.__class__.__name__}: {e}"

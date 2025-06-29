@@ -443,20 +443,21 @@ class GameOrchestrator:
     def _handle_setup_place_armies(self) -> bool:
         """Handles logic for SETUP_PLACE_ARMIES phase (standard game)."""
         gs = self.engine.game_state
-        if gs.is_two_player_game: # Should not be here
-            gs.current_game_phase = "SETUP_2P_DEAL_CARDS"; return True
-
-        if self.engine._all_initial_armies_placed(): # Should have been caught by engine
-            gs.current_game_phase = "REINFORCE" # Should be set by engine
-            self.log_turn_info("All initial armies placed, but phase is still SETUP_PLACE_ARMIES. Engine should have transitioned.")
-            # Ensure first player is set for REINFORCE
-            if gs.first_player_of_game:
-                 try: gs.current_player_index = gs.players.index(gs.first_player_of_game)
-                 except ValueError: gs.current_player_index = 0 # Fallback
-                 # Calculate initial reinforcements for the actual first player
-                 first_game_player = gs.get_current_player()
-                 if first_game_player: first_game_player.armies_to_deploy = self.engine.calculate_reinforcements(first_game_player)
+        if gs.is_two_player_game: # Should not be in this phase for 2-player mode
+            gs.current_game_phase = "SETUP_2P_DEAL_CARDS"
             return True
+
+        # Check if the phase is complete before doing anything else
+        if self.engine._all_initial_armies_placed():
+            if gs.current_game_phase == "SETUP_PLACE_ARMIES":
+                self.log_turn_info("All initial armies have been placed. Transitioning to first game turn.")
+                # The engine should have already handled the phase transition, but this is a safeguard.
+                gs.current_game_phase = "REINFORCE"
+                gs.current_player_index = gs.players.index(gs.first_player_of_game)
+                first_player = gs.get_current_player()
+                if first_player:
+                    first_player.armies_to_deploy, _ = self.engine.calculate_reinforcements(first_player)
+            return True # Proceed to the new REINFORCE phase
 
         # Check if an AI action is currently being awaited
         if self.ai_is_thinking:
@@ -464,70 +465,66 @@ class GameOrchestrator:
                 return True # Still busy
 
             if self.active_ai_player_name:
-                self.log_turn_info(f"Orchestrator: AI ({self.active_ai_player_name}) thread finished (detected in _handle_setup_place_armies).")
-            else:
-                self.log_turn_info(f"Orchestrator: AI thread finished (detected in _handle_setup_place_armies, no active_ai_player_name).")
+                self.log_turn_info(f"Orchestrator: AI ({self.active_ai_player_name}) thread finished (in _handle_setup_place_armies).")
             self.ai_is_thinking = False
             # Fall through to process self.ai_action_result
 
+        # If AI has finished, process its action
         if self.ai_action_result:
             action_to_process = self.ai_action_result
             player_name_who_acted = self.active_ai_player_name
 
+            # Clear context for the next AI action
             self.ai_action_result = None
             self.active_ai_player_name = None
-            self.current_ai_context = None # Clear context
+            self.current_ai_context = None
 
             if not player_name_who_acted:
-                self.log_turn_info("Error: AI action result found (SETUP_PLACE_ARMIES), but no active_ai_player_name.")
-                return True # Loop again, hopefully state resolves or next player is picked up
+                self.log_turn_info("Error: AI action result found, but no active_ai_player_name. Cycling.")
+                return True
 
             action = action_to_process.get("action")
+            
+            # ** FIX: This block now correctly handles both action types by calling the engine,
+            # which ensures the setup turn index is always advanced, preventing the loop. **
             if action and action.get("type") == "SETUP_PLACE_ARMY":
                 territory_name = action.get("territory")
                 log = self.engine.player_places_initial_army(player_name_who_acted, territory_name)
-                self.log_turn_info(f"{player_name_who_acted} places army on {territory_name}: {log['message']}")
+                self.log_turn_info(f"{player_name_who_acted} places army on {territory_name}: {log.get('message', 'No message from engine.')}")
+            
             elif action and action.get("type") == "SETUP_STANDARD_DONE_PLACING":
-                self.log_turn_info(f"{player_name_who_acted} is done placing initial armies (or has no more to place).")
-                # Engine will advance current_setup_player_index when player_places_initial_army is called,
-                # even if player had no armies left. Orchestrator just needs to keep calling for next player.
+                self.log_turn_info(f"{player_name_who_acted} is done placing armies. Notifying engine to advance turn.")
+                # We still call the engine. Its internal logic will see the player has no armies
+                # left to place and will correctly advance to the next player without changing army counts.
+                log = self.engine.player_places_initial_army(player_name_who_acted, "") # Pass dummy territory name
+                if not log.get('success'):
+                    self.log_turn_info(f"Error when notifying engine that {player_name_who_acted} is done placing.")
+            
             else:
-                self.log_turn_info(f"Invalid action from {player_name_who_acted} during SETUP_PLACE_ARMIES: {action}")
+                self.log_turn_info(f"Invalid action from {player_name_who_acted} during SETUP_PLACE_ARMIES: {action}. Re-prompting.")
 
             self._update_gui_full_state()
             self.has_logged_current_turn_player_phase = False
             return True
 
+        # If AI is not thinking, initiate the action for the current setup player
         current_setup_player_obj, current_setup_agent = self._get_current_setup_player_and_agent()
-        if not current_setup_player_obj : # Agent can be none if we decide to auto-place for some.
-             self.log_turn_info("No current setup player for placing armies. Game might stall if not all armies placed.")
-             return False if not self.engine._all_initial_armies_placed() else True # If all placed, allow phase change.
-
-        if current_setup_player_obj.armies_placed_in_setup >= current_setup_player_obj.initial_armies_pool:
-            # This player is done, engine will advance. We just need to re-trigger the loop for the next player.
-            self.log_turn_info(f"{current_setup_player_obj.name} has placed all initial armies. Orchestrator cycling.")
-            # Manually advance engine's setup player index if engine didn't for a "done" player.
-            # The engine's player_places_initial_army does advance if success is true, even if no armies placed.
-            # So, just need to ensure the loop continues.
-            self.has_logged_current_turn_player_phase = False # Log for next player
-            # No AI call needed for this player, just continue the orchestrator loop.
-            return True # Loop again in advance_game_turn for the next setup player.
-
-        if not current_setup_agent: # Human player with no agent
-            self.log_turn_info(f"Player {current_setup_player_obj.name} has no AI agent. Cannot place armies. Game will stall.")
-            return False
-
+        
+        if not current_setup_player_obj or not current_setup_agent:
+             self.log_turn_info("No current setup player/agent for placing armies. Game might stall.")
+             return False
 
         if not self.has_logged_current_turn_player_phase:
-            self.log_turn_info(f"Phase: SETUP_PLACE_ARMIES - {current_setup_player_obj.name}'s turn to place. ({current_setup_player_obj.initial_armies_pool - current_setup_player_obj.armies_placed_in_setup} left)")
+            armies_left = current_setup_player_obj.initial_armies_pool - current_setup_player_obj.armies_placed_in_setup
+            self.log_turn_info(f"Phase: SETUP_PLACE_ARMIES - {current_setup_player_obj.name}'s turn to place. ({armies_left} left)")
             self.has_logged_current_turn_player_phase = True
 
         valid_actions = self.engine.get_valid_actions(current_setup_player_obj)
-        if not valid_actions and current_setup_player_obj.armies_placed_in_setup < current_setup_player_obj.initial_armies_pool :
-            self.log_turn_info(f"No valid place_army actions for {current_setup_player_obj.name} but has armies left. Owned: {[t.name for t in current_setup_player_obj.territories]}")
-            return True # Let it loop, maybe state will resolve or engine handles phase end.
-        elif not valid_actions : # No actions and no armies left
-             return True # Player is done, loop for next.
+        
+        if not valid_actions:
+            self.log_turn_info(f"No valid SETUP_PLACE_ARMY actions for {current_setup_player_obj.name}. This may indicate an issue.")
+            # Let the loop continue, it may resolve if the engine transitions the phase on the next tick.
+            return True
 
         prompt_add = f"Place one army on a territory you own. You have {current_setup_player_obj.initial_armies_pool - current_setup_player_obj.armies_placed_in_setup} left to place in total."
         self._execute_ai_turn_async(current_setup_agent, gs.to_json_with_history(), valid_actions, self.game_rules, prompt_add)
@@ -715,7 +712,7 @@ class GameOrchestrator:
             return False
 
         current_phase = gs.current_game_phase
-        self.log_turn_info(f"Orchestrator: Advancing turn. Current phase: {current_phase}")
+        # self.log_turn_info(f"Orchestrator: Advancing turn. Current phase: {current_phase}")
 
         # --- Setup Phase Handling ---
         if current_phase == "SETUP_START": # Should be handled by initial call to initialize_game_from_map
@@ -738,16 +735,13 @@ class GameOrchestrator:
         # --- Regular Game Turn Logic (Post-Setup) ---
         self.turn_action_log.clear() # Clear log for the new turn/main phase part
 
-        # Determine current player and agent for regular turns
-        # Note: get_current_player() in engine is for regular turns, skips neutral.
-        # get_current_setup_player() is for setup turns.
         current_player_obj = gs.get_current_player()
-        if not current_player_obj or current_player_obj.is_neutral: # Should always be a human player here
+        if not current_player_obj or current_player_obj.is_neutral:
             self.log_turn_info(f"Error: No valid current human player for phase {current_phase}. Current player from engine: {current_player_obj.name if current_player_obj else 'None'}. Halting.")
             return False
 
         current_player_agent = self.get_agent_for_player(current_player_obj)
-        if not current_player_agent: # Should not happen if player is human
+        if not current_player_agent:
             self.log_turn_info(f"Error: No AI agent for current player {current_player_obj.name} in phase {current_phase}. Skipping turn.")
             self.engine.next_turn()
             self.has_logged_current_turn_player_phase = False
@@ -761,38 +755,24 @@ class GameOrchestrator:
 
         if not self.ai_is_thinking and self.gui: self._update_gui_full_state()
 
-        # --- Mandatory Elimination Card Trade Check ---
-        # This needs to happen before Post Attack Fortify or other actions if flag is set for current player.
         if gs.elimination_card_trade_player_name == current_player_obj.name:
             self.log_turn_info(f"Player {current_player_obj.name} has pending elimination card trades.")
-            # The loop will be managed here, AI calls made, until flag is cleared or attempts exhausted.
-            # This needs to be integrated with the async AI call mechanism if we want spinner for these trades.
-            # For now, let's assume _handle_elimination_card_trade_loop is synchronous for simplicity of this step.
             trade_loop_continue = self._handle_elimination_card_trade_loop(current_player_obj, current_player_agent)
-            if not trade_loop_continue: # Problem in trade loop
+            if not trade_loop_continue:
                  self.log_turn_info(f"Problem during elimination card trade for {current_player_obj.name}. Game may be unstable.")
-                 # Fall through, next get_valid_actions will reflect if flag is cleared.
-            # After trade loop, re-fetch valid actions as game state (and flag) might have changed.
-            # The main phase logic below will then pick up.
-            # No immediate 'return True' here, let the main phase logic proceed with updated state.
-            self.has_logged_current_turn_player_phase = False # Re-log phase info if needed
-            self._update_gui_full_state() # Update GUI after trades.
-
-
-        # --- AI Thinking & Action Processing Logic (copied and adapted from before) ---
-        # This section handles the asynchronous AI thinking and subsequent action processing.
+            self.has_logged_current_turn_player_phase = False
+            self._update_gui_full_state()
 
         action_processed_in_current_tick = False
-        phase_when_action_was_initiated = None # Store phase context for processing
+        phase_when_action_was_initiated = None
 
         if self.ai_is_thinking:
             if self.current_ai_thread and self.current_ai_thread.is_alive():
-                # AI is still thinking
                 if not self.has_logged_ai_is_thinking_for_current_action:
                     print(f"Orchestrator: AI ({self.active_ai_player_name}) is still thinking. GUI should be responsive.")
                     self.has_logged_ai_is_thinking_for_current_action = True
                 if self.gui: self.gui.update(self.engine.game_state, self.global_chat.get_log(), self.private_chat_manager.get_all_conversations())
-                return True  # AI is busy, game loop continues
+                return True
             else:
                 # AI thread has finished
                 print(f"Orchestrator: AI ({self.active_ai_player_name}) thread finished.")
@@ -803,12 +783,7 @@ class GameOrchestrator:
                 if action_to_process:
                     print(f"Orchestrator: Processing AI action: {action_to_process.get('action')}")
                     self.log_ai_thought(self.active_ai_player_name or "UnknownAI", action_to_process.get('thought', 'N/A'))
-
-                    # Store the phase in which the AI action was *initiated* or is being processed for.
-                    # self.current_ai_context might hold the phase if it was set during _execute_ai_turn_async
-                    # However, relying on self.engine.game_state.current_game_phase is also an option if context is complex.
-                    # For robustness, let's assume the current game phase is the context for the action.
-                    phase_when_action_was_initiated = self.engine.game_state.current_game_phase # Capture phase before processing
+                    phase_when_action_was_initiated = self.engine.game_state.current_game_phase
 
                     if phase_when_action_was_initiated == "REINFORCE":
                         self._process_reinforce_ai_action(current_player_obj, current_player_agent, action_to_process)
@@ -816,47 +791,32 @@ class GameOrchestrator:
                         self._process_attack_ai_action(current_player_obj, current_player_agent, action_to_process)
                     elif phase_when_action_was_initiated == "FORTIFY":
                         self._process_fortify_ai_action(current_player_obj, current_player_agent, action_to_process)
-                        # After processing a fortify action, the turn should end.
-                        # The logic below will handle calling next_turn().
                     action_processed_in_current_tick = True
                 else:
                     print(f"Orchestrator: AI ({self.active_ai_player_name}) action result was None. Problem in thread.")
-                    # Handling this might involve ending the current phase prematurely or turn.
-                    # For now, if it's FORTIFY, it will proceed to next_turn. Others might need specific error handling.
                     if self.engine.game_state.current_game_phase == "FORTIFY":
-                        action_processed_in_current_tick = True # Treat as if processed to allow turn end
-
-                self.ai_action_result = None # Clear after processing
+                        action_processed_in_current_tick = True
+                self.ai_action_result = None
                 self.active_ai_player_name = None
-                self.current_ai_context = None # Clear context after processing
-                self._update_gui_full_state() # Update GUI after processing AI action
-                if self.engine.is_game_over(): return self.advance_game_turn() # Handle game over immediately
-
-        # --- Phase Logic: Initiate AI Action or Advance Turn/Phase ---
-        # This section runs if AI is not currently thinking (either finished or never started for this phase part)
+                self.current_ai_context = None
+                self._update_gui_full_state()
+                if self.engine.is_game_over(): return self.advance_game_turn()
 
         if not self.ai_is_thinking:
-            current_game_phase = self.engine.game_state.current_game_phase
-
-            # If a FORTIFY action was just processed (either a FORTIFY move or END_TURN),
-            # or if an AI error occurred during FORTIFY, the turn must end.
-            # We use phase_when_action_was_initiated to know if _process_fortify_ai_action was just called.
+            # FIX: This is the critical block to fix the freeze. After a FORTIFY action is
+            # processed, the turn must end. This logic ensures `next_turn()` is called.
             if phase_when_action_was_initiated == "FORTIFY" and action_processed_in_current_tick:
-                if not self.engine.is_game_over(): # Ensure game isn't over before ending turn
+                if not self.engine.is_game_over():
                     self.engine.next_turn()
                     self.has_logged_current_turn_player_phase = False
                     new_player = self.engine.game_state.get_current_player()
-                    print(f"--- End of Turn for {current_player_obj.name}. Next player: {new_player.name if new_player else 'N/A'} ---")
+                    self.log_turn_info(f"--- End of Turn for {current_player_obj.name}. Next is Turn {self.engine.game_state.current_turn_number}, Player: {new_player.name if new_player else 'N/A'} ---")
                     self._update_gui_full_state()
-                if self.engine.is_game_over(): return self.advance_game_turn() # Check again after next_turn
-                return True # Turn ended, game continues with next player or new turn
+                if self.engine.is_game_over(): return self.advance_game_turn()
+                return True
 
-            # If not ending turn due to FORTIFY completion, proceed with normal phase initiation.
-
-            max_phase_transitions_per_tick = 3 # Safety break for chained phase changes without AI action
+            max_phase_transitions_per_tick = 5
             transitions_this_tick = 0
-
-            # Loop to handle phase transitions that occur without AI thinking (e.g., ATTACK -> FORTIFY if no attacks)
             while transitions_this_tick < max_phase_transitions_per_tick and not self.ai_is_thinking:
                 transitions_this_tick += 1
                 current_phase_before_initiation = self.engine.game_state.current_game_phase
@@ -868,602 +828,34 @@ class GameOrchestrator:
                 elif not self.engine.is_game_over() and current_phase_before_initiation == "FORTIFY":
                     self._initiate_fortify_ai_action(current_player_obj, current_player_agent)
                 else:
-                    # Unknown phase or game is over and wasn't caught earlier
-                    break # Exit loop if phase is not one of the known ones or game over
-
-                # If AI started thinking as a result of the initiation, break the loop.
+                    break
                 if self.ai_is_thinking:
                     break
-
-                # If the phase changed during initiation (e.g. ATTACK immediately went to FORTIFY)
-                # and AI is still not thinking, loop again to initiate the new phase.
                 if self.engine.game_state.current_game_phase == current_phase_before_initiation:
-                    # Phase did not change, and AI is not thinking, so break (something else is wrong or phase is done)
                     break
 
             if transitions_this_tick >= max_phase_transitions_per_tick:
                 self.log_turn_info(f"Orchestrator: Exceeded max phase transitions ({max_phase_transitions_per_tick}) in a single tick for player {current_player_obj.name}. This might indicate a problem.")
 
             if self.gui: self._update_gui_full_state()
-            if self.engine.is_game_over(): return self.advance_game_turn() # Check game over after potential phase changes/initiations
-            if self.ai_is_thinking: return True # AI action was successfully initiated
+            if self.engine.is_game_over(): return self.advance_game_turn()
+            if self.ai_is_thinking: return True
 
-            # Fallback: If AI is still not thinking, and current phase is FORTIFY, then end the turn.
-            # This handles cases where FORTIFY phase was reached, _initiate_fortify_ai_action was called,
-            # but for some reason (e.g., AI error or unexpected empty valid_actions for fortify) AI didn't start.
+            # Fallback for Fortify phase if AI initiation fails to start thinking
             if not self.ai_is_thinking and self.engine.game_state.current_game_phase == "FORTIFY":
-                if not self.engine.is_game_over(): # Ensure game isn't over before trying to end turn
+                if not self.engine.is_game_over():
                     self.log_turn_info(f"Orchestrator: Fallback - Fortify phase, AI not thinking after initiation attempt. Ending turn for {current_player_obj.name}.")
                     self.engine.next_turn()
                     self.has_logged_current_turn_player_phase = False
                     new_player = self.engine.game_state.get_current_player()
-                    print(f"--- End of Turn for {current_player_obj.name} (fallback after fortify init). Next player: {new_player.name if new_player else 'N/A'} ---")
+                    self.log_turn_info(f"--- End of Turn for {current_player_obj.name} (fallback after fortify init). Next player: {new_player.name if new_player else 'N/A'} ---")
                     self._update_gui_full_state()
-                if self.engine.is_game_over(): return self.advance_game_turn() # Check again
-                return True # Game continues with next player
+                if self.engine.is_game_over(): return self.advance_game_turn()
+                return True
 
+        if self.engine.is_game_over(): return False
 
-        if self.engine.is_game_over(): return False # Final check before returning from advance_game_turn
-
-        return True # Game continues
-
-    def handle_reinforce_phase(self, player: GamePlayer, agent: BaseAIAgent):
-        # This method will be split into _initiate_reinforce_ai_action and _process_reinforce_ai_action
-        # For now, keeping a simplified version of the original logic for placeholder
-        print(f"DEBUG: handle_reinforce_phase called for {player.name} - TO BE REFACTORED")
-        if not self.ai_is_thinking:
-            self._initiate_reinforce_ai_action(player, agent)
-        # Processing will happen when ai_is_thinking is false again after thread completion.
-
-    def _initiate_reinforce_ai_action(self, player: GamePlayer, agent: BaseAIAgent):
-        print(f"Orchestrator: Initiating REINFORCE AI action for {player.name}")
-        # Simplified: Assume one AI call per phase for now for this step's purpose.
-        # Real logic will loop within reinforce phase.
-        game_state_json = self.engine.game_state.to_json()
-        valid_actions = self.engine.get_valid_actions(player)
-        if not valid_actions:
-            self.log_turn_info(f"No valid REINFORCE actions for {player.name}. Auto-ending phase part.");
-            # This might mean auto-distribute or move to attack. Engine should handle.
-            # For now, just ensure we don't call AI.
-            if player.armies_to_deploy > 0: self.auto_distribute_armies(player, player.armies_to_deploy)
-            self.engine.game_state.current_game_phase = "ATTACK" # Manually advance for now
-            return
-
-        current_reinforcements = player.armies_to_deploy
-        current_cards = len(player.hand)
-        prompt_details = [f"You have {current_reinforcements} armies to deploy.", f"You currently hold {current_cards} cards."]
-        if any(a['type'] == 'TRADE_CARDS' and a.get('must_trade') for a in valid_actions):
-            prompt_details.append("You MUST trade cards.")
-        system_prompt_addition = "It is your REINFORCE phase. " + " ".join(prompt_details)
-
-        # Use to_json_with_history() for AI context
-        self._execute_ai_turn_async(agent, self.engine.game_state.to_json_with_history(), valid_actions, self.game_rules, system_prompt_addition)
-
-    def _process_reinforce_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
-        print(f"Orchestrator: Processing REINFORCE AI action for {player.name}")
-        action = ai_response.get("action")
-        # This is where the original logic from handle_reinforce_phase that processes the action would go.
-        # For brevity in this step, I'll just log and simulate phase end.
-        # The full logic will be moved in Step 3.
-        if not action or "type" not in action:
-            self.log_turn_info(f"{player.name} provided malformed REINFORCE action: {action}. Auto-ending phase part.")
-            if player.armies_to_deploy > 0: self.auto_distribute_armies(player, player.armies_to_deploy)
-            self.engine.game_state.current_game_phase = "ATTACK" # Manually advance
-            return
-
-        action_type = action["type"]
-        # Simplified processing for now:
-        self.log_turn_info(f"{player.name} REINFORCE action: {action_type}")
-        if action_type == "END_REINFORCE_PHASE":
-            if any(a['type'] == 'TRADE_CARDS' and a.get('must_trade') for a in self.engine.get_valid_actions(player)): # Re-check valid actions
-                 self.log_turn_info(f"{player.name} tried END_REINFORCE_PHASE during must_trade. Action ignored for now."); # AI will try again
-                 # In a full loop, we'd re-initiate AI call for reinforce. For now, this means AI is not thinking.
-                 self.ai_is_thinking = False # Allow re-triggering AI for reinforce
-                 return # Stay in reinforce, AI will be called again by advance_game_turn
-            if player.armies_to_deploy > 0: self.auto_distribute_armies(player, player.armies_to_deploy)
-            player.armies_to_deploy = 0
-            self.engine.game_state.current_game_phase = "ATTACK"
-        elif action_type == "TRADE_CARDS":
-            # Simulate trade, actual logic in engine
-            self.log_turn_info(f"{player.name} trades cards (simulated). Reinforcements updated by engine.")
-            # In reality, engine.perform_card_trade would be called.
-            # After trading, player likely still needs to deploy, so stay in REINFORCE.
-            # The AI would need to be called again for deploy/end_reinforce.
-            self.ai_is_thinking = False # Allow re-triggering AI for reinforce
-        elif action_type == "DEPLOY":
-            # Simulate deploy
-            self.log_turn_info(f"{player.name} deploys (simulated). Armies updated by engine.")
-            # Player might still have armies or need to end phase.
-            self.ai_is_thinking = False # Allow re-triggering AI for reinforce
-        else: # Unknown action for reinforce
-            self.log_turn_info(f"{player.name} unknown REINFORCE action: {action}. Trying again next cycle.")
-            self.ai_is_thinking = False # Allow re-triggering
-
-        if self.gui: self._update_gui_full_state()
-
-
-    def _initiate_attack_ai_action(self, player: GamePlayer, agent: BaseAIAgent):
-        print(f"Orchestrator: Initiating ATTACK AI action for {player.name}")
-        # Placeholder for actual logic to gather state and call _execute_ai_turn_async
-        game_state_json = self.engine.game_state.to_json()
-        valid_actions = self.engine.get_valid_actions(player)
-        if not valid_actions or all(a['type'] == "END_ATTACK_PHASE" for a in valid_actions if len(valid_actions) ==1):
-            self.log_turn_info(f"No valid ATTACK actions for {player.name} or only END_ATTACK_PHASE. Moving to FORTIFY.");
-            self.engine.game_state.current_game_phase = "FORTIFY"
-            return
-        system_prompt_addition = "It is your ATTACK phase."
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
-
-    def _process_attack_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
-        print(f"Orchestrator: Processing ATTACK AI action for {player.name}")
-        action = ai_response.get("action")
-        # Placeholder - full logic in Step 3
-        if not action or "type" not in action:
-            self.log_turn_info(f"{player.name} malformed ATTACK action. Ending phase.")
-            self.engine.game_state.current_game_phase = "FORTIFY" # Manually advance
-            return
-
-        action_type = action.get("type", "")
-        self.log_turn_info(f"{player.name} ATTACK action: {action_type}")
-
-        if self.engine.game_state.requires_post_attack_fortify:
-            # If PAF is required, the AI's action should have been PAF.
-            # The main loop in advance_game_turn should handle initiating PAF if needed.
-            # This spot is for *after* a PAF action or a regular attack action.
-            if action_type == "POST_ATTACK_FORTIFY":
-                # Simulate PAF processing
-                self.log_turn_info(f"{player.name} processes POST_ATTACK_FORTIFY (simulated).")
-                self.engine.game_state.requires_post_attack_fortify = False # Assume engine clears this
-                self.ai_is_thinking = False # Ready for next attack/end attack
-            # else: AI might have chosen another action while PAF was pending - handle as per game rules.
-            # For now, assume if PAF was pending, it was handled.
-        elif action_type == "ATTACK":
-            # Simulate attack
-            self.log_turn_info(f"{player.name} attacks (simulated).")
-            # Check if PAF is now required by engine after this simulated attack
-            # self.engine.game_state.requires_post_attack_fortify = True # Example
-            self.ai_is_thinking = False # Ready for next attack / PAF / end attack
-        elif action_type == "END_ATTACK_PHASE":
-            self.engine.game_state.current_game_phase = "FORTIFY"
-        elif action_type in ["GLOBAL_CHAT", "PRIVATE_CHAT"]:
-            self.log_turn_info(f"{player.name} chats (simulated). Attack phase continues.")
-            self.ai_is_thinking = False # Ready for next attack action
-        else: # Unknown
-            self.log_turn_info(f"{player.name} unknown ATTACK action. Ending phase.")
-            self.engine.game_state.current_game_phase = "FORTIFY"
-
-        if self.gui: self._update_gui_full_state()
-
-
-    def _initiate_fortify_ai_action(self, player: GamePlayer, agent: BaseAIAgent):
-        print(f"Orchestrator: Initiating FORTIFY AI action for {player.name}")
-        game_state_json = self.engine.game_state.to_json()
-        valid_actions = self.engine.get_valid_actions(player)
-        if not valid_actions: # Should at least have END_TURN
-             self.log_turn_info(f"No valid FORTIFY actions for {player.name}. Ending turn.");
-             self.engine.next_turn() # End turn
-             return
-        system_prompt_addition = "It is your FORTIFY phase."
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
-
-    def _process_fortify_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
-        print(f"Orchestrator: Processing FORTIFY AI action for {player.name}")
-        action = ai_response.get("action")
-        # Placeholder - full logic in Step 3
-        if not action or "type" not in action:
-            self.log_turn_info(f"{player.name} malformed FORTIFY action. Ending turn.")
-        else:
-            action_type = action.get("type", "")
-            self.log_turn_info(f"{player.name} FORTIFY action: {action_type} (simulated).")
-
-        # Fortify phase always ends the turn after one action (fortify or end_turn)
-        # self.engine.next_turn() # This will be called by advance_game_turn after this processing returns
-        # No need to set ai_is_thinking = False here, as next_turn will cycle to new player or end game.
-        # The check at the start of advance_game_turn will handle this.
-        # However, for clarity, if this phase is done, we are no longer waiting for this AI.
-        # The main loop will call next_turn().
-        if self.gui: self._update_gui_full_state()
-
-
-    def handle_reinforce_phase(self, player: GamePlayer, agent: BaseAIAgent):
-        # This method will be split into _initiate_reinforce_ai_action and _process_reinforce_ai_action
-        # For now, keeping a simplified version of the original logic for placeholder
-        print(f"DEBUG: handle_reinforce_phase called for {player.name} - TO BE REFACTORED")
-        if not self.ai_is_thinking:
-            self._initiate_reinforce_ai_action(player, agent)
-        # Processing will happen when ai_is_thinking is false again after thread completion.
-
-    def _initiate_reinforce_ai_action(self, player: GamePlayer, agent: BaseAIAgent):
-        print(f"Orchestrator: Initiating REINFORCE AI action for {player.name}")
-        # Simplified: Assume one AI call per phase for now for this step's purpose.
-        # Real logic will loop within reinforce phase.
-        game_state_json = self.engine.game_state.to_json()
-        valid_actions = self.engine.get_valid_actions(player)
-        if not valid_actions:
-            self.log_turn_info(f"No valid REINFORCE actions for {player.name}. Auto-ending phase part.");
-            # This might mean auto-distribute or move to attack. Engine should handle.
-            # For now, just ensure we don't call AI.
-            if player.armies_to_deploy > 0: self.auto_distribute_armies(player, player.armies_to_deploy)
-            self.engine.game_state.current_game_phase = "ATTACK" # Manually advance for now
-            return
-
-        current_reinforcements = player.armies_to_deploy
-        current_cards = len(player.hand)
-        prompt_details = [f"You have {current_reinforcements} armies to deploy.", f"You currently hold {current_cards} cards."]
-        if any(a['type'] == 'TRADE_CARDS' and a.get('must_trade') for a in valid_actions):
-            prompt_details.append("You MUST trade cards.")
-        system_prompt_addition = "It is your REINFORCE phase. " + " ".join(prompt_details)
-
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
-
-    def _process_reinforce_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
-        print(f"Orchestrator: Processing REINFORCE AI action for {player.name}")
-        action = ai_response.get("action")
-        # This is where the original logic from handle_reinforce_phase that processes the action would go.
-        # For brevity in this step, I'll just log and simulate phase end.
-        # The full logic will be moved in Step 3.
-        if not action or "type" not in action:
-            self.log_turn_info(f"{player.name} provided malformed REINFORCE action: {action}. Auto-ending phase part.")
-            if player.armies_to_deploy > 0: self.auto_distribute_armies(player, player.armies_to_deploy)
-            self.engine.game_state.current_game_phase = "ATTACK" # Manually advance
-            return
-
-        action_type = action["type"]
-        # Simplified processing for now:
-        self.log_turn_info(f"{player.name} REINFORCE action: {action_type}")
-        if action_type == "END_REINFORCE_PHASE":
-            if any(a['type'] == 'TRADE_CARDS' and a.get('must_trade') for a in self.engine.get_valid_actions(player)): # Re-check valid actions
-                 self.log_turn_info(f"{player.name} tried END_REINFORCE_PHASE during must_trade. Action ignored for now."); # AI will try again
-                 # In a full loop, we'd re-initiate AI call for reinforce. For now, this means AI is not thinking.
-                 self.ai_is_thinking = False # Allow re-triggering AI for reinforce
-                 return # Stay in reinforce, AI will be called again by advance_game_turn
-            if player.armies_to_deploy > 0: self.auto_distribute_armies(player, player.armies_to_deploy)
-            player.armies_to_deploy = 0
-            self.engine.game_state.current_game_phase = "ATTACK"
-        elif action_type == "TRADE_CARDS":
-            # Simulate trade, actual logic in engine
-            self.log_turn_info(f"{player.name} trades cards (simulated). Reinforcements updated by engine.")
-            # In reality, engine.perform_card_trade would be called.
-            # After trading, player likely still needs to deploy, so stay in REINFORCE.
-            # The AI would need to be called again for deploy/end_reinforce.
-            self.ai_is_thinking = False # Allow re-triggering AI for reinforce
-        elif action_type == "DEPLOY":
-            # Simulate deploy
-            self.log_turn_info(f"{player.name} deploys (simulated). Armies updated by engine.")
-            # Player might still have armies or need to end phase.
-            self.ai_is_thinking = False # Allow re-triggering AI for reinforce
-        else: # Unknown action for reinforce
-            self.log_turn_info(f"{player.name} unknown REINFORCE action: {action}. Trying again next cycle.")
-            self.ai_is_thinking = False # Allow re-triggering
-
-        if self.gui: self._update_gui_full_state()
-
-
-    def _initiate_attack_ai_action(self, player: GamePlayer, agent: BaseAIAgent):
-        print(f"Orchestrator: Initiating ATTACK AI action for {player.name}")
-        # Placeholder for actual logic to gather state and call _execute_ai_turn_async
-        game_state_json = self.engine.game_state.to_json()
-        valid_actions = self.engine.get_valid_actions(player)
-        if not valid_actions or all(a['type'] == "END_ATTACK_PHASE" for a in valid_actions if len(valid_actions) ==1):
-            self.log_turn_info(f"No valid ATTACK actions for {player.name} or only END_ATTACK_PHASE. Moving to FORTIFY.");
-            self.engine.game_state.current_game_phase = "FORTIFY"
-            return
-
-        # Handle pending Post-Attack Fortification (PAF) first, synchronously if needed, or ensure AI handles it.
-        # For async, the PAF itself needs to be an AI decision if not automatic.
-        if self.engine.game_state.requires_post_attack_fortify:
-            self.log_turn_info(f"{player.name} must complete POST_ATTACK_FORTIFY.")
-            paf_actions = [va for va in valid_actions if va['type'] == "POST_ATTACK_FORTIFY"]
-            if not paf_actions: # Should not happen if flag is true
-                self.log_turn_info(f"ERROR: PAF required but no PAF action for {player.name}. Clearing flag.");
-                self.engine.game_state.requires_post_attack_fortify = False; self.engine.game_state.conquest_context = None
-            else: # Found PAF action, let AI decide
-                paf_detail = paf_actions[0]
-                paf_prompt = (f"You conquered {paf_detail['to_territory']}. Move {paf_detail['min_armies']}-{paf_detail['max_armies']} armies "
-                              f"from {paf_detail['from_territory']} (has {self.engine.game_state.territories[paf_detail['from_territory']].army_count}) "
-                              f"to {paf_detail['to_territory']}.")
-                self._execute_ai_turn_async(agent, game_state_json, paf_actions, self.game_rules, paf_prompt)
-                return # AI is now thinking about PAF
-
-        # If no PAF pending, proceed with regular attack/chat/end phase options
-        system_prompt_addition = "It is your ATTACK phase."
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
-
-    def _process_attack_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
-        print(f"Orchestrator: Processing ATTACK AI action for {player.name}")
-        action = ai_response.get("action")
-
-        if not action or "type" not in action:
-            self.log_turn_info(f"{player.name} malformed ATTACK action. Ending phase.")
-            self.engine.game_state.current_game_phase = "FORTIFY" # Manually advance
-            self.ai_is_thinking = False # Reset thinking state
-            return
-
-        action_type = action.get("type", "")
-        self.log_turn_info(f"{player.name} ATTACK action: {action_type}")
-
-        if action_type == "POST_ATTACK_FORTIFY":
-            num_to_move = action.get("num_armies", self.engine.game_state.conquest_context.get('min_movable') if self.engine.game_state.conquest_context else 1)
-            fortify_log = self.engine.perform_post_attack_fortify(player, num_to_move)
-            self.log_turn_info(f"{player.name} PAF: {fortify_log.get('message', 'Unknown PAF outcome')}")
-            # PAF is done, AI might attack again or end phase.
-            self.ai_is_thinking = False # Ready for next attack/end attack
-        elif action_type == "ATTACK":
-            from_t, to_t, num_a = action.get("from"), action.get("to"), action.get("num_armies")
-            attack_log = self.engine.perform_attack(from_t, to_t, num_a) # Engine handles details
-            self.log_turn_info(f"Battle: {attack_log.get('summary', 'Error in battle')}")
-            if "error" not in attack_log:
-                if attack_log.get("conquered"):
-                    self.log_turn_info(f"{player.name} conquered {to_t}.")
-                    if attack_log.get("eliminated_player"):
-                         elim_name = attack_log.get("eliminated_player")
-                         self.log_turn_info(f"{player.name} ELIMINATED {elim_name}!")
-                         self.global_chat.broadcast("GameSystem", f"{player.name} eliminated {elim_name}!")
-                         self.handle_player_elimination(elim_name)
-                # If conquered, engine.game_state.requires_post_attack_fortify will be true.
-                # The next call to _initiate_attack_ai_action will handle PAF.
-            self.ai_is_thinking = False # Ready for next attack / PAF / end attack
-        elif action_type == "END_ATTACK_PHASE":
-            self.engine.game_state.current_game_phase = "FORTIFY"
-            self.ai_is_thinking = False # Phase ended
-        elif action_type in ["GLOBAL_CHAT", "PRIVATE_CHAT"]:
-            # Simulate chat processing for now
-            if action_type == "GLOBAL_CHAT": self.global_chat.broadcast(player.name, action.get("message",""))
-            else: self.log_turn_info(f"{player.name} starts private chat (simulated).")
-            self.log_turn_info(f"{player.name} chats. Attack phase continues.")
-            self.ai_is_thinking = False # Ready for next attack action
-        else:
-            self.log_turn_info(f"{player.name} unknown ATTACK action: {action_type}. Ending phase.")
-            self.engine.game_state.current_game_phase = "FORTIFY"
-            self.ai_is_thinking = False # Phase ended due to unknown action
-
-        if self.gui: self._update_gui_full_state()
-
-
-    def _initiate_fortify_ai_action(self, player: GamePlayer, agent: BaseAIAgent):
-        print(f"Orchestrator: Initiating FORTIFY AI action for {player.name}")
-        game_state_json = self.engine.game_state.to_json()
-        valid_actions = self.engine.get_valid_actions(player)
-        if not valid_actions:
-             self.log_turn_info(f"No valid FORTIFY actions for {player.name}. Ending turn.");
-             # self.engine.next_turn() # Let advance_game_turn handle this transition
-             return
-        system_prompt_addition = "It is your FORTIFY phase. Make one move or end your turn."
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
-
-    def _process_fortify_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
-        print(f"Orchestrator: Processing FORTIFY AI action for {player.name}")
-        action = ai_response.get("action")
-        action_processed_successfully = False
-
-        if not action or not isinstance(action, dict) or "type" not in action:
-            self.log_turn_info(f"{player.name} malformed/missing FORTIFY action: {action}. Ending turn.")
-        else:
-            action_type = action.get("type", "")
-            self.log_turn_info(f"{player.name} FORTIFY phase, AI action: {action_type} - {action}")
-
-            if action_type == "FORTIFY":
-                if player.has_fortified_this_turn:
-                    self.log_turn_info(f"{player.name} tried to FORTIFY again (should be prevented by valid_actions). Action ignored.")
-                    # This state should ideally not be reached if valid_actions is correct.
-                else:
-                    from_t_name = action.get("from")
-                    to_t_name = action.get("to")
-                    num_a = action.get("num_armies")
-
-                    if from_t_name and to_t_name and isinstance(num_a, int):
-                        if num_a > 0: # Fortifying with 0 armies is not a move.
-                            fortify_result = self.engine.perform_fortify(from_t_name, to_t_name, num_a)
-                            self.log_turn_info(f"{player.name} FORTIFY {from_t_name}->{to_t_name} ({num_a}): {fortify_result.get('message')}")
-                            action_processed_successfully = fortify_result.get("success", False)
-                        else:
-                            self.log_turn_info(f"{player.name} tried to FORTIFY with {num_a} armies. Action ignored. Fortification requires >0 armies.")
-                            # No actual fortify action taken, player can still choose to end turn or try valid fortify if that was a mistake.
-                            # However, current flow processes one action then ends turn.
-                    else:
-                        self.log_turn_info(f"{player.name} provided incomplete FORTIFY action: from='{from_t_name}', to='{to_t_name}', num_armies='{num_a}'. Action ignored.")
-            elif action_type == "END_TURN":
-                self.log_turn_info(f"{player.name} chose to END_TURN.")
-                action_processed_successfully = True # Ending turn is a successful processing of an action.
-            else: # Unknown action
-                self.log_turn_info(f"{player.name} unknown action in FORTIFY phase: {action_type}. Ending turn.")
-
-        # Fortify phase is always followed by next_turn() if not game over.
-        self.ai_is_thinking = False
-        if self.gui: self._update_gui_full_state()
-
-
-    # Removed original handle_reinforce_phase, handle_attack_communicate_phase, handle_fortify_phase
-    # as their logic is now split into _initiate_ and _process_ methods, driven by advance_game_turn.
-
-    def auto_distribute_armies(self, player: GamePlayer, armies_to_distribute: int):
-        # For now, keeping a simplified version of the original logic for placeholder
-        print(f"DEBUG: handle_reinforce_phase called for {player.name} - TO BE REFACTORED")
-        if not self.ai_is_thinking:
-            self._initiate_reinforce_ai_action(player, agent)
-        # Processing will happen when ai_is_thinking is false again after thread completion.
-
-    def _initiate_reinforce_ai_action(self, player: GamePlayer, agent: BaseAIAgent):
-        print(f"Orchestrator: Initiating REINFORCE AI action for {player.name}")
-        # Simplified: Assume one AI call per phase for now for this step's purpose.
-        # Real logic will loop within reinforce phase.
-        game_state_json = self.engine.game_state.to_json()
-        valid_actions = self.engine.get_valid_actions(player)
-        if not valid_actions:
-            self.log_turn_info(f"No valid REINFORCE actions for {player.name}. Auto-ending phase part.");
-            # This might mean auto-distribute or move to attack. Engine should handle.
-            # For now, just ensure we don't call AI.
-            if player.armies_to_deploy > 0: self.auto_distribute_armies(player, player.armies_to_deploy)
-            self.engine.game_state.current_game_phase = "ATTACK" # Manually advance for now
-            return
-
-        current_reinforcements = player.armies_to_deploy
-        current_cards = len(player.hand)
-        prompt_details = [f"You have {current_reinforcements} armies to deploy.", f"You currently hold {current_cards} cards."]
-        if any(a['type'] == 'TRADE_CARDS' and a.get('must_trade') for a in valid_actions):
-            prompt_details.append("You MUST trade cards.")
-        system_prompt_addition = "It is your REINFORCE phase. " + " ".join(prompt_details)
-
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
-
-    def _process_reinforce_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
-        print(f"Orchestrator: Processing REINFORCE AI action for {player.name}")
-        action = ai_response.get("action")
-        # This is where the original logic from handle_reinforce_phase that processes the action would go.
-        # For brevity in this step, I'll just log and simulate phase end.
-        # The full logic will be moved in Step 3.
-        if not action or "type" not in action:
-            self.log_turn_info(f"{player.name} provided malformed REINFORCE action: {action}. Auto-ending phase part.")
-            if player.armies_to_deploy > 0: self.auto_distribute_armies(player, player.armies_to_deploy)
-            self.engine.game_state.current_game_phase = "ATTACK" # Manually advance
-            return
-
-        action_type = action["type"]
-        # Simplified processing for now:
-        self.log_turn_info(f"{player.name} REINFORCE action: {action_type}")
-        if action_type == "END_REINFORCE_PHASE":
-            if any(a['type'] == 'TRADE_CARDS' and a.get('must_trade') for a in self.engine.get_valid_actions(player)): # Re-check valid actions
-                 self.log_turn_info(f"{player.name} tried END_REINFORCE_PHASE during must_trade. Action ignored for now."); # AI will try again
-                 # In a full loop, we'd re-initiate AI call for reinforce. For now, this means AI is not thinking.
-                 self.ai_is_thinking = False # Allow re-triggering AI for reinforce
-                 return # Stay in reinforce, AI will be called again by advance_game_turn
-            if player.armies_to_deploy > 0: self.auto_distribute_armies(player, player.armies_to_deploy)
-            player.armies_to_deploy = 0
-            self.engine.game_state.current_game_phase = "ATTACK"
-        elif action_type == "TRADE_CARDS":
-            # Simulate trade, actual logic in engine
-            self.log_turn_info(f"{player.name} trades cards (simulated). Reinforcements updated by engine.")
-            # In reality, engine.perform_card_trade would be called.
-            # After trading, player likely still needs to deploy, so stay in REINFORCE.
-            # The AI would need to be called again for deploy/end_reinforce.
-            self.ai_is_thinking = False # Allow re-triggering AI for reinforce
-        elif action_type == "DEPLOY":
-            # Simulate deploy
-            self.log_turn_info(f"{player.name} deploys (simulated). Armies updated by engine.")
-            # Player might still have armies or need to end phase.
-            self.ai_is_thinking = False # Allow re-triggering AI for reinforce
-        else: # Unknown action for reinforce
-            self.log_turn_info(f"{player.name} unknown REINFORCE action: {action}. Trying again next cycle.")
-            self.ai_is_thinking = False # Allow re-triggering
-
-        if self.gui: self._update_gui_full_state()
-
-
-    def _initiate_attack_ai_action(self, player: GamePlayer, agent: BaseAIAgent):
-        print(f"Orchestrator: Initiating ATTACK AI action for {player.name}")
-        # Placeholder for actual logic to gather state and call _execute_ai_turn_async
-        game_state_json = self.engine.game_state.to_json()
-        valid_actions = self.engine.get_valid_actions(player)
-        if not valid_actions or all(a['type'] == "END_ATTACK_PHASE" for a in valid_actions if len(valid_actions) ==1):
-            self.log_turn_info(f"No valid ATTACK actions for {player.name} or only END_ATTACK_PHASE. Moving to FORTIFY.");
-            self.engine.game_state.current_game_phase = "FORTIFY"
-            return
-
-        # Handle pending Post-Attack Fortification (PAF) first, synchronously if needed, or ensure AI handles it.
-        # For async, the PAF itself needs to be an AI decision if not automatic.
-        if self.engine.game_state.requires_post_attack_fortify:
-            self.log_turn_info(f"{player.name} must complete POST_ATTACK_FORTIFY.")
-            paf_actions = [va for va in valid_actions if va['type'] == "POST_ATTACK_FORTIFY"]
-            if not paf_actions: # Should not happen if flag is true
-                self.log_turn_info(f"ERROR: PAF required but no PAF action for {player.name}. Clearing flag.");
-                self.engine.game_state.requires_post_attack_fortify = False; self.engine.game_state.conquest_context = None
-            else: # Found PAF action, let AI decide
-                paf_detail = paf_actions[0]
-                paf_prompt = (f"You conquered {paf_detail['to_territory']}. Move {paf_detail['min_armies']}-{paf_detail['max_armies']} armies "
-                              f"from {paf_detail['from_territory']} (has {self.engine.game_state.territories[paf_detail['from_territory']].army_count}) "
-                              f"to {paf_detail['to_territory']}.")
-                self._execute_ai_turn_async(agent, game_state_json, paf_actions, self.game_rules, paf_prompt)
-                return # AI is now thinking about PAF
-
-        # If no PAF pending, proceed with regular attack/chat/end phase options
-        system_prompt_addition = "It is your ATTACK phase."
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
-
-    def _process_attack_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
-        print(f"Orchestrator: Processing ATTACK AI action for {player.name}")
-        action = ai_response.get("action")
-
-        if not action or "type" not in action:
-            self.log_turn_info(f"{player.name} malformed ATTACK action. Ending phase.")
-            self.engine.game_state.current_game_phase = "FORTIFY" # Manually advance
-            self.ai_is_thinking = False # Reset thinking state
-            return
-
-        action_type = action.get("type", "")
-        self.log_turn_info(f"{player.name} ATTACK action: {action_type}")
-
-        if action_type == "POST_ATTACK_FORTIFY":
-            num_to_move = action.get("num_armies", self.engine.game_state.conquest_context.get('min_movable') if self.engine.game_state.conquest_context else 1)
-            fortify_log = self.engine.perform_post_attack_fortify(player, num_to_move)
-            self.log_turn_info(f"{player.name} PAF: {fortify_log.get('message', 'Unknown PAF outcome')}")
-            # PAF is done, AI might attack again or end phase.
-            self.ai_is_thinking = False # Ready for next attack/end attack
-        elif action_type == "ATTACK":
-            from_t, to_t, num_a = action.get("from"), action.get("to"), action.get("num_armies")
-            attack_log = self.engine.perform_attack(from_t, to_t, num_a) # Engine handles details
-            self.log_turn_info(f"Battle: {attack_log.get('summary', 'Error in battle')}")
-            if "error" not in attack_log:
-                if attack_log.get("conquered"):
-                    self.log_turn_info(f"{player.name} conquered {to_t}.")
-                    if attack_log.get("eliminated_player"):
-                         elim_name = attack_log.get("eliminated_player")
-                         self.log_turn_info(f"{player.name} ELIMINATED {elim_name}!")
-                         self.global_chat.broadcast("GameSystem", f"{player.name} eliminated {elim_name}!")
-                         self.handle_player_elimination(elim_name)
-                # If conquered, engine.game_state.requires_post_attack_fortify will be true.
-                # The next call to _initiate_attack_ai_action will handle PAF.
-            self.ai_is_thinking = False # Ready for next attack / PAF / end attack
-        elif action_type == "END_ATTACK_PHASE":
-            self.engine.game_state.current_game_phase = "FORTIFY"
-            self.ai_is_thinking = False # Phase ended
-        elif action_type in ["GLOBAL_CHAT", "PRIVATE_CHAT"]:
-            # Simulate chat processing for now
-            if action_type == "GLOBAL_CHAT": self.global_chat.broadcast(player.name, action.get("message",""))
-            else: self.log_turn_info(f"{player.name} starts private chat (simulated).")
-            self.log_turn_info(f"{player.name} chats. Attack phase continues.")
-            self.ai_is_thinking = False # Ready for next attack action
-        else:
-            self.log_turn_info(f"{player.name} unknown ATTACK action: {action_type}. Ending phase.")
-            self.engine.game_state.current_game_phase = "FORTIFY"
-            self.ai_is_thinking = False # Phase ended due to unknown action
-
-        if self.gui: self._update_gui_full_state()
-
-
-    def _initiate_fortify_ai_action(self, player: GamePlayer, agent: BaseAIAgent):
-        print(f"Orchestrator: Initiating FORTIFY AI action for {player.name}")
-        game_state_json = self.engine.game_state.to_json()
-        valid_actions = self.engine.get_valid_actions(player)
-        if not valid_actions:
-             self.log_turn_info(f"No valid FORTIFY actions for {player.name}. Ending turn.");
-             # self.engine.next_turn() # Let advance_game_turn handle this transition
-             return
-        system_prompt_addition = "It is your FORTIFY phase. Make one move or end your turn."
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
-
-    def _process_fortify_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
-        print(f"Orchestrator: Processing FORTIFY AI action for {player.name}")
-        action = ai_response.get("action")
-
-        if not action or "type" not in action:
-            self.log_turn_info(f"{player.name} malformed FORTIFY action. Ending turn.")
-        else:
-            action_type = action.get("type", "")
-            self.log_turn_info(f"{player.name} FORTIFY action: {action_type} (simulated).")
-            if action_type == "FORTIFY":
-                # Simulate actual fortify call to engine
-                self.engine.perform_fortify(action.get("from"), action.get("to"), action.get("num_armies"))
-            # Else, if END_TURN, engine will handle it via next_turn() call in advance_game_turn
-
-        # Fortify phase is always followed by next_turn() if not game over.
-        # No need to set self.ai_is_thinking = False here, as the turn will end for this player.
-        # The main advance_game_turn loop will call self.engine.next_turn().
-        if self.gui: self._update_gui_full_state()
-
-    # Note: Original handle_reinforce_phase, handle_attack_communicate_phase,
-    # and handle_fortify_phase methods are now effectively replaced by the combination of
-    # advance_game_turn's logic and the _initiate_... and _process_... methods.
-    # They can be removed or kept as stubs if desired, but their direct calls from advance_game_turn are gone.
+        return True
 
     def _initiate_reinforce_ai_action(self, player: GamePlayer, agent: BaseAIAgent):
         """Gathers info and starts the AI thinking for the REINFORCE phase."""
@@ -1490,7 +882,7 @@ class GameOrchestrator:
             prompt_details.append("You may optionally trade cards if you have a valid set.")
         system_prompt_addition = "It is your REINFORCE phase. " + " ".join(prompt_details)
 
-        self._execute_ai_turn_async(agent, game_state_json, valid_actions, self.game_rules, system_prompt_addition)
+        self._execute_ai_turn_async(agent, self.engine.game_state.to_json_with_history(), valid_actions, self.game_rules, system_prompt_addition)
 
     def _process_reinforce_ai_action(self, player: GamePlayer, agent: BaseAIAgent, ai_response: dict):
         """Processes the AI's action for the REINFORCE phase."""
@@ -1507,7 +899,7 @@ class GameOrchestrator:
         self.log_turn_info(f"{player.name} REINFORCE action: {action_type} - Details: {action}")
 
         # Handle diplomatic actions first if chosen
-        if _process_diplomatic_action(player, action):
+        if _process_diplomatic_action(self, player, action):
             self.ai_is_thinking = False # Diplomatic action taken, AI can make another move in Reinforce
             if self.gui: self._update_gui_full_state()
             return
@@ -1692,7 +1084,7 @@ class GameOrchestrator:
         # We need to make sure that if a diplomatic action (ACCEPT/REJECT) is taken,
         # the player can still perform another attack phase action.
         if action_type in ["ACCEPT_ALLIANCE", "REJECT_ALLIANCE"]:
-            if self._process_diplomatic_action(player, action):
+            if self._process_diplomatic_action(self, player, action):
                 self.ai_is_thinking = False # Diplomatic action processed, AI can make another move in Attack phase
                 if self.gui: self._update_gui_full_state()
                 return # Return to allow re-initiation of AI for attack phase
@@ -1988,11 +1380,10 @@ class GameOrchestrator:
 
             # Handle diplomatic actions first if chosen
             if action_type in ["ACCEPT_ALLIANCE", "REJECT_ALLIANCE"]:
-                if self._process_diplomatic_action(player, action):
+                if self._process_diplomatic_action(self, player, action):
                     # Unlike other phases, a diplomatic action in Fortify phase might still end the turn,
                     # or allow one actual fortification move.
                     # For now, let's assume it consumes the "action" for the fortify phase, and then the turn ends.
-                    # If player should be able to fortify *after* diplomacy, this logic needs adjustment.
                     # The current _process_diplomatic_action doesn't set ai_is_thinking.
                     # The fortify phase naturally ends after one action (fortify or end_turn).
                     # So, if a diplomatic action is taken, it's the action for this phase.
@@ -2021,97 +1412,14 @@ class GameOrchestrator:
                 self.log_turn_info(f"{player.name} explicitly chose to END_TURN during fortify phase.")
                 # player.has_fortified_this_turn remains as it was (e.g., false if they didn't fortify).
 
-            else: # Unknown action type for fortify phase
+            else: # Unknown action type
                 self.log_turn_info(f"{player.name} provided an unknown action type '{action_type}' during FORTIFY phase. Turn will end.")
 
         # Log status after processing
         self.log_turn_info(f"Orchestrator: Player {player.name} status after processing fortify action: has_fortified_this_turn = {player.has_fortified_this_turn}")
-
-        # Regardless of the action (FORTIFY, END_TURN, or malformed), the fortify phase processing for this AI action is complete.
-        # The main game loop (`advance_game_turn`) will call `self.engine.next_turn()` due to the logic implemented in the previous step.
-        self.ai_is_thinking = False # Player's AI is no longer thinking for this specific action.
-        # self.has_logged_current_turn_player_phase = False # This is reset by advance_game_turn when next_turn() is actually called.
-
+        self.ai_is_thinking = False
         self.log_turn_info(f"Orchestrator: {player.name} FORTIFY phase AI processing complete. Turn will now end via main loop.")
         if self.gui: self._update_gui_full_state()
-
-    # Removed original handle_reinforce_phase, handle_attack_communicate_phase, handle_fortify_phase
-    # as their logic is now split into _initiate_ and _process_ methods, driven by advance_game_turn.
-
-    def auto_distribute_armies(self, player: GamePlayer, armies_to_distribute: int):
-        self.log_turn_info(f"{player.name} starts REINFORCE phase with {player.armies_to_deploy} reinforcements.")
-        reinforce_phase_active = True
-        max_reinforce_actions = 15
-        actions_taken_this_phase = 0
-        while reinforce_phase_active and actions_taken_this_phase < max_reinforce_actions:
-            actions_taken_this_phase += 1
-            game_state_json = self.engine.game_state.to_json()
-            valid_actions = self.engine.get_valid_actions(player)
-            if not valid_actions:
-                err_msg = f"No valid actions for {player.name} during REINFORCE phase. Player might be stuck. Ending phase."
-                print(err_msg); self.log_turn_info(err_msg)
-                reinforce_phase_active = False; break
-            current_reinforcements = player.armies_to_deploy
-            current_cards = len(player.hand)
-            prompt_details = [f"You have {current_reinforcements} armies to deploy.", f"You currently hold {current_cards} cards."]
-            if any(a['type'] == 'TRADE_CARDS' and a.get('must_trade') for a in valid_actions):
-                prompt_details.append("You MUST trade cards as you have 5 or more and a valid set is available.")
-            elif any(a['type'] == 'TRADE_CARDS' for a in valid_actions):
-                prompt_details.append("You may optionally trade cards if you have a valid set.")
-            system_prompt_addition = "It is your REINFORCE phase. " + " ".join(prompt_details)
-            ai_response = agent.get_thought_and_action(game_state_json, valid_actions, self.game_rules, system_prompt_addition=system_prompt_addition)
-            action = ai_response.get("action"); thought = ai_response.get("thought", "(No thought provided)")
-            self.log_ai_thought(player.name, thought)
-            if not action or "type" not in action:
-                err_msg = f"{player.name} provided malformed action: {action}. Ending REINFORCE phase."
-                print(err_msg); self.log_turn_info(err_msg)
-                reinforce_phase_active = False; break
-            action_type = action["type"]
-            if action_type == "TRADE_CARDS":
-                card_indices = action.get("card_indices")
-                if card_indices is None:
-                    self.log_turn_info(f"{player.name} selected TRADE_CARDS but no indices. Trying again."); continue
-                trade_result = self.engine.perform_card_trade(player, card_indices)
-                if trade_result.get("success"):
-                    self.log_turn_info(f"{player.name} traded cards for {trade_result['armies_gained']} armies. Now has {player.armies_to_deploy} to deploy.")
-                    if trade_result.get("territory_bonus"): self.log_turn_info(trade_result["territory_bonus"])
-                    if self.gui: self._update_gui_full_state()
-                else:
-                    self.log_turn_info(f"{player.name} card trade failed: {trade_result['message']}.")
-                    if self.gui: self._update_gui_full_state()
-            elif action_type == "DEPLOY":
-                terr_name = action.get("territory"); num_armies_to_deploy = action.get("num_armies")
-                territory_to_deploy = self.engine.game_state.territories.get(terr_name)
-                if not isinstance(num_armies_to_deploy, int) or num_armies_to_deploy <= 0:
-                    self.log_turn_info(f"{player.name} invalid DEPLOY num_armies: {num_armies_to_deploy}. Try again."); continue
-                if player.armies_to_deploy == 0:
-                    self.log_turn_info(f"{player.name} tried DEPLOY with 0 armies. Must_trade?: {any(a['type'] == 'TRADE_CARDS' and a.get('must_trade') for a in valid_actions)}"); continue
-                if territory_to_deploy and territory_to_deploy.owner == player:
-                    actual_deployed = min(num_armies_to_deploy, player.armies_to_deploy)
-                    territory_to_deploy.army_count += actual_deployed
-                    player.armies_to_deploy -= actual_deployed
-                    self.log_turn_info(f"{player.name} deployed {actual_deployed} to {terr_name} ({territory_to_deploy.army_count}). Left: {player.armies_to_deploy}.")
-                    if self.gui: self._update_gui_full_state()
-                else:
-                    self.log_turn_info(f"{player.name} invalid DEPLOY: {action}. Armies: {player.armies_to_deploy}.")
-                    if self.gui: self._update_gui_full_state()
-            elif action_type == "END_REINFORCE_PHASE":
-                if any(a['type'] == 'TRADE_CARDS' and a.get('must_trade') for a in valid_actions):
-                    self.log_turn_info(f"{player.name} tried END_REINFORCE_PHASE during must_trade. Ignoring."); continue
-                self.log_turn_info(f"{player.name} ends REINFORCE phase.")
-                if player.armies_to_deploy > 0:
-                    self.log_turn_info(f"Warning: {player.name} ended with {player.armies_to_deploy} armies. Auto-distributing.")
-                    self.auto_distribute_armies(player, player.armies_to_deploy)
-                player.armies_to_deploy = 0; reinforce_phase_active = False
-                if self.gui: self._update_gui_full_state()
-            else:
-                self.log_turn_info(f"{player.name} unknown REINFORCE action: {action}. Trying again.")
-                if self.gui: self._update_gui_full_state()
-        if actions_taken_this_phase >= max_reinforce_actions:
-            self.log_turn_info(f"{player.name} max REINFORCE actions. Auto-distributing {player.armies_to_deploy} armies.")
-            if player.armies_to_deploy > 0: self.auto_distribute_armies(player, player.armies_to_deploy)
-        player.armies_to_deploy = 0
-        self.log_turn_info(f"{player.name} REINFORCE phase ended.")
 
     def auto_distribute_armies(self, player: GamePlayer, armies_to_distribute: int):
         if not player.territories: return
@@ -2122,131 +1430,6 @@ class GameOrchestrator:
             self.log_turn_info(f"Auto-distributed 1 army to {territory.name} for {player.name}.")
             idx += 1
         if self.gui: self._update_gui_full_state()
-
-    def handle_attack_communicate_phase(self, player: GamePlayer, agent: BaseAIAgent):
-        attack_action_limit = 10; attacks_this_turn = 0
-        while attacks_this_turn < attack_action_limit:
-            if self.engine.game_state.requires_post_attack_fortify: # Check if PAF is pending
-                self.log_turn_info(f"{player.name} must complete POST_ATTACK_FORTIFY.")
-                paf_actions = self.engine.get_valid_actions(player)
-                if not paf_actions or paf_actions[0]['type'] != "POST_ATTACK_FORTIFY":
-                    self.log_turn_info(f"ERROR: Expected POST_ATTACK_FORTIFY for {player.name}, got {paf_actions}. Clearing flag.");
-                    self.engine.game_state.requires_post_attack_fortify = False; self.engine.game_state.conquest_context = None
-                    self._update_gui_full_state(); continue
-
-                paf_detail = paf_actions[0]
-                paf_prompt = (f"You conquered {paf_detail['to_territory']}. Move {paf_detail['min_armies']}-{paf_detail['max_armies']} armies "
-                              f"from {paf_detail['from_territory']} (has {self.engine.game_state.territories[paf_detail['from_territory']].army_count}) "
-                              f"to {paf_detail['to_territory']} (has 0).")
-                paf_response = agent.get_thought_and_action(self.engine.game_state.to_json(), paf_actions, self.game_rules, system_prompt_addition=paf_prompt)
-                paf_action = paf_response.get("action")
-                self.log_ai_thought(player.name, f"PAF Thought: {paf_response.get('thought', 'N/A')}")
-
-                num_to_move = paf_detail['min_armies'] # Default to min
-                if paf_action and paf_action.get("type") == "POST_ATTACK_FORTIFY" and paf_action.get("num_armies") is not None:
-                    num_to_move = paf_action.get("num_armies")
-                else:
-                     self.log_turn_info(f"AI invalid/missing PAF action, using min {num_to_move} armies.")
-
-                fortify_log = self.engine.perform_post_attack_fortify(player, num_to_move)
-                self.log_turn_info(f"{player.name} PAF: {fortify_log.get('message', 'Unknown PAF outcome')}")
-                self._update_gui_full_state()
-                if self.engine.is_game_over(): break # Check again after PAF
-                # PAF is done, loop continues for regular attack phase actions.
-
-            game_state_json = self.engine.game_state.to_json()
-            valid_actions = self.engine.get_valid_actions(player)
-            if not valid_actions or all(a['type'] == "END_ATTACK_PHASE" for a in valid_actions if len(valid_actions) ==1): # Only END_ATTACK_PHASE left or no actions
-                 if not any(a['type'] == 'ATTACK' for a in valid_actions): # Double check no attack actions
-                    print(f"{player.name} has no more valid attack moves or only END_ATTACK_PHASE. Ending attack phase.")
-                    break
-
-            prompt_elements = [f"It is your attack phase. You have made {attacks_this_turn} attacks this turn.", f"You have {len(player.hand)} cards."]
-            # ... (rest of prompt element generation for opponents, continents - kept for brevity) ...
-            other_players_info = []
-            for p_other in self.engine.game_state.players:
-                if p_other != player: other_players_info.append(f"{p_other.name}({len(p_other.hand)}c, {len(p_other.territories)}t)")
-            if other_players_info: prompt_elements.append("Opps: " + "; ".join(other_players_info))
-            system_prompt_addition = " ".join(prompt_elements)
-            ai_response = agent.get_thought_and_action(game_state_json, valid_actions, self.game_rules, system_prompt_addition=system_prompt_addition)
-            action = ai_response.get("action"); thought = ai_response.get("thought", "(No thought provided)")
-            self.log_ai_thought(player.name, thought)
-
-            if not action or not action.get("type"): self.log_turn_info(f"{player.name} invalid action: {action}. Ending attack phase."); break
-            action_type = action.get("type")
-
-            if action_type == "ATTACK":
-                from_t, to_t, num_a = action.get("from"), action.get("to"), action.get("num_armies")
-                self.log_turn_info(f"{player.name} ATTACK {from_t}->{to_t} with {num_a}")
-                attack_log = self.engine.perform_attack(from_t, to_t, num_a)
-                self.log_turn_info(f"Battle: {attack_log.get('summary', 'Error in battle')}")
-                if "error" not in attack_log:
-                    if attack_log.get("conquered"):
-                        self.log_turn_info(f"{player.name} conquered {to_t} from {attack_log.get('defender', 'PrevOwner')}.")
-                        if attack_log.get("card_drawn"): self.log_turn_info(f"{player.name} drew a card.")
-                        if attack_log.get("eliminated_player"):
-                            elim_name = attack_log.get("eliminated_player")
-                            self.log_turn_info(f"{player.name} ELIMINATED {elim_name}!")
-                            self.global_chat.broadcast("GameSystem", f"{player.name} eliminated {elim_name}!")
-                            self.handle_player_elimination(elim_name)
-                            self._update_gui_full_state()
-                            if self.engine.is_game_over(): break
-                        # Post-attack fortify is now handled at the start of the loop if flag is set.
-                    self._update_gui_full_state()
-                else: # Attack error
-                     self._update_gui_full_state()
-
-                attacks_this_turn += 1
-                if self.engine.is_game_over(): break
-                continue # Continue attack loop
-            elif action_type == "GLOBAL_CHAT":
-                msg = action.get("message", "")
-                if msg: self.global_chat.broadcast(player.name, msg); self.log_turn_info(f"{player.name} (Global): {msg}")
-                else: self.log_turn_info(f"{player.name} empty GLOBAL_CHAT.")
-                self._update_gui_full_state(); continue
-            elif action_type == "PRIVATE_CHAT":
-                target_n, init_msg = action.get("target_player_name"), action.get("initial_message")
-                if not target_n or not init_msg: self.log_turn_info(f"{player.name} invalid PRIVATE_CHAT: missing target/msg."); continue
-                target_agent = self.ai_agents.get(target_n)
-                if not target_agent or target_agent == agent: self.log_turn_info(f"{player.name} invalid PRIVATE_CHAT target."); continue
-                self.log_turn_info(f"{player.name} private chat with {target_n}.")
-                convo_log = self.private_chat_manager.run_conversation(agent, target_agent, init_msg, game_state_json, self.game_rules)
-                if convo_log and self.gui: self.gui.log_private_chat(convo_log, player.name, target_n) # GUI specific log
-                self.log_turn_info(f"Private chat ended {player.name}-{target_n} ({len(convo_log) if convo_log else 0} msgs).")
-                self._update_gui_full_state(); continue
-            elif action_type == "END_ATTACK_PHASE":
-                self.log_turn_info(f"{player.name} ends ATTACK phase."); break
-            else: self.log_turn_info(f"{player.name} unknown ATTACK action: {action_type}. Ending phase."); break
-        if attacks_this_turn >= attack_action_limit: self.log_turn_info(f"{player.name} reached attack limit.")
-
-    def handle_fortify_phase(self, player: GamePlayer, agent: BaseAIAgent):
-        game_state_json = self.engine.game_state.to_json()
-        valid_actions = self.engine.get_valid_actions(player)
-        fortify_actions = [a for a in valid_actions if a['type'] == 'FORTIFY' or a['type'] == 'END_TURN']
-        if not fortify_actions: self.log_turn_info(f"{player.name} no fortify options. Ending turn."); return
-
-        prompt_add = f"It's your FORTIFY phase. Fortified this turn: {player.has_fortified_this_turn}. "
-        prompt_add += "Make one move or end turn." if not player.has_fortified_this_turn else "Must end turn."
-        ai_response = agent.get_thought_and_action(game_state_json, fortify_actions, self.game_rules, system_prompt_addition=prompt_add)
-        action = ai_response.get("action"); thought = ai_response.get("thought", "(No thought for fortify)")
-        self.log_ai_thought(player.name, thought)
-
-        if not action or not action.get("type"):
-            self.log_turn_info(f"{player.name} invalid FORTIFY action: {action}. Ending turn."); return
-        action_type = action.get("type")
-        if action_type == "FORTIFY":
-            if player.has_fortified_this_turn: # Should be prevented by get_valid_actions
-                self.log_turn_info(f"{player.name} tried to FORTIFY again. Ending turn."); return
-            from_t, to_t, num_a = action.get("from"), action.get("to"), action.get("num_armies")
-            fortify_result = self.engine.perform_fortify(from_t, to_t, num_a)
-            self.log_turn_info(f"{player.name} FORTIFY {from_t}->{to_t} ({num_a}): {fortify_result.get('message')}")
-            if self.gui: self._update_gui_full_state()
-        elif action_type == "END_TURN":
-            self.log_turn_info(f"{player.name} chose to END_TURN.")
-            if self.gui: self._update_gui_full_state()
-        else:
-            self.log_turn_info(f"{player.name} unknown FORTIFY action: {action_type}. Ending turn.")
-            if self.gui: self._update_gui_full_state()
 
     def handle_player_elimination(self, eliminated_player_name: str):
         player_to_remove_engine = None
@@ -2268,26 +1451,49 @@ class GameOrchestrator:
             del self.ai_agents[eliminated_player_name]
         key_to_remove_map = None
         for gp_key, ai_val in self.player_map.items():
-            if gp_key.name == eliminated_player_name: # Compare by name as gp_key might be stale if player list changed
+            if gp_key.name == eliminated_player_name: # Compare by name as gp_key might be a stale object
                 key_to_remove_map = gp_key; break
         if key_to_remove_map: del self.player_map[key_to_remove_map]
         print(f"Player {eliminated_player_name} fully processed for elimination.")
 
     def log_ai_thought(self, player_name: str, thought: str):
+        log_dir = "logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
         print(f"--- {player_name}'s Thought --- \n{thought[:300]}...\n--------------------")
-        if self.gui: self.gui.update_thought_panel(player_name, thought)
-        # ... (file logging remains same) ...
+        if self.gui:
+            self.gui.update_thought_panel(player_name, thought)
+        try:
+            with open(os.path.join(log_dir, "ai_thoughts.jsonl"), 'a') as f:
+                log_entry = {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "player": player_name,
+                    "thought": thought
+                }
+                f.write(json.dumps(log_entry) + "\n")
+        except IOError as e:
+            print(f"Error writing to AI thought log: {e}")
 
     def log_turn_info(self, message: str):
-        if self.gui: self.gui.log_action(message)
-        # ... (file logging remains same) ...
+        log_dir = "logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        if self.gui:
+            self.gui.log_action(message)
+        try:
+            with open(os.path.join(log_dir, "game_log.txt"), 'a') as f:
+                f.write(f"[{datetime.utcnow().isoformat()}] {message}\n")
+        except IOError as e:
+            print(f"Error writing to game log: {e}")
 
     def setup_gui(self):
-        if not self.gui:
-            self.gui = GameGUI(self.engine, self)
-            print("GUI setup complete. GUI is active.")
-        else:
-            print("GUI already setup.")
+        try:
+            if not self.gui:
+                self.gui = GameGUI(self.engine, self)
+                print("GUI setup complete. GUI is active.")
+        except Exception as e:
+            print(f"Failed to initialize GUI, will run in headless mode. Error: {e}")
+            self.gui = None
 
 if __name__ == '__main__':
     print("Setting up Game Orchestrator for a test run...")
@@ -2300,8 +1506,11 @@ if __name__ == '__main__':
         with open(config_path, 'w') as f: json.dump(dummy_player_config, f, indent=2)
         print(f"Created dummy {config_path} for testing.")
     except IOError: print(f"Could not create dummy {config_path}.")
-    orchestrator = GameOrchestrator(default_player_setup_file=config_path) # Using new parameter name
+    orchestrator = GameOrchestrator(default_player_setup_file=config_path)
     print("Starting game run...")
     orchestrator.run_game()
     print("\nGame run finished.")
-    # ... (final log print remains same) ...
+    if os.path.exists("logs/game_log.txt"):
+        with open("logs/game_log.txt", 'r') as f:
+            print("\n--- Final Game Log ---")
+            print(f.read())
