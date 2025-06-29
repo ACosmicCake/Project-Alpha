@@ -104,12 +104,65 @@ def main():
     # If custom_player_configs is None, GameOrchestrator will use its default player_config.json.
     # Otherwise, it will use the configurations provided by the user.
     # This requires GameOrchestrator to be modified to accept this parameter.
+
+    # Add argparse for game_mode
+    import argparse
+    parser = argparse.ArgumentParser(description="Run the LLM Risk Game.")
+    parser.add_argument(
+        "--game_mode",
+        type=str,
+        default="standard",
+        choices=["standard", "world_map"],
+        help="Game mode to play: 'standard' or 'world_map'."
+    )
+    # Add map_file argument for standard mode, but world_map will use its own
+    # This map_file argument is currently NOT directly used by orchestrator if game_mode is set.
+    # Orchestrator internally decides map_file based on game_mode.
+    # Kept for potential future use or if orchestrator logic changes.
+    parser.add_argument(
+        "--map_file",
+        type=str,
+        default="map_config.json",
+        help="Path to the JSON file with map configuration (primarily for 'standard' mode)."
+    )
+    parser.add_argument(
+        "--geojson_file",
+        type=str,
+        default=None, # No default, only used if game_mode is world_map
+        help="Path to the GeoJSON file for 'world_map' mode."
+    )
+    args = parser.parse_args()
+
+    geojson_data_str = None
+    if args.game_mode == "world_map":
+        if args.geojson_file and os.path.exists(args.geojson_file):
+            try:
+                with open(args.geojson_file, 'r') as f:
+                    geojson_data_str = f.read()
+                print(f"Loaded GeoJSON data from: {args.geojson_file}")
+            except Exception as e:
+                print(f"Error reading GeoJSON file '{args.geojson_file}': {e}. World map mode may fail.")
+                # Potentially exit or raise, but for now, let orchestrator handle missing data if it must.
+        else:
+            print("Warning: 'world_map' mode selected but --geojson_file not provided or not found. Orchestrator will raise an error.")
+            # Orchestrator's __init__ will raise ValueError if geojson_data_str is None for world_map mode.
+
     if custom_player_configs:
-        print("\nUsing custom player configurations from console.")
-        orchestrator = GameOrchestrator(player_configs_override=custom_player_configs)
+        print(f"\nUsing custom player configurations from console for {args.game_mode} mode.")
+        orchestrator = GameOrchestrator(
+            player_configs_override=custom_player_configs,
+            game_mode=args.game_mode,
+            geojson_data_str=geojson_data_str
+        )
     else:
-        print("\nUsing default player configurations (player_config.json).")
-        orchestrator = GameOrchestrator() # Assumes GameOrchestrator handles player_config.json by default
+        # If no custom console config, orchestrator's __init__ will try to load
+        # from its default_player_setup_file (e.g., player_config.json)
+        print(f"\nUsing default player configurations (from player_config.json or internal default) for {args.game_mode} mode.")
+        orchestrator = GameOrchestrator(
+            game_mode=args.game_mode,
+            geojson_data_str=geojson_data_str
+            # player_configs_override is None, default_player_setup_file will be used by orchestrator
+        )
 
     # Run the game.
     orchestrator.run_game()

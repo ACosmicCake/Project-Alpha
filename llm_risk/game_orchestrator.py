@@ -23,15 +23,63 @@ import os # For log directory creation
 
 class GameOrchestrator:
     def __init__(self,
-                 map_file: str = "map_config.json",
                  player_configs_override: list | None = None,
-                 default_player_setup_file: str = "player_config.json"):
-        self.engine = GameEngine(map_file_path=map_file)
+                 default_player_setup_file: str = "player_config.json",
+                 game_mode: str = "standard",
+                 geojson_data_str: str | None = None): # Added geojson_data_str
+
+        self.game_mode = game_mode
+        map_file_to_load = "map_config.json"
+        self.map_display_config_to_load = "map_display_config.json"
+
+        if self.game_mode == "world_map":
+            if not geojson_data_str:
+                raise ValueError("GeoJSON data string must be provided for 'world_map' mode.")
+
+            # Define paths for generated config files
+            # These could be in a temporary directory or a known location
+            # For simplicity, let's assume they are in the root directory or a 'generated_maps' subdir.
+            generated_map_dir = "generated_maps"
+            os.makedirs(generated_map_dir, exist_ok=True) # Ensure directory exists
+            map_file_to_load = os.path.join(generated_map_dir, "world_map_config.json")
+            self.map_display_config_to_load = os.path.join(generated_map_dir, "world_map_display_config.json")
+
+            print(f"Initializing World Map game mode. Processing GeoJSON...")
+            try:
+                geojson_data = json.loads(geojson_data_str)
+                from .utils.map_processor import MapProcessor # Import here
+                # Assuming GUI dimensions are known or can be accessed (e.g., from gui.py constants)
+                # For now, using constants that might be defined in gui.py or here.
+                # These should ideally come from a shared config or GUI constants.
+                MAP_AREA_WIDTH_FOR_PROCESSING = 900
+                MAP_AREA_HEIGHT_FOR_PROCESSING = 720
+                processor = MapProcessor(geojson_data, MAP_AREA_WIDTH_FOR_PROCESSING, MAP_AREA_HEIGHT_FOR_PROCESSING)
+                processor.save_configs(map_file_to_load, self.map_display_config_to_load)
+                print(f"World map configurations generated: {map_file_to_load}, {self.map_display_config_to_load}")
+            except json.JSONDecodeError:
+                raise ValueError("Invalid GeoJSON data string provided.")
+            except ImportError:
+                raise ImportError("MapProcessor utility not found. Ensure llm_risk/utils/map_processor.py exists.")
+            except Exception as e:
+                raise RuntimeError(f"Error processing GeoJSON for world map: {e}")
+        else: # Standard mode
+            print(f"Initializing Standard game mode. Map file: {map_file_to_load}")
+
+        self.engine = GameEngine(map_file_path=map_file_to_load)
         self.global_chat = GlobalChat()
         self.private_chat_manager = PrivateChatManager(max_exchanges_per_conversation=3)
 
+        # Attributes for asynchronous AI calls - INITIALIZE THEM HERE
+        self.ai_is_thinking: bool = False
+        self.current_ai_thread: threading.Thread | None = None
+        self.ai_action_result: dict | None = None
+        self.active_ai_player_name: str | None = None # Name of the player whose AI is thinking
+        self.current_ai_context: dict | None = None # Context for the current AI call
+        self.has_logged_ai_is_thinking_for_current_action: bool = False
+        self.has_logged_current_turn_player_phase: bool = False # For logging headers
+
         self.gui = None
-        self.setup_gui()
+        self.setup_gui() # This will now use self.map_display_config_to_load
 
         self.ai_agents: dict[str, BaseAIAgent] = {}
         self.player_map: dict[GamePlayer, BaseAIAgent] = {} # Maps GamePlayer objects to their AI agents
@@ -46,6 +94,14 @@ class GameOrchestrator:
         self.has_logged_ai_is_thinking_for_current_action: bool = False
         self.has_logged_current_turn_player_phase: bool = False # For logging headers
 
+        self.gui = None
+        self.setup_gui() # This will now use self.map_display_config_to_load
+
+        self.ai_agents: dict[str, BaseAIAgent] = {}
+        self.player_map: dict[GamePlayer, BaseAIAgent] = {} # Maps GamePlayer objects to their AI agents
+        self.is_two_player_mode: bool = False # Will be set in _load_player_setup
+
+
         # Load player configurations: this will populate self.engine.game_state.players
         # and also determine self.is_two_player_mode
         human_player_configs = self._load_player_setup(player_configs_override, default_player_setup_file)
@@ -55,9 +111,11 @@ class GameOrchestrator:
 
         # Initialize the game board in the engine
         # The engine will internally create a Neutral player if is_two_player_mode is True.
+        # For world_map mode, it will also perform special territory initialization.
         self.engine.initialize_game_from_map(
             players_data=[{"name": p.name, "color": p.color} for p in human_player_configs], # Pass only human player data
-            is_two_player_game=self.is_two_player_mode
+            is_two_player_game=self.is_two_player_mode,
+            game_mode=self.game_mode # Pass game_mode to engine
         )
 
         # After engine initializes players (including Neutral if 2P), map all to AI agents
@@ -1512,7 +1570,7 @@ if __name__ == '__main__':
         with open(config_path, 'w') as f: json.dump(dummy_player_config, f, indent=2)
         print(f"Created dummy {config_path} for testing.")
     except IOError: print(f"Could not create dummy {config_path}.")
-    orchestrator = GameOrchestrator(default_player_setup_file=config_path)
+    orchestrator = GameOrchestrator(default_player_setup_file=config_path, game_mode="standard") # Assuming test runs standard
     print("Starting game run...")
     orchestrator.run_game()
     print("\nGame run finished.")

@@ -9,30 +9,38 @@ class GameEngine:
         self.card_trade_bonus_index = 0
         self.card_trade_bonuses = [4, 6, 8, 10, 12, 15]
 
-    def initialize_game_from_map(self, players_data: list[dict], is_two_player_game: bool = False):
+    def initialize_game_from_map(self, players_data: list[dict], is_two_player_game: bool = False, game_mode: str = "standard"):
         """
         Initializes continents, territories (unowned), creates players,
         allocates initial army pools, and prepares the deck.
+        If game_mode is "world_map", it will expect a different map structure and apply specific initialization.
         This method sets up the game for the interactive setup phases.
         If is_two_player_game is True, specific 2-player setup rules are applied.
         """
         gs = self.game_state
         gs.current_game_phase = "SETUP_START" # Ensure fresh start
         gs.is_two_player_game = is_two_player_game # Store this mode
+        gs.game_mode = game_mode # Store game mode in game state
+
+        if gs.is_two_player_game and game_mode != "standard":
+            # Potentially adjust or error if 2-player mode is combined with non-standard maps
+            # For now, allow it, but 2-player specific setup rules might not perfectly fit world_map.
+            print(f"Warning: 2-Player mode selected with game_mode '{game_mode}'. Specific 2P rules are designed for standard map.")
 
         if gs.is_two_player_game:
             if len(players_data) != 2:
                 print("Error: Two-player game mode selected, but players_data does not contain 2 players.")
                 gs.current_game_phase = "ERROR"
                 return
-            print("Initializing for 2-Player Game Rules (Neutral player will be added by orchestrator/rules).")
+            print("Initializing for 2-Player Game Rules.")
 
+        print(f"Engine: Initializing game with map_file_path: {self.map_file_path} for game_mode: {game_mode}")
 
         try:
             with open(self.map_file_path, 'r') as f:
                 map_data = json.load(f)
         except FileNotFoundError:
-            print(f"Error: Map file '{self.map_file_path}' not found.")
+            print(f"Error: Map file '{self.map_file_path}' not found for game_mode '{game_mode}'.")
             gs.current_game_phase = "ERROR"
             return
         except json.JSONDecodeError:
@@ -40,33 +48,62 @@ class GameEngine:
             gs.current_game_phase = "ERROR"
             return
 
-        # 1. Create Continents
+        # 1. Create Continents (if applicable for the game mode)
         gs.continents.clear()
-        for cont_data in map_data.get("continents", []):
-            continent = Continent(name=cont_data["name"], bonus_armies=cont_data["bonus_armies"])
-            gs.continents[continent.name] = continent
+        if "continents" in map_data: # Standard map has continents
+            for cont_data in map_data.get("continents", []):
+                continent = Continent(name=cont_data["name"], bonus_armies=cont_data["bonus_armies"])
+                gs.continents[continent.name] = continent
+        elif game_mode == "world_map":
+            # For world_map, we might not have pre-defined continents in the same way.
+            # Or we could define them based on real-world continents if desired later.
+            # For now, no continents means no continent bonuses.
+            print("World Map mode: No explicit continent data in map config, or not processed yet. Continent bonuses may not apply.")
 
-        # 2. Create Territories (unowned) and assign them to Continents
+
+        # 2. Create Territories (unowned) and assign them to Continents (if any)
         gs.territories.clear()
         gs.unclaimed_territory_names.clear()
-        for terr_name, terr_data in map_data.get("territories", {}).items():
-            continent_name = terr_data.get("continent")
-            continent = gs.continents.get(continent_name)
-            if not continent:
-                print(f"Warning: Continent '{continent_name}' for territory '{terr_name}' not found. Skipping continent assignment.")
 
-            territory = Territory(name=terr_name, continent=continent, owner=None, army_count=0) # Initially unowned
+        territories_data_source = None
+        if game_mode == "world_map":
+            # For world_map, the MapProcessor generates a config with a "countries" key.
+            territories_data_source = map_data.get("countries")
+            if not territories_data_source:
+                print(f"Error: 'countries' key not found in '{self.map_file_path}' for world_map mode. Trying 'territories'.")
+                # Fallback to 'territories' if 'countries' isn't there, though MapProcessor should generate 'countries'.
+                territories_data_source = map_data.get("territories")
+            else:
+                print(f"World Map mode: Using 'countries' key from {self.map_file_path} as territories.")
+        else: # Standard mode
+            territories_data_source = map_data.get("territories")
+
+
+        if not territories_data_source or not isinstance(territories_data_source, dict):
+            print(f"Error: Relevant territory/country data is missing or not a dictionary in '{self.map_file_path}' for mode '{game_mode}'.")
+            gs.current_game_phase = "ERROR"; return
+
+        for terr_name, terr_data in territories_data_source.items():
+            continent = None
+            # Only try to assign continent if 'continents' data exists in map_data (typical for standard map)
+            if "continents" in map_data and map_data.get("continents"):
+                continent_name = terr_data.get("continent")
+                continent = gs.continents.get(continent_name)
+                if not continent and continent_name: # Log if continent name provided but not found
+                    print(f"Warning: Continent '{continent_name}' for territory '{terr_name}' not found.")
+
+            territory = Territory(name=terr_name, continent=continent, owner=None, army_count=0)
             gs.territories[territory.name] = territory
             gs.unclaimed_territory_names.append(terr_name)
             if continent:
                 continent.territories.append(territory)
-        random.shuffle(gs.unclaimed_territory_names) # Shuffle for fairness if multiple AIs pick simultaneously
+        random.shuffle(gs.unclaimed_territory_names)
 
         # 3. Link adjacent territories
-        for terr_name, terr_data in map_data.get("territories", {}).items():
+        for terr_name, terr_data in territories_data_source.items():
             territory = gs.territories.get(terr_name)
             if territory:
-                territory.adjacent_territories.clear() # Clear previous links if any
+                territory.adjacent_territories.clear()
                 for adj_name in terr_data.get("adjacent_to", []):
                     adj_territory = gs.territories.get(adj_name)
                     if adj_territory:
@@ -159,8 +196,172 @@ class GameEngine:
             gs.current_game_phase = "SETUP_2P_DEAL_CARDS"
         else:
             gs.current_game_phase = "SETUP_DETERMINE_ORDER"
+            print(f"Standard game setup: Phase is {gs.current_game_phase}")
 
-        print(f"Game initialized. Phase: {gs.current_game_phase}. Players: {[p.name for p in gs.players]}. Unclaimed territories: {len(gs.unclaimed_territory_names)}")
+        if game_mode == "world_map":
+            # For world_map, directly initialize territories based on military power
+            # This bypasses player-driven setup phases like CLAIM_TERRITORIES and PLACE_ARMIES
+            # for the initial state. Subsequent turns will be normal.
+            print("World Map mode: Proceeding to auto-initialize territories.")
+            self._initialize_world_map_territories() # New method to be added
+            # After this, game should move to the first player's REINFORCE phase.
+            if gs.players and not gs.players[0].is_neutral : # Ensure first player is not neutral
+                 gs.first_player_of_game = gs.players[0] # Default to first configured player
+                 gs.current_player_index = 0
+            elif len(gs.players) > 1 and not gs.players[1].is_neutral: # Fallback if first is neutral
+                 gs.first_player_of_game = gs.players[1]
+                 gs.current_player_index = 1
+            else: # Fallback if many neutrals or only one player etc.
+                non_neutral_players = [p for p in gs.players if not p.is_neutral]
+                if non_neutral_players:
+                    gs.first_player_of_game = non_neutral_players[0]
+                    gs.current_player_index = gs.players.index(non_neutral_players[0])
+                else:
+                    print("Error: No non-neutral players to start the world_map game.")
+                    gs.current_game_phase = "ERROR"; return
+
+            first_player = gs.get_current_player()
+            if first_player: # Should always be true if not ERROR
+                first_player.armies_to_deploy, _ = self.calculate_reinforcements(first_player)
+            gs.current_game_phase = "REINFORCE"
+            print(f"World Map initialized. Phase: {gs.current_game_phase}. First player: {gs.first_player_of_game.name if gs.first_player_of_game else 'N/A'}")
+
+
+        print(f"Game initialized. Phase: {gs.current_game_phase}. Players: {[p.name for p in gs.players]}. Unclaimed territories (if applicable): {len(gs.unclaimed_territory_names)}")
+
+    def _initialize_world_map_territories(self):
+        """
+        Placeholder for initializing world map territories based on military power.
+        This will be implemented in a later step.
+        Assigns owners and initial armies.
+        """
+        gs = self.game_state
+        print("Engine: Initializing world map territories based on military power.")
+
+        try:
+            with open("military_power_ranking.json", 'r') as f:
+                power_ranking_data = json.load(f)
+        except FileNotFoundError:
+            print("Error: military_power_ranking.json not found. Cannot initialize world map armies by power.")
+            # Fallback: assign default 3 armies to each and distribute randomly
+            self._fallback_world_map_initialization()
+            return
+        except json.JSONDecodeError:
+            print("Error: Could not decode military_power_ranking.json. Cannot initialize world map armies by power.")
+            self._fallback_world_map_initialization()
+            return
+
+        # Create a lookup for faster access
+        power_map = {item["country"]: item["initial_armies"] for item in power_ranking_data}
+        default_armies_if_not_ranked = 3
+
+        non_neutral_players = [p for p in gs.players if not p.is_neutral]
+        if not non_neutral_players:
+            print("No non-neutral players to assign territories to in world map initialization.")
+            gs.current_game_phase = "ERROR"
+            return
+
+        num_players = len(non_neutral_players)
+        territory_list = list(gs.territories.values()) # These are country names from GeoJSON
+
+        if not territory_list:
+            print("No territories loaded for world map mode. Cannot initialize.")
+            gs.current_game_phase = "ERROR"
+            return
+
+        random.shuffle(territory_list) # Shuffle for initial assignment fairness
+
+        # Assign territories and armies
+        successful_assignments = 0
+        for i, territory in enumerate(territory_list):
+            player_to_assign = non_neutral_players[i % num_players]
+            territory.owner = player_to_assign
+
+            initial_armies = power_map.get(territory.name, default_armies_if_not_ranked)
+            # Ensure a minimum, e.g. 1 army even if data suggests 0 or less
+            territory.army_count = max(1, initial_armies)
+
+            player_to_assign.territories.append(territory)
+            # In this mode, initial_armies_pool and armies_placed_in_setup might not be used
+            # as armies are directly assigned. Or, we could sum them up.
+            # For now, let's assume they are not the primary mechanism for setup in this mode.
+            player_to_assign.initial_armies_pool += territory.army_count
+            player_to_assign.armies_placed_in_setup += territory.army_count
+            successful_assignments +=1
+
+        gs.unclaimed_territory_names.clear() # All territories are now claimed
+
+        if successful_assignments > 0 :
+            print(f"World Map Init: Assigned {successful_assignments} countries among {num_players} players with armies based on military ranking (default: {default_armies_if_not_ranked}).")
+            # Setup for the first turn (orchestrator will pick up from REINFORCE)
+            if gs.players and not gs.players[0].is_neutral:
+                gs.first_player_of_game = gs.players[0]
+                gs.current_player_index = 0
+            elif len(gs.players) > 1 and not gs.players[1].is_neutral:
+                gs.first_player_of_game = gs.players[1]
+                gs.current_player_index = 1
+            else:
+                active_players = [p for p in gs.players if not p.is_neutral]
+                if active_players:
+                    gs.first_player_of_game = active_players[0]
+                    gs.current_player_index = gs.players.index(active_players[0])
+                else:
+                    print("CRITICAL ERROR: No non-neutral players found after world map initialization.")
+                    gs.current_game_phase = "ERROR"; return
+
+            first_player = gs.get_current_player()
+            if first_player:
+                 # Reinforcements for the first turn are typically calculated based on territories,
+                 # not from a diminishing pool in this auto-setup.
+                 first_player.armies_to_deploy, _ = self.calculate_reinforcements(first_player)
+            gs.current_game_phase = "REINFORCE" # Directly move to reinforce
+        else:
+            print("World Map Init: No territories were successfully assigned. Check map data and player setup.")
+            gs.current_game_phase = "ERROR"
+
+
+    def _fallback_world_map_initialization(self):
+        """A simple fallback if military power ranking fails."""
+        gs = self.game_state
+        print("Engine: Using fallback world map initialization (random assignment, 3 armies each).")
+        non_neutral_players = [p for p in gs.players if not p.is_neutral]
+        if not non_neutral_players: return
+
+        num_players = len(non_neutral_players)
+        territory_list = list(gs.territories.values())
+        random.shuffle(territory_list)
+        armies_per_territory_placeholder = 3
+
+        for i, territory in enumerate(territory_list):
+            player_to_assign = non_neutral_players[i % num_players]
+            territory.owner = player_to_assign
+            territory.army_count = armies_per_territory_placeholder
+            player_to_assign.territories.append(territory)
+            player_to_assign.initial_armies_pool += armies_per_territory_placeholder
+            player_to_assign.armies_placed_in_setup += armies_per_territory_placeholder
+
+        gs.unclaimed_territory_names.clear()
+        print(f"Fallback World Map Init: Assigned {len(territory_list)} territories among {num_players} players with {armies_per_territory_placeholder} armies each.")
+        # Similar setup for first turn as in the main method
+        if gs.players and not gs.players[0].is_neutral:
+            gs.first_player_of_game = gs.players[0]
+            gs.current_player_index = 0
+        elif len(gs.players) > 1 and not gs.players[1].is_neutral:
+             gs.first_player_of_game = gs.players[1]
+             gs.current_player_index = 1
+        else:
+            active_players = [p for p in gs.players if not p.is_neutral]
+            if active_players:
+                gs.first_player_of_game = active_players[0]
+                gs.current_player_index = gs.players.index(active_players[0])
+            else:
+                gs.current_game_phase = "ERROR"; return
+
+        first_player = gs.get_current_player()
+        if first_player:
+            first_player.armies_to_deploy, _ = self.calculate_reinforcements(first_player)
+        gs.current_game_phase = "REINFORCE"
+
 
     def setup_two_player_initial_territory_assignment(self) -> dict:
         """
