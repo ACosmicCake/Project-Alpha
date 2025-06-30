@@ -19,41 +19,62 @@ TAB_COLOR_ACTIVE = GREEN
 TAB_COLOR_INACTIVE = GREY
 
 # Define a new color for the ocean
-OCEAN_BLUE = (60, 100, 180) # A pleasant blue for the ocean background
-CONTINENT_COLORS = { # Example colors, can be expanded
-    "North America": (200, 180, 150), # Tan-ish
-    "Asia": (150, 200, 150), # Light green-ish
-    "Default": (100, 100, 100) # Fallback continent color
+OCEAN_BLUE = (40, 60, 100) # Deeper, less saturated blue for ocean
+CONTINENT_COLORS = { # Example colors, can be expanded - these are not currently used for territory fill. Player color is used.
+    "North America": (200, 180, 150),
+    "Asia": (150, 200, 150),
+    "Default": (100, 100, 100)
 }
-ADJACENCY_LINE_COLOR = (50, 50, 50) # Dark grey for lines
+ADJACENCY_LINE_COLOR = (70, 70, 90) # Slightly lighter, bluish grey for adjacency lines
 
 DEFAULT_PLAYER_COLORS = {
     "Red": RED, "Blue": BLUE, "Green": GREEN, "Yellow": YELLOW,
     "Purple": (128, 0, 128), "Orange": (255, 165, 0), "Black": BLACK, "White": WHITE # White might be hard to see
 }
 
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 720
-MAP_AREA_WIDTH = 900
-SIDE_PANEL_WIDTH = SCREEN_WIDTH - MAP_AREA_WIDTH
-ACTION_LOG_HEIGHT = 150 # Adjusted
-THOUGHT_PANEL_HEIGHT = 200 # Adjusted
-CHAT_PANEL_HEIGHT = SCREEN_HEIGHT - ACTION_LOG_HEIGHT - THOUGHT_PANEL_HEIGHT - 50 # Adjusted for player info
-PLAYER_INFO_PANEL_HEIGHT = 50 # New panel
+# Increased screen size
+SCREEN_WIDTH = 1600
+SCREEN_HEIGHT = 900
 
-TAB_HEIGHT = 30
-TAB_FONT_SIZE = 20
+# Adjusted layout for new screen size
+MAP_AREA_WIDTH = 1100  # Increased map area
+SIDE_PANEL_WIDTH = SCREEN_WIDTH - MAP_AREA_WIDTH # Recalculate side panel width
 
+# Panel heights - give more relative space to thoughts and chat
+PLAYER_INFO_PANEL_HEIGHT = 60
+ACTION_LOG_HEIGHT = 150
+THOUGHT_PANEL_HEIGHT = (SCREEN_HEIGHT - PLAYER_INFO_PANEL_HEIGHT - ACTION_LOG_HEIGHT) * 0.5 # Adjusted to take 50% of remaining space
+CHAT_PANEL_HEIGHT = (SCREEN_HEIGHT - PLAYER_INFO_PANEL_HEIGHT - ACTION_LOG_HEIGHT) * 0.5 # Adjusted to take 50% of remaining space
+
+TAB_HEIGHT = 35 # Slightly larger tabs
+TAB_FONT_SIZE = 22 # Slightly larger tab font
+INFO_FONT_SIZE = 20 # For player info panel
+STANDARD_FONT_SIZE = 26 # For general text
+LARGE_FONT_SIZE = 40 # For titles
+
+# Define some more colors for UI elements
+PANEL_BG_COLOR = (30, 30, 40) # Dark bluish grey
+PANEL_BORDER_COLOR = (80, 80, 100) # Lighter bluish grey
+TEXT_COLOR_LIGHT = (230, 230, 230) # Off-white
+TEXT_COLOR_MEDIUM = (180, 180, 180) # Light grey
+TEXT_COLOR_DARK = (130, 130, 130) # Medium grey
+ACTIVE_TAB_BG = (70, 130, 70) # Muted green
+INACTIVE_TAB_BG = (50, 50, 60) # Darker tab color
+TEXT_COLOR_HEADER = (200, 200, 220) # Light lavender for headers
 
 class GameGUI:
     def __init__(self, engine: GameEngine, orchestrator, map_display_config_file: str = "map_display_config.json", game_mode: str = "standard"): # Added parameters
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption(f"LLM Risk Game - {game_mode.replace('_', ' ').title()} Mode") # Update caption
-        self.font = pygame.font.SysFont(None, 24)
-        self.large_font = pygame.font.SysFont(None, 36)
-        self.tab_font = pygame.font.SysFont(None, TAB_FONT_SIZE)
-        self.ocean_color = OCEAN_BLUE
+
+        # Initialize fonts
+        self.info_font = pygame.font.SysFont(None, INFO_FONT_SIZE)
+        self.font = pygame.font.SysFont(None, STANDARD_FONT_SIZE) # Standard text font
+        self.large_font = pygame.font.SysFont(None, LARGE_FONT_SIZE) # Titles
+        self.tab_font = pygame.font.SysFont(None, TAB_FONT_SIZE) # Tabs
+
+        self.ocean_color = OCEAN_BLUE # Kept as is, can be changed in visual polish stage
         self.clock = pygame.time.Clock()
 
         self.engine = engine
@@ -86,6 +107,21 @@ class GameGUI:
         self.running = False
         self.colors = DEFAULT_PLAYER_COLORS
 
+        # Map interaction attributes
+        self.map_zoom = 1.0
+        self.min_zoom = 0.3
+        self.max_zoom = 3.0
+        self.zoom_step = 0.1
+        self.map_offset_x = 0
+        self.map_offset_y = 0
+        self.is_panning = False
+        self.pan_start_pos = (0, 0)
+
+        # Store original coordinates before zoom/pan transformations for calculations
+        self.original_territory_coordinates: dict[str, tuple[int, int]] = {}
+        self.original_territory_polygons: dict[str, list[tuple[int,int]]] = {}
+
+
     def _load_map_display_config(self, config_file: str):
         print(f"DEBUG: GameGUI._load_map_display_config - Attempting to load display config from '{config_file}' for game_mode '{self.game_mode}'.")
         try:
@@ -96,35 +132,43 @@ class GameGUI:
                 display_data = json.load(f)
 
             if self.game_mode == "world_map":
-                self.territory_polygons = display_data.get("territory_polygons", {})
-                self.territory_coordinates = display_data.get("territory_centroids", {})
+                # Store raw loaded data into original_* attributes
+                self.original_territory_polygons = display_data.get("territory_polygons", {})
+                self.original_territory_coordinates = display_data.get("territory_centroids", {})
+
+                # self.territory_polygons and self.territory_coordinates will be updated by _apply_zoom_and_pan
+                # For initial load, we can copy them or let the first draw call populate them.
+                # It's safer to initialize them here.
+                self.territory_polygons = self.original_territory_polygons.copy()
+                self.territory_coordinates = self.original_territory_coordinates.copy()
+
 
                 print(f"DEBUG: GameGUI._load_map_display_config - Loaded for 'world_map'.")
-                print(f"DEBUG: GameGUI._load_map_display_config - Number of polygon entries: {len(self.territory_polygons)}")
-                print(f"DEBUG: GameGUI._load_map_display_config - Number of centroid entries: {len(self.territory_coordinates)}")
+                print(f"DEBUG: GameGUI._load_map_display_config - Number of original polygon entries: {len(self.original_territory_polygons)}")
+                print(f"DEBUG: GameGUI._load_map_display_config - Number of original centroid entries: {len(self.original_territory_coordinates)}")
 
-                if not isinstance(self.territory_polygons, dict) or not isinstance(self.territory_coordinates, dict):
+                if not isinstance(self.original_territory_polygons, dict) or not isinstance(self.original_territory_coordinates, dict):
                     print(f"DEBUG: GameGUI._load_map_display_config - WARNING: World map display config '{config_file}' has unexpected structure. Creating dummy data.")
-                    self._create_dummy_world_map_display_data(config_file)
+                    self._create_dummy_world_map_display_data(config_file) # This will populate original_ and current
                     return
 
                 # Log a sample for verification
-                if self.territory_polygons:
-                    sample_terr_name = next(iter(self.territory_polygons))
-                    print(f"DEBUG: GameGUI._load_map_display_config - Sample polygon for '{sample_terr_name}': {str(self.territory_polygons[sample_terr_name])[:200]}...")
-                if self.territory_coordinates:
-                    sample_cent_name = next(iter(self.territory_coordinates))
-                    print(f"DEBUG: GameGUI._load_map_display_config - Sample centroid for '{sample_cent_name}': {self.territory_coordinates[sample_cent_name]}")
+                if self.original_territory_polygons:
+                    sample_terr_name = next(iter(self.original_territory_polygons))
+                    print(f"DEBUG: GameGUI._load_map_display_config - Sample original polygon for '{sample_terr_name}': {str(self.original_territory_polygons[sample_terr_name])[:200]}...")
+                if self.original_territory_coordinates:
+                    sample_cent_name = next(iter(self.original_territory_coordinates))
+                    print(f"DEBUG: GameGUI._load_map_display_config - Sample original centroid for '{sample_cent_name}': {self.original_territory_coordinates[sample_cent_name]}")
 
                 valid_polygons_format = True
-                for name, poly_parts in self.territory_polygons.items():
+                for name, poly_parts in self.original_territory_polygons.items():
                     if not isinstance(poly_parts, list): valid_polygons_format = False; break
                     for part in poly_parts:
                         if not isinstance(part, list) or not all(isinstance(pt, (list, tuple)) and len(pt) == 2 and all(isinstance(coord_val, (int, float)) for coord_val in pt) for pt in part):
                             valid_polygons_format = False; print(f"DEBUG: Format error in polygon part for {name}: {part}"); break
                     if not valid_polygons_format: break
 
-                valid_centroids_format = all(isinstance(coord, (list, tuple)) and len(coord) == 2 and all(isinstance(val, (int, float)) for val in coord) for coord in self.territory_coordinates.values())
+                valid_centroids_format = all(isinstance(coord, (list, tuple)) and len(coord) == 2 and all(isinstance(val, (int, float)) for val in coord) for coord in self.original_territory_coordinates.values())
 
                 if not valid_polygons_format:
                     print(f"DEBUG: GameGUI._load_map_display_config - WARNING: Polygon data format error in '{config_file}'.")
@@ -136,19 +180,20 @@ class GameGUI:
                     self._create_dummy_world_map_display_data(config_file)
                     return
 
-                if not self.territory_polygons and not self.territory_coordinates:
+                if not self.original_territory_polygons and not self.original_territory_coordinates:
                     print(f"DEBUG: GameGUI._load_map_display_config - WARNING: World map display config '{config_file}' is empty. Creating dummy data.")
                     self._create_dummy_world_map_display_data(config_file)
 
             else: # Standard mode
-                self.territory_coordinates = display_data
-                print(f"DEBUG: GameGUI._load_map_display_config - Loaded for 'standard' mode. Number of territories: {len(self.territory_coordinates)}")
-                if not isinstance(self.territory_coordinates, dict):
+                self.original_territory_coordinates = display_data.copy() # Store original
+                self.territory_coordinates = display_data # Current (will be transformed)
+                print(f"DEBUG: GameGUI._load_map_display_config - Loaded for 'standard' mode. Number of original territories: {len(self.original_territory_coordinates)}")
+                if not isinstance(self.original_territory_coordinates, dict):
                     print(f"Warning: Standard map display config '{config_file}' is not a dictionary. Creating dummy data.")
-                    self._create_dummy_standard_map_coordinates(config_file)
+                    self._create_dummy_standard_map_coordinates(config_file) # This populates original_ and current
                     return
                 print(f"Successfully loaded standard territory coordinates from '{config_file}'.")
-                if not self.territory_coordinates:
+                if not self.original_territory_coordinates:
                      self._create_dummy_standard_map_coordinates(config_file) # Renamed for clarity
 
         except FileNotFoundError:
@@ -171,44 +216,76 @@ class GameGUI:
         x_offset, y_offset = 50, 50
         for i, name in enumerate(self.engine.game_state.territories.keys()):
             dummy_coords[name] = (x_offset + (i % 5) * 150, y_offset + (i // 5) * 100)
-        self.territory_coordinates = dummy_coords
+
+        self.original_territory_coordinates = dummy_coords.copy()
+        self.territory_coordinates = dummy_coords # Current will be transformed
         try:
-            with open(config_file, 'w') as f: json.dump(self.territory_coordinates, f, indent=2)
+            with open(config_file, 'w') as f: json.dump(self.original_territory_coordinates, f, indent=2) # Save original
             print(f"Created dummy standard map coordinates file '{config_file}'.")
         except IOError: print(f"Could not write dummy standard map coords to '{config_file}'.")
 
     def _create_dummy_world_map_display_data(self, config_file: str):
-        # For world map, we'd ideally have polygons. For dummy, just use centroids like standard.
         if not self.engine.game_state.territories: return
         dummy_centroids = {}
-        dummy_polygons = {} # Will be empty for this dummy version
+        dummy_polygons = {}
         x_offset, y_offset = 50, 50
 
-        # This part assumes territories are already loaded in engine for the world map
-        # which might not be true if world_map_config.json isn't created yet.
-        # For now, it will create an empty config if territories aren't there.
         territory_names = list(self.engine.game_state.territories.keys())
-        if not territory_names: # If no territories (e.g. world_map_config.json not yet processed)
+        if not territory_names:
             print("GUI: No territories in engine to create dummy world map display data. Config will be empty.")
 
         for i, name in enumerate(territory_names):
-            dummy_centroids[name] = (x_offset + (i % 8) * 100, y_offset + (i // 8) * 70) # Adjust layout
-            # Dummy polygon (a small square around the centroid)
-            cx, cy = dummy_centroids[name]
-            dummy_polygons[name] = [(cx-10, cy-10), (cx+10, cy-10), (cx+10, cy+10), (cx-10, cy+10)]
+            cx_orig, cy_orig = (x_offset + (i % 8) * 100, y_offset + (i // 8) * 70)
+            dummy_centroids[name] = (cx_orig, cy_orig)
+            dummy_polygons[name] = [[(cx_orig-10, cy_orig-10), (cx_orig+10, cy_orig-10), (cx_orig+10, cy_orig+10), (cx_orig-10, cy_orig+10)]] # Polygon parts are lists of lists
 
-
-        self.territory_coordinates = dummy_centroids
-        self.territory_polygons = dummy_polygons
+        self.original_territory_coordinates = dummy_centroids.copy()
+        self.territory_coordinates = dummy_centroids # Current
+        self.original_territory_polygons = dummy_polygons.copy()
+        self.territory_polygons = dummy_polygons # Current
 
         data_to_save = {
-            "territory_centroids": self.territory_coordinates,
-            "territory_polygons": self.territory_polygons
+            "territory_centroids": self.original_territory_coordinates, # Save original
+            "territory_polygons": self.original_territory_polygons # Save original
         }
         try:
             with open(config_file, 'w') as f: json.dump(data_to_save, f, indent=2)
             print(f"Created dummy world map display data file '{config_file}'.")
         except IOError: print(f"Could not write dummy world map display data to '{config_file}'.")
+
+    def _apply_zoom_and_pan(self):
+        """
+        Recalculates self.territory_coordinates and self.territory_polygons
+        based on self.original_*, self.map_zoom, self.map_offset_x, self.map_offset_y.
+        This should be called after zoom or pan changes, before drawing the map.
+        """
+        # Get the center of the map area, which will be the zoom focus point
+        map_center_x = MAP_AREA_WIDTH / 2
+        map_center_y = SCREEN_HEIGHT / 2 # Assuming map takes full screen height for now for simplicity
+
+        # Apply to centroids (self.territory_coordinates)
+        self.territory_coordinates = {}
+        for name, (orig_x, orig_y) in self.original_territory_coordinates.items():
+            # Translate to map_center as origin, scale, then translate back, then apply pan
+            scaled_x = (orig_x - map_center_x) * self.map_zoom + map_center_x + self.map_offset_x
+            scaled_y = (orig_y - map_center_y) * self.map_zoom + map_center_y + self.map_offset_y
+            self.territory_coordinates[name] = (int(scaled_x), int(scaled_y))
+
+        # Apply to polygons (self.territory_polygons)
+        self.territory_polygons = {}
+        if hasattr(self, 'original_territory_polygons'): # Check if it exists (for standard mode)
+            for name, list_of_orig_polygon_parts in self.original_territory_polygons.items():
+                scaled_polygon_parts = []
+                for orig_polygon_part in list_of_orig_polygon_parts:
+                    scaled_part = []
+                    for orig_px, orig_py in orig_polygon_part:
+                        scaled_px = (orig_px - map_center_x) * self.map_zoom + map_center_x + self.map_offset_x
+                        scaled_py = (orig_py - map_center_y) * self.map_zoom + map_center_y + self.map_offset_y
+                        scaled_part.append((int(scaled_px), int(scaled_py)))
+                    scaled_polygon_parts.append(scaled_part)
+                self.territory_polygons[name] = scaled_polygon_parts
+        # print(f"DEBUG: Applied zoom {self.map_zoom}, offset ({self.map_offset_x}, {self.map_offset_y})")
+
 
     def update(self, game_state: GameState, global_chat_log: list[dict], private_chat_conversations: dict):
         self.current_game_state = game_state
@@ -271,15 +348,25 @@ class GameGUI:
             if territory_obj.owner and territory_obj.owner.color:
                 owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
             pygame.draw.circle(self.screen, owner_color, coords, 20)
-            pygame.draw.circle(self.screen, BLACK, coords, 20, 2)
-            army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
-            army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
-            self.screen.blit(army_text, army_text.get_rect(center=coords))
-            name_surf = self.font.render(terr_name, True, WHITE)
-            name_rect = name_surf.get_rect(center=(coords[0], coords[1] - 30))
-            name_bg_rect = name_rect.inflate(4, 4)
-            pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
+            pygame.draw.circle(self.screen, BLACK, coords, 20, 2) # Keep border for circles
+
+            # Army count text (centered on circle)
+            army_text_color = TEXT_COLOR_LIGHT if sum(owner_color) < 384 else TEXT_COLOR_DARK # Light on dark, dark on light
+            army_text_surf = self.font.render(str(territory_obj.army_count), True, army_text_color)
+            army_text_rect = army_text_surf.get_rect(center=coords)
+            self.screen.blit(army_text_surf, army_text_rect)
+
+            # Territory name text (below circle)
+            name_surf = self.font.render(terr_name, True, TEXT_COLOR_LIGHT)
+            name_rect = name_surf.get_rect(center=(coords[0], coords[1] - 35)) # Adjusted offset
+
+            # Semi-transparent background for name text
+            name_bg_surface = pygame.Surface(name_rect.inflate(6, 4).size, pygame.SRCALPHA)
+            name_bg_surface.fill((*PANEL_BG_COLOR, 180)) # PANEL_BG_COLOR with alpha
+            self.screen.blit(name_bg_surface, name_rect.inflate(6,4).topleft)
+
             self.screen.blit(name_surf, name_rect)
+
 
     def _draw_world_map_polygons(self, game_state: GameState):
         gs_to_draw = game_state
@@ -365,62 +452,95 @@ class GameGUI:
 
             # Draw army count and name at the screen_centroid_coords (if available)
             if screen_centroid_coords:
-                army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
-                army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
+                # Army count text with semi-transparent background
+                army_text_color = TEXT_COLOR_LIGHT if sum(owner_color) < 384 else TEXT_COLOR_DARK
+                army_text_surf = self.font.render(str(territory_obj.army_count), True, army_text_color)
+                army_text_rect = army_text_surf.get_rect(center=screen_centroid_coords)
 
-                army_text_rect = army_text.get_rect(center=screen_centroid_coords)
-                army_bg_rect = army_text_rect.inflate(4,2)
-                pygame.draw.rect(self.screen, owner_color, army_bg_rect, border_radius=3)
-                pygame.draw.rect(self.screen, BLACK, army_bg_rect, 1, border_radius=3)
-                self.screen.blit(army_text, army_text_rect)
+                army_bg_surface = pygame.Surface(army_text_rect.inflate(8, 4).size, pygame.SRCALPHA)
+                # Use owner's color for bg, but make it more transparent
+                bg_owner_color_with_alpha = (*owner_color[:3], 180) if len(owner_color) == 3 else (*owner_color[:3], owner_color[3] * 0.7 if len(owner_color) == 4 else 180) # handle if owner_color already has alpha
+                army_bg_surface.fill(bg_owner_color_with_alpha)
+                self.screen.blit(army_bg_surface, army_text_rect.inflate(8,4).topleft)
+                pygame.draw.rect(self.screen, PANEL_BORDER_COLOR, army_text_rect.inflate(8,4), 1, border_radius=3) # Thin border for army count
+                self.screen.blit(army_text_surf, army_text_rect)
 
-                name_surf = self.font.render(terr_name, True, WHITE)
-                name_rect = name_surf.get_rect(center=(screen_centroid_coords[0], screen_centroid_coords[1] + 15)) # Offset below
-                name_bg_rect = name_rect.inflate(4,2)
-                pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
+                # Territory name text (offset below centroid) with semi-transparent background
+                name_font_size_adjust = max(0, int(5 - self.map_zoom * 5)) # Smaller font for name when zoomed out
+                current_name_font = pygame.font.SysFont(None, STANDARD_FONT_SIZE - name_font_size_adjust)
+
+                name_surf = current_name_font.render(terr_name, True, TEXT_COLOR_LIGHT)
+                name_rect = name_surf.get_rect(center=(screen_centroid_coords[0], screen_centroid_coords[1] + 20 + (STANDARD_FONT_SIZE - name_font_size_adjust)/2)) # Adjusted offset
+
+                name_bg_surface = pygame.Surface(name_rect.inflate(6, 4).size, pygame.SRCALPHA)
+                name_bg_surface.fill((*PANEL_BG_COLOR, 180)) # PANEL_BG_COLOR with alpha
+                self.screen.blit(name_bg_surface, name_rect.inflate(6,4).topleft)
                 self.screen.blit(name_surf, name_rect)
+
 
     def draw_player_info_panel(self, game_state: GameState):
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, SCREEN_HEIGHT - PLAYER_INFO_PANEL_HEIGHT, SIDE_PANEL_WIDTH, PLAYER_INFO_PANEL_HEIGHT)
-        pygame.draw.rect(self.screen, (20,20,20), panel_rect)
-        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
+        pygame.draw.rect(self.screen, PANEL_BG_COLOR, panel_rect)
+        pygame.draw.rect(self.screen, PANEL_BORDER_COLOR, panel_rect, 1)
 
         gs_to_draw = game_state
         if not gs_to_draw: gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
         current_player = gs_to_draw.get_current_player()
-        y_pos = panel_rect.y + 5
+
+        padding = 5
+        line_spacing = self.info_font.get_linesize() + 2
+        y_pos = panel_rect.y + padding
+
         if current_player:
             info_text = f"Turn: {gs_to_draw.current_turn_number} Player: {current_player.name} ({current_player.color})"
-            info_surface = self.font.render(info_text, True, WHITE)
-            self.screen.blit(info_surface, (panel_rect.x + 5, y_pos))
-            y_pos += 20
+            info_surface = self.info_font.render(info_text, True, TEXT_COLOR_LIGHT)
+            self.screen.blit(info_surface, (panel_rect.x + padding, y_pos))
+            y_pos += line_spacing
 
             phase_text = f"Phase: {gs_to_draw.current_game_phase}"
             if self.orchestrator and self.orchestrator.ai_is_thinking and self.orchestrator.active_ai_player_name == current_player.name:
                 phase_text += " (Thinking...)"
 
-            cards_text = f"Cards: {len(current_player.hand)}, Deploy: {current_player.armies_to_deploy}, {phase_text}"
-            cards_surface = self.font.render(cards_text, True, WHITE)
-            self.screen.blit(cards_surface, (panel_rect.x + 5, y_pos))
+            cards_text = f"Cards: {len(current_player.hand)}, Deploy: {current_player.armies_to_deploy}"
+            phase_surface = self.info_font.render(phase_text, True, TEXT_COLOR_LIGHT)
+            self.screen.blit(phase_surface, (panel_rect.x + padding, y_pos))
+            y_pos += line_spacing
+            cards_surface = self.info_font.render(cards_text, True, TEXT_COLOR_LIGHT)
+            self.screen.blit(cards_surface, (panel_rect.x + padding, y_pos))
+
         elif self.orchestrator and self.orchestrator.ai_is_thinking and self.orchestrator.active_ai_player_name:
-            # Case where current_player might be None briefly during transitions, but an AI is thinking
             thinking_text = f"AI ({self.orchestrator.active_ai_player_name}) is thinking..."
-            thinking_surface = self.font.render(thinking_text, True, YELLOW) # Yellow to stand out
-            self.screen.blit(thinking_surface, (panel_rect.x + 5, y_pos))
+            thinking_surface = self.info_font.render(thinking_text, True, YELLOW) # Yellow for emphasis
+            self.screen.blit(thinking_surface, (panel_rect.x + padding, y_pos))
 
 
     def draw_action_log_panel(self):
+        # Action Log is at the top of the side panel
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, 0, SIDE_PANEL_WIDTH, ACTION_LOG_HEIGHT)
-        pygame.draw.rect(self.screen, DARK_GREY, panel_rect)
-        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
-        title_text = self.large_font.render("Action Log", True, WHITE)
-        self.screen.blit(title_text, (panel_rect.x + 10, panel_rect.y + 5))
-        y_offset = 35
-        for i, log_entry in enumerate(reversed(self.action_log[-6:])):
-            entry_surface = self.font.render(log_entry, True, LIGHT_GREY)
-            self.screen.blit(entry_surface, (panel_rect.x + 10, panel_rect.y + y_offset + i * 20))
+        pygame.draw.rect(self.screen, PANEL_BG_COLOR, panel_rect)
+        pygame.draw.rect(self.screen, PANEL_BORDER_COLOR, panel_rect, 1)
+
+        title_text_surface = self.large_font.render("Action Log", True, TEXT_COLOR_HEADER)
+        title_rect = title_text_surface.get_rect(topleft=(panel_rect.x + 10, panel_rect.y + 5))
+        self.screen.blit(title_text_surface, title_rect)
+
+        y_offset = title_rect.bottom + 5 # Start entries below title
+        line_height = self.font.get_linesize()
+        max_entries = (panel_rect.height - y_offset - 5) // line_height # Calculate how many entries fit
+
+        for i, log_entry in enumerate(reversed(self.action_log[-max_entries:])):
+            entry_surface = self.font.render(log_entry, True, TEXT_COLOR_MEDIUM)
+            self.screen.blit(entry_surface, (panel_rect.x + 10, y_offset + i * line_height))
 
     def _render_text_wrapped(self, surface, text, rect, font, color):
+        # Ensure there's a minimum height for rendering, e.g., one line_height + padding
+        min_render_height = font.get_linesize() + 10
+        if rect.height < min_render_height:
+            # Not enough space to render anything meaningful, or could render ellipsis.
+            # For now, just skip if too small to avoid issues.
+            # print(f"Warning: Text wrap rect too small. Height: {rect.height}, Min: {min_render_height}")
+            return
+
         words = text.split(' ')
         lines = []
         current_line = ""
@@ -445,89 +565,156 @@ class GameGUI:
 
     def draw_tabs(self, base_y_offset: int, panel_title: str, tab_options: list[str], active_tab_var_name: str, tab_rects_dict_name: str, mouse_click_pos: tuple[int, int] | None):
         tab_bar_rect = pygame.Rect(MAP_AREA_WIDTH, base_y_offset, SIDE_PANEL_WIDTH, TAB_HEIGHT)
-        pygame.draw.rect(self.screen, DARK_GREY, tab_bar_rect)
+        # pygame.draw.rect(self.screen, DARK_GREY, tab_bar_rect) # No separate bar bg, tabs fill it
 
         tab_rects_dict = getattr(self, tab_rects_dict_name)
         tab_rects_dict.clear()
 
-        current_x = MAP_AREA_WIDTH + 5
-        max_tab_width = (SIDE_PANEL_WIDTH - 10) / len(tab_options) if tab_options else SIDE_PANEL_WIDTH - 10
+        padding_x = 5 # Padding on left/right of tab bar
+        gap_between_tabs = 2
+        available_width_for_tabs = SIDE_PANEL_WIDTH - (2 * padding_x)
+
+        current_x = MAP_AREA_WIDTH + padding_x
+
+        # Calculate tab width: distribute available space, or use text width if enough space
+        num_tabs = len(tab_options) if tab_options else 1
+        calculated_tab_width = (available_width_for_tabs - (num_tabs - 1) * gap_between_tabs) / num_tabs
+        calculated_tab_width = max(calculated_tab_width, 50) # Minimum tab width
+
 
         for option_name in tab_options:
-            text_surface = self.tab_font.render(option_name[:10], True, BLACK) # Truncate for display
-            text_width, text_height = text_surface.get_size()
-            tab_width = min(text_width + 10, max_tab_width)
-
-            tab_rect = pygame.Rect(current_x, base_y_offset, tab_width, TAB_HEIGHT)
+            # Use a slightly lighter text color for active tab for better contrast
             is_active = getattr(self, active_tab_var_name) == option_name
-            tab_bg_color = TAB_COLOR_ACTIVE if is_active else TAB_COLOR_INACTIVE
+            text_color = TEXT_COLOR_LIGHT if is_active else TEXT_COLOR_MEDIUM
 
-            pygame.draw.rect(self.screen, tab_bg_color, tab_rect)
-            pygame.draw.rect(self.screen, BLACK, tab_rect, 1) # Border
-            self.screen.blit(text_surface, (tab_rect.x + (tab_width - text_width) // 2, tab_rect.y + (TAB_HEIGHT - text_height) // 2))
+            # Truncate text if it's too long for the tab
+            # Estimate max chars based on tab_width and font size (approx)
+            avg_char_width = self.tab_font.size("a")[0]
+            max_chars = int((calculated_tab_width - 10) / avg_char_width) if avg_char_width > 0 else 10
+            display_name = option_name
+            if len(option_name) > max_chars and max_chars > 3:
+                display_name = option_name[:max_chars-3] + "..."
+
+            text_surface = self.tab_font.render(display_name, True, text_color)
+            text_width, text_height = text_surface.get_size()
+
+            # Ensure actual tab width isn't smaller than text
+            actual_tab_width = max(calculated_tab_width, text_width + 10)
+
+            tab_rect = pygame.Rect(current_x, base_y_offset, actual_tab_width, TAB_HEIGHT)
+            tab_bg_color = ACTIVE_TAB_BG if is_active else INACTIVE_TAB_BG
+
+            pygame.draw.rect(self.screen, tab_bg_color, tab_rect, border_top_left_radius=5, border_top_right_radius=5)
+            # pygame.draw.rect(self.screen, PANEL_BORDER_COLOR, tab_rect, 1, border_top_left_radius=5, border_top_right_radius=5) # Border
+
+            # Center text in tab
+            text_x = tab_rect.x + (actual_tab_width - text_width) // 2
+            text_y = tab_rect.y + (TAB_HEIGHT - text_height) // 2
+            self.screen.blit(text_surface, (text_x, text_y))
 
             tab_rects_dict[option_name] = tab_rect
 
             if mouse_click_pos and tab_rect.collidepoint(mouse_click_pos):
                 setattr(self, active_tab_var_name, option_name)
-                print(f"GUI: Switched {panel_title} tab to {option_name}")
+                # print(f"GUI: Switched {panel_title} tab to {option_name}") # Keep for debug if needed
 
-            current_x += tab_width + 2 # Small gap
+            current_x += actual_tab_width + gap_between_tabs
+
+        # Draw a line under the tabs to connect to the panel below
+        line_y = base_y_offset + TAB_HEIGHT -1 # -1 to overlap with panel border
+        pygame.draw.line(self.screen, PANEL_BORDER_COLOR, (MAP_AREA_WIDTH, line_y), (SCREEN_WIDTH, line_y), 1)
 
         return base_y_offset + TAB_HEIGHT
 
 
     def draw_ai_thought_panel(self, mouse_click_pos: tuple[int, int] | None):
+        # AI Thought panel is below Action Log
+        base_y = ACTION_LOG_HEIGHT
         tab_options = self.player_names_for_tabs
         if not self.active_tab_thought_panel and tab_options:
             self.active_tab_thought_panel = tab_options[0]
 
-        content_y_start = self.draw_tabs(ACTION_LOG_HEIGHT, "AI Thoughts", tab_options, "active_tab_thought_panel", "thought_tab_rects", mouse_click_pos)
+        content_y_start = self.draw_tabs(base_y, "AI Thoughts", tab_options, "active_tab_thought_panel", "thought_tab_rects", mouse_click_pos)
 
+        # Panel for the content of the thoughts
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, content_y_start, SIDE_PANEL_WIDTH, THOUGHT_PANEL_HEIGHT - TAB_HEIGHT)
-        pygame.draw.rect(self.screen, (40,40,40), panel_rect)
-        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
+        pygame.draw.rect(self.screen, PANEL_BG_COLOR, panel_rect)
+        pygame.draw.rect(self.screen, PANEL_BORDER_COLOR, panel_rect, 1) # Border for the content area
 
         player_to_show = self.active_tab_thought_panel
         current_thoughts_map = self.ai_thoughts
 
         if player_to_show and player_to_show in current_thoughts_map:
             thought = current_thoughts_map[player_to_show]
-            self._render_text_wrapped(self.screen, thought, panel_rect, self.font, WHITE)
+            self._render_text_wrapped(self.screen, thought, panel_rect.inflate(-10, -10), self.font, TEXT_COLOR_LIGHT) # Padding for text
         else:
             no_thought_text_str = f"No thoughts for {player_to_show if player_to_show else 'N/A'}."
-            no_thought_text = self.font.render(no_thought_text_str, True, GREY)
-            self.screen.blit(no_thought_text, (panel_rect.x + 5, panel_rect.y + 5))
+            no_thought_text = self.font.render(no_thought_text_str, True, TEXT_COLOR_DARK)
+            text_rect = no_thought_text.get_rect(center=panel_rect.center)
+            self.screen.blit(no_thought_text, text_rect)
 
     def draw_chat_panel(self, mouse_click_pos: tuple[int, int] | None):
+        # Chat panel is below AI Thought panel
         base_y = ACTION_LOG_HEIGHT + THOUGHT_PANEL_HEIGHT
 
         chat_tab_options = ["global"] + list(getattr(self, 'private_chat_conversations_map', {}).keys())
         content_y_start = self.draw_tabs(base_y, "Chat", chat_tab_options, "active_tab_chat_panel", "chat_tab_rects", mouse_click_pos)
 
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, content_y_start, SIDE_PANEL_WIDTH, CHAT_PANEL_HEIGHT - TAB_HEIGHT)
-        pygame.draw.rect(self.screen, (50,50,50), panel_rect)
-        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
+        pygame.draw.rect(self.screen, PANEL_BG_COLOR, panel_rect)
+        pygame.draw.rect(self.screen, PANEL_BORDER_COLOR, panel_rect, 1)
 
         messages_to_render = []
-        if self.active_tab_chat_panel == "global":
-            messages_to_render = getattr(self, 'global_chat_messages', [])[-10:] # Last 10 global
+        active_chat_key = self.active_tab_chat_panel
+
+        if active_chat_key == "global":
+            messages_to_render = getattr(self, 'global_chat_messages', [])
         else:
             all_private_chats = getattr(self, 'private_chat_conversations_map', {})
-            messages_to_render = all_private_chats.get(self.active_tab_chat_panel, [])[-10:] # Last 10 for this private chat
+            messages_to_render = all_private_chats.get(active_chat_key, [])
 
-        y_render_offset = panel_rect.y + 5
-        for msg_data in reversed(messages_to_render):
-            msg_str = f"{msg_data.get('sender','System')}: {msg_data.get('message','')}"
-            # Simple rendering for now, could wrap text if needed
-            if y_render_offset + self.font.get_linesize() > panel_rect.bottom - 5: break
-            msg_surface = self.font.render(msg_str[:50], True, WHITE) # Truncate long messages
-            self.screen.blit(msg_surface, (panel_rect.x + 5, y_render_offset))
-            y_render_offset += self.font.get_linesize()
+        padding = 5
+        y_render_offset = panel_rect.y + padding
+        line_height = self.font.get_linesize()
+        max_messages_to_show = (panel_rect.height - (2 * padding)) // line_height
+
+        # Display latest messages at the bottom, so iterate through relevant slice of messages
+        start_index = max(0, len(messages_to_render) - max_messages_to_show)
+
+        for msg_data in messages_to_render[start_index:]:
+            sender = msg_data.get('sender','System')
+            message = msg_data.get('message','')
+            msg_str = f"{sender}: {message}"
+
+            # Simple wrap for chat messages manually if too long
+            # This is a very basic wrap, could be improved with _render_text_wrapped if complex formatting is needed
+            max_chars_line = (panel_rect.width - (2*padding)) // (self.font.size("a")[0] if self.font.size("a")[0] > 0 else 1)
+
+            lines_for_message = []
+            current_line_msg = ""
+            for word in msg_str.split(" "):
+                if self.font.size(current_line_msg + word + " ")[0] < (panel_rect.width - (2*padding)):
+                    current_line_msg += word + " "
+                else:
+                    lines_for_message.append(current_line_msg)
+                    current_line_msg = word + " "
+            lines_for_message.append(current_line_msg)
+
+
+            for line_text in lines_for_message:
+                if y_render_offset + line_height > panel_rect.bottom - padding: break # Check bounds
+                msg_surface = self.font.render(line_text.strip(), True, TEXT_COLOR_LIGHT)
+                self.screen.blit(msg_surface, (panel_rect.x + padding, y_render_offset))
+                y_render_offset += line_height
+            if y_render_offset + line_height > panel_rect.bottom - padding: break
+
 
         if not messages_to_render:
-            no_chat_text = self.font.render(f"No messages in chat '{self.active_tab_chat_panel}'.", True, GREY)
-            self.screen.blit(no_chat_text, (panel_rect.x + 5, panel_rect.y + 5))
+            no_chat_text_str = f"No messages in '{active_chat_key}'."
+            no_chat_text = self.font.render(no_chat_text_str, True, TEXT_COLOR_DARK)
+            text_rect = no_chat_text.get_rect(center=panel_rect.center)
+            self.screen.blit(no_chat_text, text_rect)
+
 
     def log_action(self, action_string: str):
         self.action_log.append(action_string)
@@ -536,8 +723,8 @@ class GameGUI:
     def update_thought_panel(self, player_name: str, thought: str):
         self.ai_thoughts[player_name] = thought
         # Optionally, immediately switch to this player's thought tab:
-        # if player_name in self.player_names_for_tabs:
-        #    self.active_tab_thought_panel = player_name
+        if player_name in self.player_names_for_tabs:
+           self.active_tab_thought_panel = player_name
 
     def log_private_chat(self, conversation_log: list[dict], p1_name: str, p2_name: str):
         if not conversation_log: return
@@ -575,6 +762,7 @@ class GameGUI:
     def run(self):
         self.running = True
         mouse_click_pos = None
+        needs_redraw = True # Flag to redraw map only when necessary (e.g. after pan/zoom)
 
         # Ensure player_names_for_tabs is initialized if game state is available
         if self.current_game_state and self.current_game_state.players:
@@ -582,31 +770,78 @@ class GameGUI:
              if not self.active_tab_thought_panel and self.player_names_for_tabs:
                  self.active_tab_thought_panel = self.player_names_for_tabs[0]
 
+        self._apply_zoom_and_pan() # Initial application of zoom/pan
 
         while self.running:
-            mouse_click_pos = None
+            mouse_click_pos = None # Reset for tab clicks etc.
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:
-                        mouse_click_pos = event.pos
 
+                # --- Map Panning Logic ---
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    # Check if click is within map area for panning or other map interactions
+                    if event.pos[0] < MAP_AREA_WIDTH:
+                        if event.button == 1: # Left click to start panning
+                            self.is_panning = True
+                            self.pan_start_pos = event.pos
+                        # Zoom with mouse wheel
+                        elif event.button == 4: # Scroll up / Zoom in
+                            old_zoom = self.map_zoom
+                            self.map_zoom = min(self.max_zoom, self.map_zoom + self.zoom_step)
+                            if old_zoom != self.map_zoom: needs_redraw = True
+                        elif event.button == 5: # Scroll down / Zoom out
+                            old_zoom = self.map_zoom
+                            self.map_zoom = max(self.min_zoom, self.map_zoom - self.zoom_step)
+                            if old_zoom != self.map_zoom: needs_redraw = True
+                    else: # Click is in the side panel
+                         if event.button == 1:
+                            mouse_click_pos = event.pos # For tab clicks
+
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1: # Left click release
+                        self.is_panning = False
+
+                elif event.type == pygame.MOUSEMOTION:
+                    if self.is_panning:
+                        dx = event.pos[0] - self.pan_start_pos[0]
+                        dy = event.pos[1] - self.pan_start_pos[1]
+                        self.map_offset_x += dx
+                        self.map_offset_y += dy
+                        self.pan_start_pos = event.pos
+                        needs_redraw = True
+
+            if needs_redraw:
+                self._apply_zoom_and_pan()
+
+
+            # --- Game Logic Advancement ---
+            # This should ideally be decoupled from rendering framerate
+            # For now, advance_game_turn also handles GUI updates from orchestrator
             if self.orchestrator and self.running:
-                if not self.orchestrator.advance_game_turn():
+                if not self.orchestrator.advance_game_turn(): # This call might update game_state and logs
                     self.running = False
+                # If advance_game_turn caused a state change, we likely need a full redraw
+                # This is implicitly handled as draw calls happen every frame currently.
+                # More sophisticated state change detection could optimize this.
 
-            self.screen.fill(self.colors.get('grey', GREY))
+            # --- Drawing ---
+            self.screen.fill(PANEL_BG_COLOR) # Fill entire screen with a base color
 
             gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
 
+            # Draw map (always, or only if needs_redraw or game state changed)
             self.draw_map(gs_to_draw)
-            self.draw_action_log_panel() # Draws self.action_log
-            self.draw_ai_thought_panel(mouse_click_pos) # Draws self.ai_thoughts, handles its own tabs
-            self.draw_chat_panel(mouse_click_pos) # Draws global/private chats, handles its own tabs
-            self.draw_player_info_panel(gs_to_draw) # New panel for current player info
+
+            # Draw side panels
+            self.draw_action_log_panel()
+            self.draw_ai_thought_panel(mouse_click_pos)
+            self.draw_chat_panel(mouse_click_pos)
+            self.draw_player_info_panel(gs_to_draw)
 
             pygame.display.flip()
+            needs_redraw = False # Reset redraw flag after drawing
             self.clock.tick(self.fps)
 
         print("GUI: Exiting run loop.")
