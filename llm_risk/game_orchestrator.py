@@ -130,7 +130,7 @@ class GameOrchestrator:
         # The engine will internally create a Neutral player if is_two_player_mode is True.
         # For world_map mode, it will also perform special territory initialization.
         player_init_data_for_engine = []
-        for p_stub in human_game_players_for_engine:
+        for p_stub in human_player_configs: # Corrected variable name
             player_init_data_for_engine.append({
                 "name": p_stub.name,
                 "color": p_stub.color,
