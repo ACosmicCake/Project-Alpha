@@ -154,14 +154,6 @@ class GameGUI:
                     self._create_dummy_world_map_display_data(config_file)
                     return
 
-                # Log a sample for verification
-                if self.territory_polygons:
-                    sample_terr_name = next(iter(self.territory_polygons))
-                    print(f"DEBUG: GameGUI._load_map_display_config - Sample polygon for '{sample_terr_name}': {str(self.territory_polygons[sample_terr_name])[:200]}...")
-                if self.territory_coordinates:
-                    sample_cent_name = next(iter(self.territory_coordinates))
-                    print(f"DEBUG: GameGUI._load_map_display_config - Sample centroid for '{sample_cent_name}': {self.territory_coordinates[sample_cent_name]}")
-
                 valid_polygons_format = True
                 for name, poly_parts in self.territory_polygons.items():
                     if not isinstance(poly_parts, list): valid_polygons_format = False; break

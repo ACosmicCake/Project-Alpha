@@ -4,3 +4,4 @@
 {"timestamp": "2025-06-30T03:40:31.609723", "player": "Player1", "thought": "Error after 5 attempts. API/Validation Error: ValueError: Action validation failed for {'type': 'ATTACK', 'from': 'Colombia', 'to': 'Panama', 'num_armies': 6}."}
 {"timestamp": "2025-06-30T03:56:15.536990", "player": "Player1", "thought": "Error after 5 attempts. API/Validation Error: ValueError: Action validation failed for {'type': 'DEPLOY', 'territory': 'Argentina', 'num_armies': 3}."}
 {"timestamp": "2025-06-30T03:56:36.753894", "player": "Player1", "thought": "Error after 5 attempts. API/Validation Error: ValueError: Action validation failed for {'type': 'ATTACK', 'from': 'China', 'to': 'Laos', 'num_armies': 3}."}
+{"timestamp": "2025-06-30T04:06:38.212917", "player": "Player1", "thought": "Error after 5 attempts. API/Validation Error: ValueError: Action validation failed for {'type': 'DEPLOY', 'territory': 'Poland', 'num_armies': 14}."}
