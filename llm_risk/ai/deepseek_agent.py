@@ -9,7 +9,7 @@ deepseek_model = "deepseek/deepseek-r1-0528:free" # Default model, can be overri
 deepseek_model_qwen = "deepseek/deepseek-r1-0528-qwen3-8b:free" # Full model name for OpenRouter
 
 class DeepSeekAgent(BaseAIAgent):
-    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name = deepseek_model): # Or specific model version like deepseek-coder
+    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name = deepseek_model_qwen): # Or specific model version like deepseek-coder
         super().__init__(player_name, player_color)
         # Updated for OpenRouter API
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")

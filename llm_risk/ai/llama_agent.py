@@ -74,7 +74,7 @@ class LlamaAgent(BaseAIAgent):
             "model": self.model_name,
             "messages": messages,
             # Assuming Llama via OpenRouter supports response_format for JSON like OpenAI
-            "response_format": {"type": "json_object"}
+            #"response_format": {"type": "json_object"}
             # "temperature": 0.7, # Optional: Adjust creativity
             # "max_tokens": 1000, # Optional: Limit response length
         }
