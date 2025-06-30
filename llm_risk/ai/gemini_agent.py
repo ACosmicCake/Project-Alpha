@@ -5,13 +5,16 @@ from google import genai
 import time 
 from pydantic import BaseModel
 
+gemini_model_lite="gemini-2.5-flash-lite-preview-06-17" # Default model for Gemini, can be overridden in constructor
+gemini_model_flash="gemini-2.5-flash" # Flash model for speed, can be overridden in constructor
+
 # Define the Pydantic model for the expected response structure
 class AgentResponse(BaseModel):
     thought: str
     action: str # Changed from dict to str to comply with Gemini API's stricter schema validation
 
 class GeminiAgent(BaseAIAgent):
-    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "gemini-2.5-flash-lite-preview-06-17"): # Using flash for speed
+    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name = gemini_model_flash): # Using flash for speed
         super().__init__(player_name, player_color)
 
         self.api_key = os.getenv("GEMINI_API_KEY") # Use os.getenv

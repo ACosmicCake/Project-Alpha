@@ -258,13 +258,6 @@ class MapProcessor:
 
 
         print(f"MapProcessor: Adjacency calculation complete (including sea/air). Example for {country_names[0] if country_names else 'N/A'}: {self.map_config['countries'].get(country_names[0] if country_names else '', {}).get('adjacent_to')}")
-        # Add a sample print for the "countries" structure
-        if country_names:
-            sample_country_name = country_names[0]
-            # Find a country with more adjacencies for a better sample if possible
-            if "United States of America" in self.map_config["countries"]: sample_country_name = "United States of America"
-            print(f"MapProcessor: Sample country config for '{sample_country_name}': {json.dumps(self.map_config['countries'].get(sample_country_name, {}), indent=2)}")
-
 
 
     def _normalize_and_scale_polygons(self):

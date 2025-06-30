@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import json # Added for potential use if action is a string that needs parsing, though Gemini part handles it.
 
 class BaseAIAgent(ABC):
-    DEBUG_VALIDATION = True # Class-level toggle for validation debug messages - ENABLED FOR DEVELOPMENT
+    DEBUG_VALIDATION = False # Class-level toggle for validation debug messages - ENABLED FOR DEVELOPMENT
 
     def __init__(self, player_name: str, player_color: str):
         self.player_name = player_name
