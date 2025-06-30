@@ -376,7 +376,7 @@ class GameGUI:
             self.screen.blit(no_map_text, no_map_text.get_rect(center=map_area_rect.center))
             return
 
-        print(f"DEBUG: GameGUI._draw_world_map_polygons - Number of territories to draw: {len(gs_to_draw.territories)}")
+       
         if not self.territory_polygons:
             print("DEBUG: GameGUI._draw_world_map_polygons - self.territory_polygons is empty. Cannot draw polygons.")
             # Potentially draw circles as a fallback if centroids exist? Or just the error message.
@@ -622,7 +622,7 @@ class GameGUI:
                 setattr(self, active_tab_var_name, option_name)
                 print(f"GUI: Switched {panel_title} tab to {option_name}")
 
-            current_x += tab_width + 2 # Small gap
+            current_x += text_width + 2 # Small gap
 
         return base_y_offset + TAB_HEIGHT
 
