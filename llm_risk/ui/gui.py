@@ -91,17 +91,46 @@ class GameGUI:
                 display_data = json.load(f)
 
             if self.game_mode == "world_map":
-                # For world map, expect polygon data
+                # For world map, expect the format output by MapProcessor:
+                # A dictionary with "territory_polygons" and "territory_centroids"
+                # where coordinates are already screen-scaled.
                 self.territory_polygons = display_data.get("territory_polygons", {})
-                # We might still need centroids for army count display or fallback
-                self.territory_coordinates = display_data.get("territory_centroids", {})
-                print(f"Successfully loaded world map display config. Polygons: {len(self.territory_polygons)}, Centroids: {len(self.territory_coordinates)}")
-                if not self.territory_polygons and not self.territory_coordinates :
-                    print(f"Warning: World map display config '{config_file}' is empty or malformed. Creating dummy data.")
+                self.territory_coordinates = display_data.get("territory_centroids", {}) # These are screen-scaled centroids
+
+                if not isinstance(self.territory_polygons, dict) or not isinstance(self.territory_coordinates, dict):
+                    print(f"Warning: World map display config '{config_file}' has unexpected structure for territory_polygons or territory_centroids. Expected dicts.")
+                    self._create_dummy_world_map_display_data(config_file)
+                    return
+
+                print(f"Successfully loaded processed world map display config. Polygons: {len(self.territory_polygons)}, Centroids: {len(self.territory_coordinates)}")
+
+                # Validate that polygons are lists of lists of tuples/lists (for MultiPolygon parts)
+                # And centroids are tuples/lists of two numbers
+                valid_polygons_format = True
+                for name, poly_parts in self.territory_polygons.items():
+                    if not isinstance(poly_parts, list): valid_polygons_format = False; break
+                    for part in poly_parts:
+                        if not isinstance(part, list) or not all(isinstance(pt, (list, tuple)) and len(pt) == 2 for pt in part):
+                            valid_polygons_format = False; break
+                    if not valid_polygons_format: break
+
+                valid_centroids_format = all(isinstance(coord, (list, tuple)) and len(coord) == 2 for coord in self.territory_coordinates.values())
+
+                if not valid_polygons_format or not valid_centroids_format:
+                    print(f"Warning: Data format error in polygons or centroids in '{config_file}'. Creating dummy data.")
+                    self._create_dummy_world_map_display_data(config_file)
+                    return
+
+                if not self.territory_polygons and not self.territory_coordinates: # Check if both are empty
+                    print(f"Warning: World map display config '{config_file}' is empty or malformed after loading. Creating dummy data.")
                     self._create_dummy_world_map_display_data(config_file)
 
-            else: # Standard mode, expect coordinates
+            else: # Standard mode, expect a simple dictionary of name: (x,y)
                 self.territory_coordinates = display_data
+                if not isinstance(self.territory_coordinates, dict):
+                    print(f"Warning: Standard map display config '{config_file}' is not a dictionary. Creating dummy data.")
+                    self._create_dummy_standard_map_coordinates(config_file)
+                    return
                 print(f"Successfully loaded standard territory coordinates from '{config_file}'.")
                 if not self.territory_coordinates:
                      self._create_dummy_standard_map_coordinates(config_file) # Renamed for clarity
@@ -257,48 +286,54 @@ class GameGUI:
 
         # Draw polygons
         for terr_name, territory_obj in gs_to_draw.territories.items():
-            list_of_polygon_points_for_country = self.territory_polygons.get(terr_name)
-            centroid_coords = self.territory_coordinates.get(terr_name) # For army count and name
+            # self.territory_polygons and self.territory_coordinates are now expected to be
+            # pre-scaled screen coordinates from MapProcessor's output.
+            # No more scaling logic needed in this drawing method itself.
 
-            if not list_of_polygon_points_for_country and not centroid_coords:
-                # print(f"Warning: No display data (polygon or centroid) for territory {terr_name}. Skipping draw.")
-                continue
+        # Draw polygons
+        for terr_name, territory_obj in gs_to_draw.territories.items():
+            # list_of_screen_polygon_points is a list of polygon parts for the territory.
+            # Each part is a list of (x,y) screen coordinates.
+            list_of_screen_polygon_points = self.territory_polygons.get(terr_name)
+            screen_centroid_coords = self.territory_coordinates.get(terr_name) # Already screen coordinates
 
             owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY) if territory_obj.owner and territory_obj.owner.color else GREY
 
-            if list_of_polygon_points_for_country: # This is a list of polygons (each a list of points)
-                for single_polygon_points in list_of_polygon_points_for_country:
-                    if single_polygon_points and len(single_polygon_points) >= 3:
+            if list_of_screen_polygon_points:
+                for screen_polygon_part_points in list_of_screen_polygon_points:
+                    if screen_polygon_part_points and len(screen_polygon_part_points) >= 3:
                         try:
-                            pygame.draw.polygon(self.screen, owner_color, single_polygon_points)
-                            pygame.draw.polygon(self.screen, BLACK, single_polygon_points, 1) # Border
+                            pygame.draw.polygon(self.screen, owner_color, screen_polygon_part_points)
+                            pygame.draw.polygon(self.screen, BLACK, screen_polygon_part_points, 1) # Border
                         except TypeError as e:
-                            print(f"Error drawing a polygon part for {terr_name}: {e}. Points: {single_polygon_points}")
-                            # Fallback for this specific part if it fails
-                            if centroid_coords: pygame.draw.circle(self.screen, owner_color, centroid_coords, 5, 0) # Smaller circle
-                    # else: print(f"Warning: Invalid or empty polygon part for {terr_name}")
-            elif centroid_coords: # Fallback if no polygons at all, draw a small circle at centroid
-                pygame.draw.circle(self.screen, owner_color, centroid_coords, 10)
-                pygame.draw.circle(self.screen, BLACK, centroid_coords, 10, 1)
+                            print(f"Error drawing polygon for {terr_name}: {e}. Screen points: {screen_polygon_part_points}")
+                            # Fallback for this specific part if it fails: draw a small circle at screen_centroid_coords
+                            if screen_centroid_coords:
+                                pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, 5, 0)
+                    # else:
+                        # print(f"Warning: Invalid or empty screen polygon part for {terr_name}")
+            elif screen_centroid_coords: # Fallback if no polygons defined for this territory, but we have a centroid
+                pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, 10) # Larger circle for fallback
+                pygame.draw.circle(self.screen, BLACK, screen_centroid_coords, 10, 1)
+            # else:
+                # print(f"Warning: No display data (polygon or centroid) for territory {terr_name}. Skipping draw.")
 
-            # Draw army count and name at centroid (if available)
-            if centroid_coords:
+
+            # Draw army count and name at the screen_centroid_coords (if available)
+            if screen_centroid_coords:
                 army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
                 army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
 
-                # Background for army count for better visibility on complex polygons
-                army_text_rect = army_text.get_rect(center=centroid_coords)
+                army_text_rect = army_text.get_rect(center=screen_centroid_coords)
                 army_bg_rect = army_text_rect.inflate(4,2)
-                pygame.draw.rect(self.screen, owner_color, army_bg_rect, border_radius=3) # Use owner color for bg
-                pygame.draw.rect(self.screen, BLACK, army_bg_rect, 1, border_radius=3) # Border for bg
+                pygame.draw.rect(self.screen, owner_color, army_bg_rect, border_radius=3)
+                pygame.draw.rect(self.screen, BLACK, army_bg_rect, 1, border_radius=3)
                 self.screen.blit(army_text, army_text_rect)
 
-                # Display territory name slightly below the centroid/army count
-                name_surf = self.font.render(terr_name, True, WHITE) # White name for visibility
-                name_rect = name_surf.get_rect(center=(centroid_coords[0], centroid_coords[1] + 15)) # Offset below
-
+                name_surf = self.font.render(terr_name, True, WHITE)
+                name_rect = name_surf.get_rect(center=(screen_centroid_coords[0], screen_centroid_coords[1] + 15)) # Offset below
                 name_bg_rect = name_rect.inflate(4,2)
-                pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3) # Dark bg for name
+                pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
                 self.screen.blit(name_surf, name_rect)
 
     def draw_player_info_panel(self, game_state: GameState):
