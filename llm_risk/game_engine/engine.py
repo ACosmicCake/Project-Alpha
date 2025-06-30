@@ -458,10 +458,12 @@ class GameEngine:
 
 
         if successful_assignments > 0:
-            print(f"World Map Init: Assigned {successful_assignments} countries among {num_players} players using power_index balancing. Armies assigned based on military ranking (default: {default_armies_if_not_ranked}), then balanced.")
+            print(f"World Map Init: Assigned {successful_assignments} initial armies across territories. All territories distributed. Army counts balanced.")
             # Power totals are pre-balancing, army counts are post-balancing
             for player in non_neutral_players:
-                 print(f"Player {player.name} final total power_index: {player_power_totals.get(player.name, 0.0):.4f}, final territories: {len(player.territories)}, final armies: {player.initial_armies_pool}")
+                 # Calculate current power_index total for this player for logging purposes
+                 current_player_power_total = sum(t.power_index for t in player.territories if t.power_index is not None)
+                 print(f"Player {player.name} final total power_index: {current_player_power_total:.4f}, final territories: {len(player.territories)}, final armies: {player.initial_armies_pool}")
 
             # Setup for the first turn
             gs.player_setup_order = [] # Not used in this mode for initial placement
