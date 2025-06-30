@@ -58,12 +58,12 @@ DEFAULT_PLAYER_COLORS["White"] = (230,230,230) # Off-white for player
 
 SCREEN_WIDTH = 1600
 SCREEN_HEIGHT = 900
-MAP_AREA_WIDTH = 1300
-SIDE_PANEL_WIDTH = SCREEN_WIDTH - MAP_AREA_WIDTH
-ACTION_LOG_HEIGHT = 200 # Adjusted
-THOUGHT_PANEL_HEIGHT = 380 # Adjusted
-CHAT_PANEL_HEIGHT = SCREEN_HEIGHT - ACTION_LOG_HEIGHT - THOUGHT_PANEL_HEIGHT - 60 # Adjusted for player info and new screen height
-PLAYER_INFO_PANEL_HEIGHT = 60 # New panel
+MAP_AREA_WIDTH = 1000 # Adjusted for 1600x900
+SIDE_PANEL_WIDTH = SCREEN_WIDTH - MAP_AREA_WIDTH # Will be 600
+PLAYER_INFO_PANEL_HEIGHT = 50 # Adjusted
+ACTION_LOG_HEIGHT = 150 # Adjusted
+THOUGHT_PANEL_HEIGHT = 300 # Adjusted
+CHAT_PANEL_HEIGHT = SCREEN_HEIGHT - ACTION_LOG_HEIGHT - THOUGHT_PANEL_HEIGHT - PLAYER_INFO_PANEL_HEIGHT # Adjusted for new screen height
 
 TAB_HEIGHT = 30
 TAB_FONT_SIZE = 20
@@ -78,14 +78,14 @@ class GameGUI:
         # Attempt to use a more common, aesthetically pleasing sans-serif font
         common_sans_serif_fonts = "Arial, Helvetica, Calibri, Liberation Sans, DejaVu Sans"
         try:
-            self.font = pygame.font.SysFont(common_sans_serif_fonts, 24)
-            self.large_font = pygame.font.SysFont(common_sans_serif_fonts, 36)
-            self.tab_font = pygame.font.SysFont(common_sans_serif_fonts, TAB_FONT_SIZE)
-            # print(f"Successfully loaded system font: {self.font.name}") # Removed: .name causes error
+            self.font = pygame.font.SysFont(common_sans_serif_fonts, 22) # Reduced size
+            self.large_font = pygame.font.SysFont(common_sans_serif_fonts, 30) # Reduced size
+            self.tab_font = pygame.font.SysFont(common_sans_serif_fonts, TAB_FONT_SIZE) # Remains 20
+            # print(f"Successfully loaded system font.") # Simpler print
         except pygame.error:
             print(f"Warning: Could not find specified system fonts ({common_sans_serif_fonts}). Falling back to default.")
-            self.font = pygame.font.SysFont(None, 24)
-            self.large_font = pygame.font.SysFont(None, 36)
+            self.font = pygame.font.SysFont(None, 22) # Reduced size
+            self.large_font = pygame.font.SysFont(None, 30) # Reduced size
             self.tab_font = pygame.font.SysFont(None, TAB_FONT_SIZE)
 
         self.ocean_color = OCEAN_BLUE # OCEAN_BLUE is now mapped to BACKGROUND_COLOR
@@ -538,7 +538,7 @@ class GameGUI:
         max_log_entries = (ACTION_LOG_HEIGHT - y_offset - padding //2 ) // (self.font.get_linesize() + 2)
 
         for i, log_entry in enumerate(reversed(self.action_log[-max_log_entries:])):
-            entry_surface = self.font.render(log_entry[:70], True, TEXT_COLOR_MUTED) # Truncate long entries
+            entry_surface = self.font.render(log_entry[:55], True, TEXT_COLOR_MUTED) # Adjusted truncation
             self.screen.blit(entry_surface, (panel_rect.x + padding, panel_rect.y + y_offset + i * (self.font.get_linesize() + 2)))
 
     def _render_text_wrapped(self, surface, text, rect, font, color):
