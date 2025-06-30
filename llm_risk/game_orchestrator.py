@@ -1567,7 +1567,7 @@ class GameOrchestrator:
         if self.gui:
             self.gui.update_thought_panel(player_name, thought)
         try:
-            with open(os.path.join(log_dir, "ai_thoughts.jsonl"), 'a') as f:
+            with open(os.path.join(log_dir, "ai_thoughts.jsonl"), 'a', encoding='utf-8') as f:
                 log_entry = {
                     "timestamp": datetime.utcnow().isoformat(),
                     "player": player_name,
@@ -1584,7 +1584,7 @@ class GameOrchestrator:
         if self.gui:
             self.gui.log_action(message)
         try:
-            with open(os.path.join(log_dir, "game_log.txt"), 'a') as f:
+            with open(os.path.join(log_dir, "game_log.txt"), 'a', encoding='utf-8') as f:
                 f.write(f"[{datetime.utcnow().isoformat()}] {message}\n")
         except IOError as e:
             print(f"Error writing to game log: {e}")
