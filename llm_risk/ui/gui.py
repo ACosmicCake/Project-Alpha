@@ -192,7 +192,7 @@ class GameGUI:
         if not gs_to_draw: gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
 
         map_area_rect = pygame.Rect(0, 0, MAP_AREA_WIDTH, SCREEN_HEIGHT)
-        # self.screen.fill(self.ocean_color, map_area_rect) # Ocean already drawn
+        self.screen.fill(self.ocean_color, map_area_rect) # Ensure map area is cleared
 
         if not gs_to_draw or not gs_to_draw.territories:
             no_map_text = self.large_font.render("Map Data Unavailable", True, WHITE)
@@ -234,7 +234,7 @@ class GameGUI:
         if not gs_to_draw: gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
 
         map_area_rect = pygame.Rect(0, 0, MAP_AREA_WIDTH, SCREEN_HEIGHT)
-        # self.screen.fill(self.ocean_color, map_area_rect) # Ocean already drawn
+        self.screen.fill(self.ocean_color, map_area_rect) # Ensure map area is cleared
 
         if not gs_to_draw or not gs_to_draw.territories:
             no_map_text = self.large_font.render("World Map Data Unavailable", True, WHITE)
@@ -264,9 +264,7 @@ class GameGUI:
                 # print(f"Warning: No display data (polygon or centroid) for territory {terr_name}. Skipping draw.")
                 continue
 
-            owner_color = GREY
-            if territory_obj.owner and territory_obj.owner.color:
-                owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
+            owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY) if territory_obj.owner and territory_obj.owner.color else GREY
 
             if list_of_polygon_points_for_country: # This is a list of polygons (each a list of points)
                 for single_polygon_points in list_of_polygon_points_for_country:
