@@ -301,6 +301,67 @@ class TestSetupPhases(unittest.TestCase):
         self.assertFalse(gs.get_current_player().is_neutral)
         self.assertGreater(gs.get_current_player().armies_to_deploy, 0)
 
+    def test_auto_initialize_standard_board(self):
+        """
+        Tests the auto-initialization feature for standard game mode.
+        This uses the small 6-territory map.
+        """
+        players_data_3p = [
+            {"name": "P1", "color": "Red"},
+            {"name": "P2", "color": "Blue"},
+            {"name": "P3", "color": "Yellow"}
+        ]
+        # Use self.engine which is initialized with the small map_file
+        self.engine.initialize_game_from_map(
+            players_data_3p,
+            is_two_player_game=False, # Not 2-player specific rules
+            game_mode="standard",
+            auto_initialize_standard=True
+        )
+        gs = self.engine.game_state
+
+        self.assertEqual(gs.current_game_phase, "REINFORCE", "Game phase should be REINFORCE after auto-init.")
+        self.assertEqual(len(gs.unclaimed_territory_names), 0, "There should be no unclaimed territories.")
+
+        total_territories_assigned = 0
+        expected_armies_per_player = 35 # For 3 players
+
+        for player in gs.players:
+            if player.is_neutral: # Should not be a neutral player in this standard 3P setup
+                self.fail("Neutral player should not exist in a 3-player standard auto-init game.")
+                continue
+
+            self.assertGreater(len(player.territories), 0, f"Player {player.name} should have territories.")
+            total_territories_assigned += len(player.territories)
+
+            # Check army counts
+            self.assertEqual(player.initial_armies_pool, expected_armies_per_player, f"Player {player.name} initial army pool incorrect.")
+            self.assertEqual(player.armies_placed_in_setup, expected_armies_per_player, f"Player {player.name} should have all initial armies placed.")
+
+            total_armies_on_board_for_player = sum(t.army_count for t in player.territories)
+            self.assertEqual(total_armies_on_board_for_player, expected_armies_per_player, f"Player {player.name} total armies on board mismatch.")
+
+            for territory in player.territories:
+                self.assertGreaterEqual(territory.army_count, 1, f"Territory {territory.name} should have at least 1 army.")
+
+        self.assertEqual(total_territories_assigned, len(gs.territories), "Total assigned territories should match total map territories.")
+
+        self.assertIsNotNone(gs.first_player_of_game, "First player of the game should be set.")
+        self.assertIn(gs.first_player_of_game, gs.players, "First player must be in the list of players.")
+        self.assertFalse(gs.first_player_of_game.is_neutral, "First player should not be neutral.")
+
+        current_player = gs.get_current_player()
+        self.assertIsNotNone(current_player, "Current player should be set.")
+        self.assertEqual(current_player, gs.first_player_of_game, "Current player should be the first player.")
+        self.assertGreater(current_player.armies_to_deploy, 0, "First player should have reinforcements calculated.")
+
+        # Setup specific lists should be empty or reflect skipped setup
+        self.assertEqual(len(gs.player_setup_order), 0, "Player setup order should be empty as setup is skipped.")
+        self.assertEqual(gs.current_setup_player_index, -1, "Current setup player index should be reset.")
+
+        # Check deck - for standard 3P, 6 territory cards + 2 wildcards
+        self.assertEqual(len(gs.deck), 6 + 2, "Deck size incorrect for standard auto-init.")
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -36,167 +36,249 @@
     },
     "T2": {
       "continent": "ContinentA",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T1"
+      ]
     },
     "T3": {
       "continent": "ContinentA",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T2"
+      ]
     },
     "T4": {
       "continent": "ContinentA",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T3"
+      ]
     },
     "T5": {
       "continent": "ContinentA",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T4"
+      ]
     },
     "T6": {
       "continent": "ContinentA",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T5"
+      ]
     },
     "T7": {
       "continent": "ContinentB",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T1"
+      ]
     },
     "T8": {
       "continent": "ContinentB",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T7"
+      ]
     },
     "T9": {
       "continent": "ContinentB",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T8"
+      ]
     },
     "T10": {
       "continent": "ContinentB",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T9"
+      ]
     },
     "T11": {
       "continent": "ContinentB",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T10"
+      ]
     },
     "T12": {
       "continent": "ContinentB",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T11"
+      ]
     },
     "T13": {
       "continent": "ContinentC",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T7"
+      ]
     },
     "T14": {
       "continent": "ContinentC",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T13"
+      ]
     },
     "T15": {
       "continent": "ContinentC",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T14"
+      ]
     },
     "T16": {
       "continent": "ContinentC",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T15"
+      ]
     },
     "T17": {
       "continent": "ContinentC",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T16"
+      ]
     },
     "T18": {
       "continent": "ContinentC",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T17"
+      ]
     },
     "T19": {
       "continent": "ContinentD",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T13"
+      ]
     },
     "T20": {
       "continent": "ContinentD",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T19"
+      ]
     },
     "T21": {
       "continent": "ContinentD",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T20"
+      ]
     },
     "T22": {
       "continent": "ContinentD",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T21"
+      ]
     },
     "T23": {
       "continent": "ContinentD",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T22"
+      ]
     },
     "T24": {
       "continent": "ContinentD",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T23"
+      ]
     },
     "T25": {
       "continent": "ContinentE",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T19"
+      ]
     },
     "T26": {
       "continent": "ContinentE",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T25"
+      ]
     },
     "T27": {
       "continent": "ContinentE",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T26"
+      ]
     },
     "T28": {
       "continent": "ContinentE",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T27"
+      ]
     },
     "T29": {
       "continent": "ContinentE",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T28"
+      ]
     },
     "T30": {
       "continent": "ContinentE",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T29"
+      ]
     },
     "T31": {
       "continent": "ContinentF",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T25"
+      ]
     },
     "T32": {
       "continent": "ContinentF",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T31"
+      ]
     },
     "T33": {
       "continent": "ContinentF",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T32"
+      ]
     },
     "T34": {
       "continent": "ContinentF",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T33"
+      ]
     },
     "T35": {
       "continent": "ContinentF",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T34"
+      ]
     },
     "T36": {
       "continent": "ContinentF",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T35"
+      ]
     },
     "T37": {
       "continent": "ContinentG",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T31"
+      ]
     },
     "T38": {
       "continent": "ContinentG",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T37"
+      ]
     },
     "T39": {
       "continent": "ContinentG",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T38"
+      ]
     },
     "T40": {
       "continent": "ContinentG",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T39"
+      ]
     },
     "T41": {
       "continent": "ContinentG",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T40"
+      ]
     },
     "T42": {
       "continent": "ContinentG",
-      "adjacent_to": []
+      "adjacent_to": [
+        "T41"
+      ]
     }
   }
 }

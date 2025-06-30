@@ -132,6 +132,7 @@ def main():
     args = parser.parse_args()
 
     selected_game_mode = args.game_mode
+    auto_initialize_board = False  # Default value
     geojson_data_str = None
 
     if not selected_game_mode:
@@ -150,6 +151,19 @@ def main():
                 print("Invalid choice. Please enter 1 or 2.")
 
     print(f"DEBUG: main.py - Selected game mode: {selected_game_mode}")
+
+    if selected_game_mode == "standard":
+        while True:
+            auto_init_choice = input("Do you want to auto-initialize the board and skip territory selection? (yes/no) [default: no]: ").strip().lower()
+            if auto_init_choice == "yes" or auto_init_choice == "y":
+                auto_initialize_board = True
+                break
+            elif auto_init_choice == "no" or auto_init_choice == "n" or not auto_init_choice:
+                auto_initialize_board = False
+                break
+            else:
+                print("Invalid choice. Please enter 'yes' or 'no'.")
+        print(f"DEBUG: main.py - Auto-initialize board: {auto_initialize_board}")
 
     if selected_game_mode == "world_map":
         # If geojson_file is provided via CLI, use that
@@ -193,12 +207,14 @@ def main():
         orchestrator = GameOrchestrator(
             player_configs_override=custom_player_configs,
             game_mode=selected_game_mode,
+            auto_initialize_board=auto_initialize_board if selected_game_mode == "standard" else False,
             geojson_data_str=geojson_data_str # Will be None if not world_map mode
         )
     else:
         print(f"\nUsing default player configurations (from player_config.json or internal default) for {selected_game_mode} mode.")
         orchestrator = GameOrchestrator(
             game_mode=selected_game_mode,
+            auto_initialize_board=auto_initialize_board if selected_game_mode == "standard" else False,
             geojson_data_str=geojson_data_str # Will be None if not world_map mode
         )
 

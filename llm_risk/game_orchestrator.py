@@ -26,11 +26,13 @@ class GameOrchestrator:
                  player_configs_override: list | None = None,
                  default_player_setup_file: str = "player_config.json",
                  game_mode: str = "standard",
+                 auto_initialize_board: bool = False, # New flag
                  geojson_data_str: str | None = None,
                  map_file_path_override: str | None = None): # Added for testability
 
         self.game_mode = game_mode
-        print(f"DEBUG: GameOrchestrator.__init__ - Received game_mode: {self.game_mode}")
+        self.auto_initialize_board = auto_initialize_board if self.game_mode == "standard" else False
+        print(f"DEBUG: GameOrchestrator.__init__ - Received game_mode: {self.game_mode}, auto_initialize_board: {self.auto_initialize_board}")
 
         map_file_to_load = map_file_path_override if map_file_path_override else "map_config.json"
         if map_file_path_override:
@@ -144,10 +146,12 @@ class GameOrchestrator:
         # Initialize the game board in the engine
         # The engine will internally create a Neutral player if is_two_player_mode is True.
         # For world_map mode, it will also perform special territory initialization.
+        # For standard mode with auto_initialize_board, it will perform auto setup.
         self.engine.initialize_game_from_map(
             players_data=[{"name": p.name, "color": p.color} for p in human_player_configs], # Pass only human player data
             is_two_player_game=self.is_two_player_mode,
-            game_mode=self.game_mode # Pass game_mode to engine
+            game_mode=self.game_mode, # Pass game_mode to engine
+            auto_initialize_standard=self.auto_initialize_board # New flag for engine
         )
 
         # After engine initializes players (including Neutral if 2P), map all to AI agents
