@@ -6,7 +6,7 @@ import json
 import os
 
 # --- New Aesthetic Color Palette ---
-BACKGROUND_COLOR = (45, 55, 70)      # Dark, desaturated slate blue for map background/ocean
+BACKGROUND_COLOR = (3, 169, 252)      # Dark, desaturated slate blue for map background/ocean
 PANEL_BACKGROUND_COLOR = (40, 44, 48) # Slightly lighter dark grey for side panels
 TEXT_COLOR = (220, 220, 220)        # Off-white for general text
 TEXT_COLOR_MUTED = (160, 160, 160)    # Medium grey for less important text/logs
@@ -57,8 +57,8 @@ DEFAULT_PLAYER_COLORS["Black"] = (20,20,20) # Very dark grey instead of pure bla
 DEFAULT_PLAYER_COLORS["White"] = (230,230,230) # Off-white for player
 
 SCREEN_WIDTH = 1600
-SCREEN_HEIGHT = 900
-MAP_AREA_WIDTH = 1000 # Adjusted for 1600x900
+SCREEN_HEIGHT = 800
+MAP_AREA_WIDTH = 1200 # Adjusted for 1600x900
 SIDE_PANEL_WIDTH = SCREEN_WIDTH - MAP_AREA_WIDTH # Will be 600
 PLAYER_INFO_PANEL_HEIGHT = 50 # Adjusted
 ACTION_LOG_HEIGHT = 150 # Adjusted
@@ -272,7 +272,7 @@ class GameGUI:
             # print("DEBUG: GameGUI.draw_map - Path taken: world_map")
             self._draw_world_map_polygons(game_state)
         else:
-            print(f"DEBUG: GameGUI.draw_map - Path taken: standard_map_circles. self.game_mode is '{getattr(self, 'game_mode', 'NOT SET')}'")
+            
             self._draw_standard_map_circles(game_state)
 
     def _draw_standard_map_circles(self, game_state: GameState):
