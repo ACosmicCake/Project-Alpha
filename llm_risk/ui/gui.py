@@ -6,7 +6,7 @@ import json
 import os
 
 # --- New Aesthetic Color Palette ---
-BACKGROUND_COLOR = (3, 78, 252)      # Dark, desaturated slate blue for map background/ocean
+BACKGROUND_COLOR = (45, 55, 70)      # Dark, desaturated slate blue for map background/ocean
 PANEL_BACKGROUND_COLOR = (40, 44, 48) # Slightly lighter dark grey for side panels
 TEXT_COLOR = (220, 220, 220)        # Off-white for general text
 TEXT_COLOR_MUTED = (160, 160, 160)    # Medium grey for less important text/logs
@@ -57,16 +57,16 @@ DEFAULT_PLAYER_COLORS["Black"] = (20,20,20) # Very dark grey instead of pure bla
 DEFAULT_PLAYER_COLORS["White"] = (230,230,230) # Off-white for player
 
 SCREEN_WIDTH = 1600
-SCREEN_HEIGHT = 800
-MAP_AREA_WIDTH = 1200 # Adjusted for 1600x900
+SCREEN_HEIGHT = 900
+MAP_AREA_WIDTH = 1000 # Adjusted for 1600x900
 SIDE_PANEL_WIDTH = SCREEN_WIDTH - MAP_AREA_WIDTH # Will be 600
 PLAYER_INFO_PANEL_HEIGHT = 50 # Adjusted
 ACTION_LOG_HEIGHT = 150 # Adjusted
 THOUGHT_PANEL_HEIGHT = 300 # Adjusted
 CHAT_PANEL_HEIGHT = SCREEN_HEIGHT - ACTION_LOG_HEIGHT - THOUGHT_PANEL_HEIGHT - PLAYER_INFO_PANEL_HEIGHT # Adjusted for new screen height
 
-TAB_HEIGHT = 20
-TAB_FONT_SIZE = 15
+TAB_HEIGHT = 30
+TAB_FONT_SIZE = 20
 
 
 class GameGUI:
@@ -78,14 +78,14 @@ class GameGUI:
         # Attempt to use a more common, aesthetically pleasing sans-serif font
         common_sans_serif_fonts = "Arial, Helvetica, Calibri, Liberation Sans, DejaVu Sans"
         try:
-            self.font = pygame.font.SysFont(common_sans_serif_fonts, 14) # Reduced size
-            self.large_font = pygame.font.SysFont(common_sans_serif_fonts, 20) # Reduced size
+            self.font = pygame.font.SysFont(common_sans_serif_fonts, 22) # Reduced size
+            self.large_font = pygame.font.SysFont(common_sans_serif_fonts, 30) # Reduced size
             self.tab_font = pygame.font.SysFont(common_sans_serif_fonts, TAB_FONT_SIZE) # Remains 20
             # print(f"Successfully loaded system font.") # Simpler print
         except pygame.error:
             print(f"Warning: Could not find specified system fonts ({common_sans_serif_fonts}). Falling back to default.")
-            self.font = pygame.font.SysFont(None, 14) # Reduced size
-            self.large_font = pygame.font.SysFont(None, 20) # Reduced size
+            self.font = pygame.font.SysFont(None, 22) # Reduced size
+            self.large_font = pygame.font.SysFont(None, 30) # Reduced size
             self.tab_font = pygame.font.SysFont(None, TAB_FONT_SIZE)
 
         self.ocean_color = OCEAN_BLUE # OCEAN_BLUE is now mapped to BACKGROUND_COLOR
@@ -272,7 +272,7 @@ class GameGUI:
             # print("DEBUG: GameGUI.draw_map - Path taken: world_map")
             self._draw_world_map_polygons(game_state)
         else:
-            
+            print(f"DEBUG: GameGUI.draw_map - Path taken: standard_map_circles. self.game_mode is '{getattr(self, 'game_mode', 'NOT SET')}'")
             self._draw_standard_map_circles(game_state)
 
     def _draw_standard_map_circles(self, game_state: GameState):
