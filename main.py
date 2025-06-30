@@ -149,7 +149,7 @@ def main():
             else:
                 print("Invalid choice. Please enter 1 or 2.")
 
-    print(f"DEBUG: main.py - Selected game mode: {selected_game_mode}")
+    print(f"Selected game mode: {selected_game_mode}")
 
     if selected_game_mode == "world_map":
         # If geojson_file is provided via CLI, use that
@@ -158,7 +158,7 @@ def main():
                 try:
                     with open(args.geojson_file, 'r', encoding='utf-8') as f:
                         geojson_data_str = f.read()
-                    print(f"DEBUG: main.py - Loaded GeoJSON data from specified file: {args.geojson_file}. Length: {len(geojson_data_str)}")
+                    # print(f"DEBUG: main.py - Loaded GeoJSON data from specified file: {args.geojson_file}. Length: {len(geojson_data_str)}")
                 except Exception as e:
                     print(f"Error reading specified GeoJSON file '{args.geojson_file}': {e}. Exiting.")
                     return 1 # Indicate error
@@ -173,7 +173,7 @@ def main():
                 try:
                     with open(default_geojson_filename, 'r', encoding='utf-8') as f:
                         geojson_data_str = f.read()
-                    print(f"DEBUG: main.py - Loaded GeoJSON data from default file: {default_geojson_filename}. Length: {len(geojson_data_str)}")
+                    # print(f"DEBUG: main.py - Loaded GeoJSON data from default file: {default_geojson_filename}. Length: {len(geojson_data_str)}")
                 except Exception as e:
                     print(f"Error reading default GeoJSON file '{default_geojson_filename}': {e}. Exiting.")
                     return 1
@@ -184,8 +184,8 @@ def main():
         if not geojson_data_str: # Should be caught above, but as a safeguard
             print(f"Critical Error: GeoJSON data string is empty for world_map mode. Exiting.")
             return 1
-    else:
-        print(f"DEBUG: main.py - Not in 'world_map' mode, geojson_data_str will be None.")
+    # else:
+        # print(f"DEBUG: main.py - Not in 'world_map' mode, geojson_data_str will be None.")
 
 
     if custom_player_configs:
