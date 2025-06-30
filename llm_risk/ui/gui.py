@@ -376,7 +376,7 @@ class GameGUI:
             self.screen.blit(no_map_text, no_map_text.get_rect(center=map_area_rect.center))
             return
 
-        print(f"DEBUG: GameGUI._draw_world_map_polygons - Number of territories to draw: {len(gs_to_draw.territories)}")
+
         if not self.territory_polygons:
             print("DEBUG: GameGUI._draw_world_map_polygons - self.territory_polygons is empty. Cannot draw polygons.")
             # Potentially draw circles as a fallback if centroids exist? Or just the error message.
@@ -457,15 +457,15 @@ class GameGUI:
 
             if screen_centroid_coords and self.zoom_level >= 0.25: # Lowered threshold & check screen_centroid_coords
                 luminance = 0.299 * owner_color[0] + 0.587 * owner_color[1] + 0.114 * owner_color[2]
-                    army_text_color = TEXT_COLOR if luminance < 140 else PANEL_BACKGROUND_COLOR
-                    army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
-                    army_text_rect = army_text.get_rect(center=screen_centroid_coords)
-                    army_bg_rect = army_text_rect.inflate(6, 4)
-                    temp_surface_army = pygame.Surface(army_bg_rect.size, pygame.SRCALPHA)
-                    pygame.draw.rect(temp_surface_army, PANEL_BACKGROUND_COLOR + (200,), temp_surface_army.get_rect(), border_radius=3)
-                    self.screen.blit(temp_surface_army, army_bg_rect.topleft)
-                    pygame.draw.rect(self.screen, BORDER_COLOR, army_bg_rect, 1, border_radius=3)
-                    self.screen.blit(army_text, army_text_rect)
+                army_text_color = TEXT_COLOR if luminance < 140 else PANEL_BACKGROUND_COLOR
+                army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
+                army_text_rect = army_text.get_rect(center=screen_centroid_coords)
+                army_bg_rect = army_text_rect.inflate(6, 4)
+                temp_surface_army = pygame.Surface(army_bg_rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(temp_surface_army, PANEL_BACKGROUND_COLOR + (200,), temp_surface_army.get_rect(), border_radius=3)
+                self.screen.blit(temp_surface_army, army_bg_rect.topleft)
+                pygame.draw.rect(self.screen, BORDER_COLOR, army_bg_rect, 1, border_radius=3)
+                self.screen.blit(army_text, army_text_rect)
 
                 if self.zoom_level >= 0.2: # Lowered threshold
                     name_surf = self.font.render(terr_name, True, TEXT_COLOR)
