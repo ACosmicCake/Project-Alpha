@@ -4,6 +4,7 @@ Allows for console-based configuration of players and AI types.
 """
 from llm_risk.game_orchestrator import GameOrchestrator
 from dotenv import load_dotenv
+import os
 
 # Define available AI types and colors
 AVAILABLE_AI_TYPES = ["OpenAI", "Gemini", "Claude", "DeepSeek","Llama","Mistral","Qwen"] # Add "Human" if you implement human players

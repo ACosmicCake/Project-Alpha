@@ -1,0 +1,1 @@
+{"timestamp": "2025-06-30T00:25:30.449883", "player": "Player1", "thought": "Error after 5 attempts. API/Validation Error: ValueError: Action validation failed for {'type': 'DEPLOY', 'territory': 'Bhutan', 'num_armies': 3}."}
