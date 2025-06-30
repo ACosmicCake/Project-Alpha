@@ -18,7 +18,9 @@ class Territory:
             "continent": self.continent.name if self.continent else None,
             "owner": self.owner.name if self.owner else None,
             "army_count": self.army_count,
-            "adjacent_territories": [t.name for t in self.adjacent_territories]
+            # adjacent_territories now stores list of dicts: e.g., {"name": "OtherTerr", "type": "land"}
+            "adjacent_territories": [adj_info["name"] for adj_info in self.adjacent_territories if isinstance(adj_info, dict) and "name" in adj_info],
+            "power_index": self.power_index
         }
 
 class Continent:
