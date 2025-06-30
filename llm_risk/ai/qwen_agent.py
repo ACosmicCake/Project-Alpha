@@ -9,7 +9,7 @@ Qwen_model = "qwen/qwen3-30b-a3b:free" # Default model, can be overridden by use
 Qwen_model_full = "qwen/qwq-32b:free"
 
 class QwenAgent(BaseAIAgent):
-    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name= Qwen_model_full): # Or specific model version
+    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name= Qwen_model): # Or specific model version
         super().__init__(player_name, player_color)
         # Updated for OpenRouter API
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
