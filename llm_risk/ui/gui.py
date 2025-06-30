@@ -6,7 +6,7 @@ import json
 import os
 
 # --- New Aesthetic Color Palette ---
-BACKGROUND_COLOR = (30, 33, 36)      # Deep, desaturated blue-grey for map background/ocean
+BACKGROUND_COLOR = (45, 55, 70)      # Dark, desaturated slate blue for map background/ocean
 PANEL_BACKGROUND_COLOR = (40, 44, 48) # Slightly lighter dark grey for side panels
 TEXT_COLOR = (220, 220, 220)        # Off-white for general text
 TEXT_COLOR_MUTED = (160, 160, 160)    # Medium grey for less important text/logs
@@ -342,10 +342,10 @@ class GameGUI:
             army_text_color = TEXT_COLOR if luminance < 140 else PANEL_BACKGROUND_COLOR # Adjusted threshold
 
             army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
-            if self.zoom_level >= 0.4: # Only draw army count if zoom is sufficient
+            if self.zoom_level >= 0.25: # Lowered threshold
                 self.screen.blit(army_text, army_text.get_rect(center=coords))
 
-            if self.zoom_level >= 0.3: # Only draw territory name if zoom is sufficient
+            if self.zoom_level >= 0.2: # Lowered threshold
                 name_surf = self.font.render(terr_name, True, TEXT_COLOR) # Use theme TEXT_COLOR
                 name_rect_center_x = coords[0]
                 # Ensure name is offset reasonably, especially when zoomed out
@@ -376,7 +376,7 @@ class GameGUI:
             self.screen.blit(no_map_text, no_map_text.get_rect(center=map_area_rect.center))
             return
 
-       
+        print(f"DEBUG: GameGUI._draw_world_map_polygons - Number of territories to draw: {len(gs_to_draw.territories)}")
         if not self.territory_polygons:
             print("DEBUG: GameGUI._draw_world_map_polygons - self.territory_polygons is empty. Cannot draw polygons.")
             # Potentially draw circles as a fallback if centroids exist? Or just the error message.
@@ -408,30 +408,12 @@ class GameGUI:
                 pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 1) # Thinner line
                 drawn_adjacencies.add(adj_pair)
 
-        # Draw polygons
-        processed_first_territory_for_debug = False # Debug flag
-
+        # --- First Pass: Draw all territory polygons and their borders ---
         for terr_name, territory_obj in gs_to_draw.territories.items():
             list_of_original_polygon_points = self.territory_polygons.get(terr_name)
-            original_centroid_coords = self.territory_coordinates.get(terr_name)
+            original_centroid_coords = self.territory_coordinates.get(terr_name) # Needed for fallback circle
 
-            # Apply zoom and camera offset to centroid first
-            screen_centroid_coords = None
-            if original_centroid_coords:
-                screen_centroid_coords = ( (original_centroid_coords[0] * self.zoom_level) + self.camera_offset_x,
-                                           (original_centroid_coords[1] * self.zoom_level) + self.camera_offset_y )
-
-            if not processed_first_territory_for_debug: # Log details for the first territory
-                # print(f"DEBUG: _draw_world_map_polygons - Processing territory: '{terr_name}'")
-                # if list_of_original_polygon_points:
-                #     print(f"DEBUG: _draw_world_map_polygons -   Original Polygons for '{terr_name}' (first part, first 5 points): {str(list_of_original_polygon_points[0][:5]) if list_of_original_polygon_points else 'No polygon data'}")
-                # else:
-                #     print(f"DEBUG: _draw_world_map_polygons -   No original polygon data for '{terr_name}'.")
-                # print(f"DEBUG: _draw_world_map_polygons -   Original Centroid for '{terr_name}': {original_centroid_coords}")
-                # print(f"DEBUG: _draw_world_map_polygons -   Screen Centroid for '{terr_name}': {screen_centroid_coords}")
-                processed_first_territory_for_debug = True
-
-            owner_color = DEFAULT_PLAYER_COLORS.get("Default", (75,75,75)) # Use new default
+            owner_color = DEFAULT_PLAYER_COLORS.get("Default", (75,75,75))
             if territory_obj.owner and territory_obj.owner.color:
                 owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, owner_color)
 
@@ -456,7 +438,7 @@ class GameGUI:
                 pygame.draw.circle(self.screen, BORDER_COLOR, screen_centroid_coords, radius, 1) # Use theme BORDER_COLOR
 
             if screen_centroid_coords:
-                if self.zoom_level >= 0.4: # Only draw army count if zoom is sufficient
+                if self.zoom_level >= 0.25: # Lowered threshold
                     luminance = 0.299 * owner_color[0] + 0.587 * owner_color[1] + 0.114 * owner_color[2]
                     army_text_color = TEXT_COLOR if luminance < 140 else PANEL_BACKGROUND_COLOR
                     army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
@@ -468,7 +450,7 @@ class GameGUI:
                     pygame.draw.rect(self.screen, BORDER_COLOR, army_bg_rect, 1, border_radius=3)
                     self.screen.blit(army_text, army_text_rect)
 
-                if self.zoom_level >= 0.3: # Only draw territory name if zoom is sufficient
+                if self.zoom_level >= 0.2: # Lowered threshold
                     name_surf = self.font.render(terr_name, True, TEXT_COLOR)
                     name_rect_center_x = screen_centroid_coords[0]
                     scaled_offset = int(max(10, 15 * self.zoom_level))
@@ -479,6 +461,54 @@ class GameGUI:
                     pygame.draw.rect(temp_surface_name, PANEL_BACKGROUND_COLOR + (220,), temp_surface_name.get_rect(), border_radius=4)
                     self.screen.blit(temp_surface_name, name_bg_rect.topleft) # Draw background first
                     self.screen.blit(name_surf, name_rect) # Then text on top
+
+    def _get_map_content_bounds(self) -> tuple[float, float, float, float] | None:
+        """
+        Calculates the bounding box of the map content in zoomed coordinates.
+        Returns (min_x, min_y, max_x, max_y) or None if no territories.
+        These coordinates are relative to a map origin (0,0) after zoom,
+        BEFORE camera offset is applied.
+        """
+        if not self.current_game_state or not self.current_game_state.territories:
+            return None
+
+        min_x, min_y = float('inf'), float('inf')
+        max_x, max_y = float('-inf'), float('-inf')
+
+        has_elements = False
+
+        if self.game_mode == "world_map" and self.territory_polygons:
+            for terr_name in self.current_game_state.territories.keys():
+                list_of_original_polygon_points = self.territory_polygons.get(terr_name)
+                if list_of_original_polygon_points:
+                    has_elements = True
+                    for poly_part in list_of_original_polygon_points:
+                        for pt_x, pt_y in poly_part:
+                            zoomed_pt_x = pt_x * self.zoom_level
+                            zoomed_pt_y = pt_y * self.zoom_level
+                            min_x = min(min_x, zoomed_pt_x)
+                            min_y = min(min_y, zoomed_pt_y)
+                            max_x = max(max_x, zoomed_pt_x)
+                            max_y = max(max_y, zoomed_pt_y)
+        elif self.territory_coordinates: # Standard mode or fallback for world_map if no polygons
+            # For circle map, bounds are based on circle centers and radii
+            # Radius also needs to be scaled by zoom for accurate bounds.
+            scaled_radius = max(5, int(20 * self.zoom_level))
+            for terr_name in self.current_game_state.territories.keys():
+                coords_orig = self.territory_coordinates.get(terr_name)
+                if coords_orig:
+                    has_elements = True
+                    center_x_zoomed = coords_orig[0] * self.zoom_level
+                    center_y_zoomed = coords_orig[1] * self.zoom_level
+                    min_x = min(min_x, center_x_zoomed - scaled_radius)
+                    min_y = min(min_y, center_y_zoomed - scaled_radius)
+                    max_x = max(max_x, center_x_zoomed + scaled_radius)
+                    max_y = max(max_y, center_y_zoomed + scaled_radius)
+
+        if not has_elements:
+            return None
+
+        return min_x, min_y, max_x, max_y
 
     def draw_player_info_panel(self, game_state: GameState):
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, SCREEN_HEIGHT - PLAYER_INFO_PANEL_HEIGHT, SIDE_PANEL_WIDTH, PLAYER_INFO_PANEL_HEIGHT)
@@ -545,23 +575,39 @@ class GameGUI:
         words = text.split(' ')
         lines = []
         current_line = ""
-        line_height = font.get_linesize()
-        max_lines = (rect.height - 10) // line_height # -10 for padding
+
+        # Add a small line spacing factor
+        line_spacing_factor = 1.1
+        line_height = int(font.get_linesize() * line_spacing_factor)
+        if line_height == 0: line_height = font.get_linesize() # Avoid division by zero if font size is tiny
+
+        # Padding inside the already padded text_area_rect
+        internal_padding = 2 # Small padding for top/left within the text_area_rect
+
+        max_lines = (rect.height - internal_padding) // line_height
 
         for word in words:
             test_line = current_line + word + " "
-            if font.size(test_line)[0] < rect.width - 10: # -10 for padding
+            if font.size(test_line)[0] < (rect.width - 2 * internal_padding):
                 current_line = test_line
             else:
                 lines.append(current_line)
                 current_line = word + " "
         lines.append(current_line)
 
-        y = rect.y + 5
+        y = rect.y + internal_padding
         for i, line_text in enumerate(lines):
-            if i >= max_lines: break
+            if i >= max_lines:
+                # Optional: Add a "..." if text is truncated due to max_lines
+                if i > 0 and lines[i-1]: # Check if there was a previous line
+                    prev_line_surf = font.render(lines[i-1].strip() + "...", True, color)
+                    # Clear the previous line approximately
+                    clear_rect = pygame.Rect(rect.x + internal_padding, y - line_height, rect.width - 2*internal_padding, line_height)
+                    pygame.draw.rect(surface, PANEL_BACKGROUND_COLOR, clear_rect) # Fill with panel bg
+                    surface.blit(prev_line_surf, (rect.x + internal_padding, y - line_height))
+                break
             line_surface = font.render(line_text.strip(), True, color)
-            surface.blit(line_surface, (rect.x + 5, y))
+            surface.blit(line_surface, (rect.x + internal_padding, y))
             y += line_height
 
     def draw_tabs(self, base_y_offset: int, panel_title: str, tab_options: list[str], active_tab_var_name: str, tab_rects_dict_name: str, mouse_click_pos: tuple[int, int] | None):
@@ -622,7 +668,7 @@ class GameGUI:
                 setattr(self, active_tab_var_name, option_name)
                 print(f"GUI: Switched {panel_title} tab to {option_name}")
 
-            current_x += text_width + 2 # Small gap
+            current_x += tab_width + 2 # Small gap
 
         return base_y_offset + TAB_HEIGHT
 
@@ -851,6 +897,42 @@ class GameGUI:
             if self.orchestrator and self.running:
                 if not self.orchestrator.advance_game_turn():
                     self.running = False
+
+            # Clamp camera offsets to keep map within bounds
+            map_bounds = self._get_map_content_bounds()
+            if map_bounds:
+                content_min_x, content_min_y, content_max_x, content_max_y = map_bounds
+                map_margin = 50 # Allow map to go 50px off-screen
+
+                # Clamp X offset
+                # Left edge: content_min_x + self.camera_offset_x should not be > MAP_AREA_WIDTH - map_margin
+                # self.camera_offset_x should not be > MAP_AREA_WIDTH - map_margin - content_min_x
+                max_offset_x = MAP_AREA_WIDTH - map_margin - content_min_x
+                # Right edge: content_max_x + self.camera_offset_x should not be < map_margin
+                # self.camera_offset_x should not be < map_margin - content_max_x
+                min_offset_x = map_margin - content_max_x
+
+                # Prevent map from being smaller than view area if possible
+                map_width_zoomed = content_max_x - content_min_x
+                if map_width_zoomed < MAP_AREA_WIDTH - 2 * map_margin: # If map is narrower than viewable area
+                    # Center it
+                    self.camera_offset_x = (MAP_AREA_WIDTH - map_width_zoomed) / 2 - content_min_x
+                else:
+                    self.camera_offset_x = max(min_offset_x, min(self.camera_offset_x, max_offset_x))
+
+                # Clamp Y offset
+                # Top edge: content_min_y + self.camera_offset_y should not be > SCREEN_HEIGHT - map_margin
+                max_offset_y = SCREEN_HEIGHT - map_margin - content_min_y
+                # Bottom edge: content_max_y + self.camera_offset_y should not be < map_margin
+                min_offset_y = map_margin - content_max_y
+
+                map_height_zoomed = content_max_y - content_min_y
+                if map_height_zoomed < SCREEN_HEIGHT - 2 * map_margin: # If map is shorter than viewable area
+                    # Center it
+                    self.camera_offset_y = (SCREEN_HEIGHT - map_height_zoomed) / 2 - content_min_y
+                else:
+                    self.camera_offset_y = max(min_offset_y, min(self.camera_offset_y, max_offset_y))
+
 
             self.screen.fill(BACKGROUND_COLOR) # Use the main background color for the whole screen initially
 
