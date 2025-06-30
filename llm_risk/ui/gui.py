@@ -5,32 +5,56 @@ from ..game_engine.data_structures import GameState, Territory, Player as GamePl
 import json
 import os
 
-# Define some colors (RGB)
+# --- New Aesthetic Color Palette ---
+BACKGROUND_COLOR = (30, 33, 36)      # Deep, desaturated blue-grey for map background/ocean
+PANEL_BACKGROUND_COLOR = (40, 44, 48) # Slightly lighter dark grey for side panels
+TEXT_COLOR = (220, 220, 220)        # Off-white for general text
+TEXT_COLOR_MUTED = (160, 160, 160)    # Medium grey for less important text/logs
+TEXT_COLOR_HEADER = (230, 230, 230)   # Slightly brighter for headers
+BORDER_COLOR = (60, 66, 72)          # Subtle border for panels and elements
+BORDER_COLOR_LIGHT = (80, 88, 96)     # Lighter border for emphasis if needed
+
+ACCENT_COLOR_PRIMARY = (0, 180, 180)    # Vibrant Teal/Cyan for active tabs, highlights
+ACCENT_COLOR_SECONDARY = (0, 130, 130)  # Darker Teal for inactive tabs or secondary highlights
+ACCENT_COLOR_ATTENTION = (255, 100, 100) # For alerts or important warnings (e.g. must_trade)
+
+# Standard Colors (some might be replaced by theme colors)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-YELLOW = (255, 255, 0)
-GREY = (128, 128, 128)
-LIGHT_GREY = (200, 200, 200)
-DARK_GREY = (50, 50, 50)
-TAB_COLOR_ACTIVE = GREEN
-TAB_COLOR_INACTIVE = GREY
+RED = (220, 50, 50) # Adjusted Red for better harmony
+GREEN = (50, 200, 50) # Adjusted Green
+BLUE = (50, 100, 220) # Adjusted Blue
+YELLOW = (220, 200, 50) # Adjusted Yellow
 
-# Define a new color for the ocean
-OCEAN_BLUE = (60, 100, 180) # A pleasant blue for the ocean background
-CONTINENT_COLORS = { # Example colors, can be expanded
-    "North America": (200, 180, 150), # Tan-ish
-    "Asia": (150, 200, 150), # Light green-ish
-    "Default": (100, 100, 100) # Fallback continent color
+# Old color names mapped to new theme (or kept if distinct)
+OCEAN_BLUE = BACKGROUND_COLOR # Map background is now the main background
+DARK_GREY_OLD = (50, 50, 50) # Keep for reference if needed during transition
+LIGHT_GREY_OLD = (200, 200, 200) # Keep for reference
+GREY_OLD = (128, 128, 128)
+
+# Continent Colors (can be refined based on new palette)
+# For now, let's make them slightly desaturated or themed if map is dark
+CONTINENT_COLORS = {
+    "North America": (100, 90, 80),   # Muted brown/tan
+    "Asia": (80, 100, 80),      # Muted green
+    "Europe": (80, 80, 100),    # Muted blue/purple
+    "South America": (110, 100, 70), # Muted orange/yellow
+    "Africa": (120, 110, 90),   # Muted darker tan
+    "Australia": (70, 110, 110), # Muted teal/blue-green
+    "Default": (75, 75, 75)     # Fallback continent color (darker grey)
 }
-ADJACENCY_LINE_COLOR = (50, 50, 50) # Dark grey for lines
+ADJACENCY_LINE_COLOR = (80, 88, 96) # Use a lighter border color for lines on dark map
 
 DEFAULT_PLAYER_COLORS = {
     "Red": RED, "Blue": BLUE, "Green": GREEN, "Yellow": YELLOW,
-    "Purple": (128, 0, 128), "Orange": (255, 165, 0), "Black": BLACK, "White": WHITE # White might be hard to see
+    "Purple": (160, 70, 160), "Orange": (255, 140, 0),
+    "Pink": (230, 100, 180), "Cyan": (70, 200, 200)
+    # Black/White player colors might be problematic on a dark theme.
+    # Consider replacing them or ensuring high contrast outlines.
 }
+# Ensure BLACK and WHITE are available if used by player colors explicitly
+DEFAULT_PLAYER_COLORS["Black"] = (20,20,20) # Very dark grey instead of pure black for player
+DEFAULT_PLAYER_COLORS["White"] = (230,230,230) # Off-white for player
 
 SCREEN_WIDTH = 1920
 SCREEN_HEIGHT = 1080
@@ -50,10 +74,21 @@ class GameGUI:
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption(f"LLM Risk Game - {game_mode.replace('_', ' ').title()} Mode") # Update caption
-        self.font = pygame.font.SysFont(None, 24)
-        self.large_font = pygame.font.SysFont(None, 36)
-        self.tab_font = pygame.font.SysFont(None, TAB_FONT_SIZE)
-        self.ocean_color = OCEAN_BLUE
+
+        # Attempt to use a more common, aesthetically pleasing sans-serif font
+        common_sans_serif_fonts = "Arial, Helvetica, Calibri, Liberation Sans, DejaVu Sans"
+        try:
+            self.font = pygame.font.SysFont(common_sans_serif_fonts, 24)
+            self.large_font = pygame.font.SysFont(common_sans_serif_fonts, 36)
+            self.tab_font = pygame.font.SysFont(common_sans_serif_fonts, TAB_FONT_SIZE)
+            print(f"Successfully loaded system font: {self.font.name}")
+        except pygame.error:
+            print(f"Warning: Could not find specified system fonts ({common_sans_serif_fonts}). Falling back to default.")
+            self.font = pygame.font.SysFont(None, 24)
+            self.large_font = pygame.font.SysFont(None, 36)
+            self.tab_font = pygame.font.SysFont(None, TAB_FONT_SIZE)
+
+        self.ocean_color = OCEAN_BLUE # OCEAN_BLUE is now mapped to BACKGROUND_COLOR
         self.clock = pygame.time.Clock()
 
         self.engine = engine
@@ -95,7 +130,7 @@ class GameGUI:
         # Zoom attributes
         self.zoom_level = 1.0
         self.min_zoom = 0.2
-        self.max_zoom = 3.0  # Adjusted max zoom to a more reasonable level initially
+        self.max_zoom = 10.0  # Increased max zoom level
         self.zoom_increment = 0.1
 
     def _load_map_display_config(self, config_file: str):
@@ -295,23 +330,38 @@ class GameGUI:
 
             radius = max(5, int(20 * self.zoom_level)) # Scale radius, with a minimum size
 
-            owner_color = GREY
+            owner_color = DEFAULT_PLAYER_COLORS.get("Default", (75,75,75)) # Use new default from palette
             if territory_obj.owner and territory_obj.owner.color:
-                owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
+                owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, owner_color)
+
             pygame.draw.circle(self.screen, owner_color, coords, radius)
-            pygame.draw.circle(self.screen, BLACK, coords, radius, 2) # Border thickness constant for now
+            pygame.draw.circle(self.screen, BORDER_COLOR, coords, radius, 2) # Use theme BORDER_COLOR
 
-            army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
-            army_text = self.font.render(str(territory_obj.army_count), True, army_text_color) # Font size constant
-            self.screen.blit(army_text, army_text.get_rect(center=coords))
+            # Determine text color based on luminance of owner_color for better readability
+            luminance = 0.299 * owner_color[0] + 0.587 * owner_color[1] + 0.114 * owner_color[2]
+            army_text_color = TEXT_COLOR if luminance < 140 else PANEL_BACKGROUND_COLOR # Adjusted threshold
 
-            name_surf = self.font.render(terr_name, True, WHITE) # Font size constant
-            name_rect_center_x = coords[0]
-            name_rect_center_y = coords[1] - int(30 * self.zoom_level) # Scale offset for name
-            name_rect = name_surf.get_rect(center=(name_rect_center_x, name_rect_center_y))
-            name_bg_rect = name_rect.inflate(4, 4)
-            pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
-            self.screen.blit(name_surf, name_rect)
+            army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
+            if self.zoom_level >= 0.4: # Only draw army count if zoom is sufficient
+                self.screen.blit(army_text, army_text.get_rect(center=coords))
+
+            if self.zoom_level >= 0.3: # Only draw territory name if zoom is sufficient
+                name_surf = self.font.render(terr_name, True, TEXT_COLOR) # Use theme TEXT_COLOR
+                name_rect_center_x = coords[0]
+                # Ensure name is offset reasonably, especially when zoomed out
+                scaled_offset = int(radius * 1.5) # Offset based on current circle radius
+                name_rect_center_y = coords[1] - max(int(15 * self.zoom_level), scaled_offset)
+
+
+                name_rect = name_surf.get_rect(center=(name_rect_center_x, name_rect_center_y))
+
+                # Background for territory name for readability
+                name_bg_rect = name_rect.inflate(6, 4)
+                # Create a temporary surface for transparency
+                temp_surface = pygame.Surface(name_bg_rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(temp_surface, PANEL_BACKGROUND_COLOR + (220,), temp_surface.get_rect(), border_radius=4) # Panel bg with alpha
+                self.screen.blit(temp_surface, name_bg_rect.topleft)
+                self.screen.blit(name_surf, name_rect)
 
     def _draw_world_map_polygons(self, game_state: GameState):
         gs_to_draw = game_state
@@ -381,12 +431,13 @@ class GameGUI:
                 # print(f"DEBUG: _draw_world_map_polygons -   Screen Centroid for '{terr_name}': {screen_centroid_coords}")
                 processed_first_territory_for_debug = True
 
-            owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY) if territory_obj.owner and territory_obj.owner.color else GREY
+            owner_color = DEFAULT_PLAYER_COLORS.get("Default", (75,75,75)) # Use new default
+            if territory_obj.owner and territory_obj.owner.color:
+                owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, owner_color)
 
             if list_of_original_polygon_points:
                 for i, original_polygon_part_points in enumerate(list_of_original_polygon_points):
                     if original_polygon_part_points and len(original_polygon_part_points) >= 3:
-                        # Apply zoom and camera offset to polygon points
                         screen_polygon_part_points = [
                             ( (pt[0] * self.zoom_level) + self.camera_offset_x,
                               (pt[1] * self.zoom_level) + self.camera_offset_y)
@@ -394,75 +445,101 @@ class GameGUI:
                         ]
                         try:
                             pygame.draw.polygon(self.screen, owner_color, screen_polygon_part_points)
-                            pygame.draw.polygon(self.screen, BLACK, screen_polygon_part_points, 1) # Border
+                            pygame.draw.polygon(self.screen, BORDER_COLOR, screen_polygon_part_points, 1) # Use theme BORDER_COLOR
                         except TypeError as e:
                             print(f"DEBUG: GameGUI._draw_world_map_polygons - Error drawing polygon part {i} for {terr_name}: {e}. Screen points: {screen_polygon_part_points}")
-                            if screen_centroid_coords: # Fallback for this specific part if centroid exists
+                            if screen_centroid_coords:
                                 pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, max(2, int(5 * self.zoom_level)), 0)
-            elif screen_centroid_coords: # If no polygons, but centroid exists
-                # print(f"DEBUG: GameGUI._draw_world_map_polygons - No polygons for '{terr_name}', drawing circle at offset centroid {screen_centroid_coords}.")
+            elif screen_centroid_coords:
                 radius = max(3, int(10 * self.zoom_level))
                 pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, radius)
-                pygame.draw.circle(self.screen, BLACK, screen_centroid_coords, radius, 1)
+                pygame.draw.circle(self.screen, BORDER_COLOR, screen_centroid_coords, radius, 1) # Use theme BORDER_COLOR
 
-            # Draw army count and name at the screen_centroid_coords (if available)
             if screen_centroid_coords:
-                army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
-                army_text = self.font.render(str(territory_obj.army_count), True, army_text_color) # Font size constant
+                if self.zoom_level >= 0.4: # Only draw army count if zoom is sufficient
+                    luminance = 0.299 * owner_color[0] + 0.587 * owner_color[1] + 0.114 * owner_color[2]
+                    army_text_color = TEXT_COLOR if luminance < 140 else PANEL_BACKGROUND_COLOR
+                    army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
+                    army_text_rect = army_text.get_rect(center=screen_centroid_coords)
+                    army_bg_rect = army_text_rect.inflate(6, 4)
+                    temp_surface_army = pygame.Surface(army_bg_rect.size, pygame.SRCALPHA)
+                    pygame.draw.rect(temp_surface_army, PANEL_BACKGROUND_COLOR + (200,), temp_surface_army.get_rect(), border_radius=3)
+                    self.screen.blit(temp_surface_army, army_bg_rect.topleft)
+                    pygame.draw.rect(self.screen, BORDER_COLOR, army_bg_rect, 1, border_radius=3)
+                    self.screen.blit(army_text, army_text_rect)
 
-                army_text_rect = army_text.get_rect(center=screen_centroid_coords)
-                army_bg_rect = army_text_rect.inflate(4,2) # Keep padding constant for now
-                pygame.draw.rect(self.screen, owner_color, army_bg_rect, border_radius=3)
-                pygame.draw.rect(self.screen, BLACK, army_bg_rect, 1, border_radius=3)
-                self.screen.blit(army_text, army_text_rect)
-
-                name_surf = self.font.render(terr_name, True, WHITE) # Font size constant
-                name_rect_center_x = screen_centroid_coords[0]
-                name_rect_center_y = screen_centroid_coords[1] + int(15 * self.zoom_level) # Scale offset
-                name_rect = name_surf.get_rect(center=(name_rect_center_x, name_rect_center_y))
-                name_bg_rect = name_rect.inflate(4,2)
-                pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
-                self.screen.blit(name_surf, name_rect)
+                if self.zoom_level >= 0.3: # Only draw territory name if zoom is sufficient
+                    name_surf = self.font.render(terr_name, True, TEXT_COLOR)
+                    name_rect_center_x = screen_centroid_coords[0]
+                    scaled_offset = int(max(10, 15 * self.zoom_level))
+                    name_rect_center_y = screen_centroid_coords[1] + scaled_offset
+                    name_rect = name_surf.get_rect(center=(name_rect_center_x, name_rect_center_y))
+                    name_bg_rect = name_rect.inflate(6, 4)
+                    temp_surface_name = pygame.Surface(name_bg_rect.size, pygame.SRCALPHA)
+                    pygame.draw.rect(temp_surface_name, PANEL_BACKGROUND_COLOR + (220,), temp_surface_name.get_rect(), border_radius=4)
+                    self.screen.blit(temp_surface_name, name_bg_rect.topleft) # Draw background first
+                    self.screen.blit(name_surf, name_rect) # Then text on top
 
     def draw_player_info_panel(self, game_state: GameState):
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, SCREEN_HEIGHT - PLAYER_INFO_PANEL_HEIGHT, SIDE_PANEL_WIDTH, PLAYER_INFO_PANEL_HEIGHT)
-        pygame.draw.rect(self.screen, (20,20,20), panel_rect)
-        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
+        pygame.draw.rect(self.screen, PANEL_BACKGROUND_COLOR, panel_rect)
+        pygame.draw.rect(self.screen, BORDER_COLOR, panel_rect, 1)
 
         gs_to_draw = game_state
         if not gs_to_draw: gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
         current_player = gs_to_draw.get_current_player()
-        y_pos = panel_rect.y + 5
+        padding = 10
+        line_height = self.font.get_linesize() + 2
+        y_pos = panel_rect.y + padding // 2
+
         if current_player:
-            info_text = f"Turn: {gs_to_draw.current_turn_number} Player: {current_player.name} ({current_player.color})"
-            info_surface = self.font.render(info_text, True, WHITE)
-            self.screen.blit(info_surface, (panel_rect.x + 5, y_pos))
-            y_pos += 20
+            player_display_color = DEFAULT_PLAYER_COLORS.get(current_player.color, TEXT_COLOR_MUTED)
+            info_text = f"Turn: {gs_to_draw.current_turn_number} | Player: {current_player.name}"
+            info_surface = self.font.render(info_text, True, TEXT_COLOR)
+            self.screen.blit(info_surface, (panel_rect.x + padding, y_pos))
 
-            phase_text = f"Phase: {gs_to_draw.current_game_phase}"
+            # Small colored rect next to player name
+            color_rect_size = line_height - 4
+            pygame.draw.rect(self.screen, player_display_color,
+                             (panel_rect.x + padding + self.font.size(info_text)[0] + 5, y_pos + 2, color_rect_size, color_rect_size))
+
+            y_pos += line_height
+
+            phase_text_str = f"Phase: {gs_to_draw.current_game_phase}"
+            phase_color = TEXT_COLOR
             if self.orchestrator and self.orchestrator.ai_is_thinking and self.orchestrator.active_ai_player_name == current_player.name:
-                phase_text += " (Thinking...)"
+                phase_text_str += " (Thinking...)"
+                phase_color = ACCENT_COLOR_PRIMARY # Highlight thinking status
 
-            cards_text = f"Cards: {len(current_player.hand)}, Deploy: {current_player.armies_to_deploy}, {phase_text}"
-            cards_surface = self.font.render(cards_text, True, WHITE)
-            self.screen.blit(cards_surface, (panel_rect.x + 5, y_pos))
+            phase_surface = self.font.render(phase_text_str, True, phase_color)
+            self.screen.blit(phase_surface, (panel_rect.x + padding, y_pos))
+            y_pos += line_height
+
+            cards_text = f"Cards: {len(current_player.hand)} | Deploy: {current_player.armies_to_deploy}"
+            cards_surface = self.font.render(cards_text, True, TEXT_COLOR)
+            self.screen.blit(cards_surface, (panel_rect.x + padding, y_pos))
+
         elif self.orchestrator and self.orchestrator.ai_is_thinking and self.orchestrator.active_ai_player_name:
-            # Case where current_player might be None briefly during transitions, but an AI is thinking
             thinking_text = f"AI ({self.orchestrator.active_ai_player_name}) is thinking..."
-            thinking_surface = self.font.render(thinking_text, True, YELLOW) # Yellow to stand out
+            thinking_surface = self.font.render(thinking_text, True, ACCENT_COLOR_ATTENTION) # Use attention color
             self.screen.blit(thinking_surface, (panel_rect.x + 5, y_pos))
 
 
     def draw_action_log_panel(self):
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, 0, SIDE_PANEL_WIDTH, ACTION_LOG_HEIGHT)
-        pygame.draw.rect(self.screen, DARK_GREY, panel_rect)
-        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
-        title_text = self.large_font.render("Action Log", True, WHITE)
-        self.screen.blit(title_text, (panel_rect.x + 10, panel_rect.y + 5))
-        y_offset = 35
-        for i, log_entry in enumerate(reversed(self.action_log[-6:])):
-            entry_surface = self.font.render(log_entry, True, LIGHT_GREY)
-            self.screen.blit(entry_surface, (panel_rect.x + 10, panel_rect.y + y_offset + i * 20))
+        pygame.draw.rect(self.screen, PANEL_BACKGROUND_COLOR, panel_rect)
+        pygame.draw.rect(self.screen, BORDER_COLOR, panel_rect, 1)
+
+        padding = 10
+        title_text = self.large_font.render("Action Log", True, TEXT_COLOR_HEADER)
+        self.screen.blit(title_text, (panel_rect.x + padding, panel_rect.y + padding // 2))
+
+        y_offset = title_text.get_height() + padding
+        max_log_entries = (ACTION_LOG_HEIGHT - y_offset - padding //2 ) // (self.font.get_linesize() + 2)
+
+        for i, log_entry in enumerate(reversed(self.action_log[-max_log_entries:])):
+            entry_surface = self.font.render(log_entry[:70], True, TEXT_COLOR_MUTED) # Truncate long entries
+            self.screen.blit(entry_surface, (panel_rect.x + padding, panel_rect.y + y_offset + i * (self.font.get_linesize() + 2)))
 
     def _render_text_wrapped(self, surface, text, rect, font, color):
         words = text.split(' ')
@@ -489,26 +566,55 @@ class GameGUI:
 
     def draw_tabs(self, base_y_offset: int, panel_title: str, tab_options: list[str], active_tab_var_name: str, tab_rects_dict_name: str, mouse_click_pos: tuple[int, int] | None):
         tab_bar_rect = pygame.Rect(MAP_AREA_WIDTH, base_y_offset, SIDE_PANEL_WIDTH, TAB_HEIGHT)
-        pygame.draw.rect(self.screen, DARK_GREY, tab_bar_rect)
+        # No separate background for tab bar itself, panel background will show through
+        # pygame.draw.rect(self.screen, PANEL_BACKGROUND_COLOR, tab_bar_rect)
 
         tab_rects_dict = getattr(self, tab_rects_dict_name)
         tab_rects_dict.clear()
 
-        current_x = MAP_AREA_WIDTH + 5
-        max_tab_width = (SIDE_PANEL_WIDTH - 10) / len(tab_options) if tab_options else SIDE_PANEL_WIDTH - 10
+        padding = 5
+        current_x = MAP_AREA_WIDTH + padding
+        # Calculate available width for tabs, considering padding on both sides
+        available_width_for_tabs = SIDE_PANEL_WIDTH - (2 * padding)
+
+        num_tabs = len(tab_options)
+        if num_tabs == 0: return base_y_offset + TAB_HEIGHT # Should not happen if called
+
+        # Calculate tab width: either distribute equally or based on text, with a max
+        # For simplicity and cleaner look, let's try equal width for now.
+        # Add small spacing between tabs
+        spacing_between_tabs = 2
+        total_spacing = (num_tabs -1) * spacing_between_tabs
+        individual_tab_width = (available_width_for_tabs - total_spacing) / num_tabs
 
         for option_name in tab_options:
-            text_surface = self.tab_font.render(option_name[:10], True, BLACK) # Truncate for display
-            text_width, text_height = text_surface.get_size()
-            tab_width = min(text_width + 10, max_tab_width)
-
-            tab_rect = pygame.Rect(current_x, base_y_offset, tab_width, TAB_HEIGHT)
             is_active = getattr(self, active_tab_var_name) == option_name
-            tab_bg_color = TAB_COLOR_ACTIVE if is_active else TAB_COLOR_INACTIVE
+            tab_bg_color = ACCENT_COLOR_PRIMARY if is_active else ACCENT_COLOR_SECONDARY
+            text_color = PANEL_BACKGROUND_COLOR if is_active else TEXT_COLOR # Dark text on active, light on inactive
 
-            pygame.draw.rect(self.screen, tab_bg_color, tab_rect)
-            pygame.draw.rect(self.screen, BLACK, tab_rect, 1) # Border
-            self.screen.blit(text_surface, (tab_rect.x + (tab_width - text_width) // 2, tab_rect.y + (TAB_HEIGHT - text_height) // 2))
+            # Truncate text if too long for the calculated tab width
+            # Max 2 chars for very short names, else more.
+            max_chars = max(2, int(individual_tab_width / (self.tab_font.size("M")[0] * 0.8))) # Estimate char width
+            display_name = option_name[:max_chars] + ".." if len(option_name) > max_chars + 2 else option_name
+
+            text_surface = self.tab_font.render(display_name, True, text_color)
+            text_width, text_height = text_surface.get_size()
+
+            # Ensure tab_width is at least text_width + some padding, but not exceeding individual_tab_width
+            # current_tab_actual_width = min(max(text_width + 10, individual_tab_width), individual_tab_width)
+            current_tab_actual_width = individual_tab_width
+
+
+            tab_rect = pygame.Rect(current_x, base_y_offset, current_tab_actual_width, TAB_HEIGHT)
+
+            pygame.draw.rect(self.screen, tab_bg_color, tab_rect, border_top_left_radius=3, border_top_right_radius=3)
+            # No separate border color for tabs, background difference implies separation
+            # pygame.draw.rect(self.screen, BORDER_COLOR, tab_rect, 1, border_top_left_radius=3, border_top_right_radius=3)
+
+            # Center text in tab
+            text_x = tab_rect.x + (current_tab_actual_width - text_width) // 2
+            text_y = tab_rect.y + (TAB_HEIGHT - text_height) // 2
+            self.screen.blit(text_surface, (text_x, text_y))
 
             tab_rects_dict[option_name] = tab_rect
 
@@ -529,19 +635,26 @@ class GameGUI:
         content_y_start = self.draw_tabs(ACTION_LOG_HEIGHT, "AI Thoughts", tab_options, "active_tab_thought_panel", "thought_tab_rects", mouse_click_pos)
 
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, content_y_start, SIDE_PANEL_WIDTH, THOUGHT_PANEL_HEIGHT - TAB_HEIGHT)
-        pygame.draw.rect(self.screen, (40,40,40), panel_rect)
-        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
+        pygame.draw.rect(self.screen, PANEL_BACKGROUND_COLOR, panel_rect) # Use new panel background
+        pygame.draw.rect(self.screen, BORDER_COLOR, panel_rect, 1) # Use new border color
 
         player_to_show = self.active_tab_thought_panel
         current_thoughts_map = self.ai_thoughts
 
+        padding = 10
+        text_area_rect = panel_rect.inflate(-padding, -padding) # Create a text area rect with padding
+
         if player_to_show and player_to_show in current_thoughts_map:
             thought = current_thoughts_map[player_to_show]
-            self._render_text_wrapped(self.screen, thought, panel_rect, self.font, WHITE)
+            self._render_text_wrapped(self.screen, thought, text_area_rect, self.font, TEXT_COLOR) # Use new text color
         else:
             no_thought_text_str = f"No thoughts for {player_to_show if player_to_show else 'N/A'}."
-            no_thought_text = self.font.render(no_thought_text_str, True, GREY)
-            self.screen.blit(no_thought_text, (panel_rect.x + 5, panel_rect.y + 5))
+            # Render centered placeholder text
+            no_thought_text_surf = self.font.render(no_thought_text_str, True, TEXT_COLOR_MUTED) # Use muted text color
+            text_rect = no_thought_text_surf.get_rect(center=panel_rect.center)
+            text_rect.top = panel_rect.top + padding # Align to top with padding
+            self.screen.blit(no_thought_text_surf, text_rect)
+
 
     def draw_chat_panel(self, mouse_click_pos: tuple[int, int] | None):
         base_y = ACTION_LOG_HEIGHT + THOUGHT_PANEL_HEIGHT
@@ -550,28 +663,85 @@ class GameGUI:
         content_y_start = self.draw_tabs(base_y, "Chat", chat_tab_options, "active_tab_chat_panel", "chat_tab_rects", mouse_click_pos)
 
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, content_y_start, SIDE_PANEL_WIDTH, CHAT_PANEL_HEIGHT - TAB_HEIGHT)
-        pygame.draw.rect(self.screen, (50,50,50), panel_rect)
-        pygame.draw.rect(self.screen, WHITE, panel_rect, 1)
+        pygame.draw.rect(self.screen, PANEL_BACKGROUND_COLOR, panel_rect) # Use new panel background
+        pygame.draw.rect(self.screen, BORDER_COLOR, panel_rect, 1) # Use new border color
 
         messages_to_render = []
+        max_messages_display = (panel_rect.height - 10) // (self.font.get_linesize() + 2) # Calculate max messages based on height
+
         if self.active_tab_chat_panel == "global":
-            messages_to_render = getattr(self, 'global_chat_messages', [])[-10:] # Last 10 global
+            messages_to_render = getattr(self, 'global_chat_messages', [])[-max_messages_display:]
         else:
             all_private_chats = getattr(self, 'private_chat_conversations_map', {})
-            messages_to_render = all_private_chats.get(self.active_tab_chat_panel, [])[-10:] # Last 10 for this private chat
+            messages_to_render = all_private_chats.get(self.active_tab_chat_panel, [])[-max_messages_display:]
 
-        y_render_offset = panel_rect.y + 5
+        padding = 10
+        y_render_offset = panel_rect.y + padding // 2
+        line_spacing = 2
+
         for msg_data in reversed(messages_to_render):
-            msg_str = f"{msg_data.get('sender','System')}: {msg_data.get('message','')}"
-            # Simple rendering for now, could wrap text if needed
-            if y_render_offset + self.font.get_linesize() > panel_rect.bottom - 5: break
-            msg_surface = self.font.render(msg_str[:50], True, WHITE) # Truncate long messages
-            self.screen.blit(msg_surface, (panel_rect.x + 5, y_render_offset))
-            y_render_offset += self.font.get_linesize()
+            sender = msg_data.get('sender', 'System')
+            message_text = msg_data.get('message', '')
+
+            # Determine sender color (e.g., player color or accent for system)
+            sender_color = TEXT_COLOR_MUTED # Default for system or unknown
+            if sender != 'System' and sender in DEFAULT_PLAYER_COLORS: # Check if sender is a known player color name
+                sender_color = DEFAULT_PLAYER_COLORS[sender]
+            elif sender in self.player_names_for_tabs: # Check if sender is a player name
+                # Find player object to get their color
+                player_obj = next((p for p in self.current_game_state.players if p.name == sender), None)
+                if player_obj and player_obj.color in DEFAULT_PLAYER_COLORS:
+                    sender_color = DEFAULT_PLAYER_COLORS[player_obj.color]
+                else: # Fallback if player color not in DEFAULT_PLAYER_COLORS
+                    sender_color = ACCENT_COLOR_PRIMARY
+
+
+            full_msg_str = f"{sender}: {message_text}"
+            # Simple text wrapping for chat messages
+            available_width = panel_rect.width - (2 * padding)
+
+            words = full_msg_str.split(' ')
+            lines_for_this_message = []
+            current_line_text = ""
+            for word in words:
+                test_line = current_line_text + word + " "
+                if self.font.size(test_line)[0] < available_width:
+                    current_line_text = test_line
+                else:
+                    lines_for_this_message.append(current_line_text.strip())
+                    current_line_text = word + " "
+            lines_for_this_message.append(current_line_text.strip())
+
+            # Render lines for this message from bottom up (in reverse order of how they are added)
+            for line_text in reversed(lines_for_this_message):
+                if y_render_offset + self.font.get_linesize() > panel_rect.bottom - padding // 2:
+                    break # Stop if panel is full
+
+                # For the first line of a message part (which is the sender part), color the sender
+                if line_text.startswith(sender + ":"):
+                    sender_part = sender + ":"
+                    message_part = line_text[len(sender_part):]
+
+                    sender_surf = self.font.render(sender_part, True, sender_color)
+                    message_surf = self.font.render(message_part, True, TEXT_COLOR)
+
+                    self.screen.blit(sender_surf, (panel_rect.x + padding, y_render_offset))
+                    self.screen.blit(message_surf, (panel_rect.x + padding + sender_surf.get_width(), y_render_offset))
+                else: # Subsequent wrapped lines
+                    line_surf = self.font.render(line_text, True, TEXT_COLOR)
+                    self.screen.blit(line_surf, (panel_rect.x + padding, y_render_offset))
+
+                y_render_offset += self.font.get_linesize() + line_spacing
+            y_render_offset += line_spacing # Extra spacing between messages
+
 
         if not messages_to_render:
-            no_chat_text = self.font.render(f"No messages in chat '{self.active_tab_chat_panel}'.", True, GREY)
-            self.screen.blit(no_chat_text, (panel_rect.x + 5, panel_rect.y + 5))
+            no_chat_text_str = f"No messages in chat '{self.active_tab_chat_panel}'."
+            no_chat_surf = self.font.render(no_chat_text_str, True, TEXT_COLOR_MUTED)
+            text_rect = no_chat_surf.get_rect(center=panel_rect.center)
+            text_rect.top = panel_rect.top + padding
+            self.screen.blit(no_chat_surf, text_rect)
+
 
     def log_action(self, action_string: str):
         self.action_log.append(action_string)
@@ -600,11 +770,17 @@ class GameGUI:
 
 
     def show_game_over_screen(self, winner_name: str | None):
-        self.screen.fill(BLACK)
+        self.screen.fill(PANEL_BACKGROUND_COLOR) # Use panel background for game over screen
         message = f"Game Over! Winner: {winner_name}" if winner_name else "Game Over! Draw/Timeout."
-        text_surface = self.large_font.render(message, True, WHITE)
-        text_rect = text_surface.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+
+        text_surface = self.large_font.render(message, True, TEXT_COLOR_HEADER) # Use header text color
+        text_rect = text_surface.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30))
+
+        sub_text_surface = self.font.render("Click anywhere or close window to exit.", True, TEXT_COLOR_MUTED)
+        sub_text_rect = sub_text_surface.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 30))
+
         self.screen.blit(text_surface, text_rect)
+        self.screen.blit(sub_text_surface, sub_text_rect)
         pygame.display.flip()
         running = True
         while running:
@@ -676,7 +852,7 @@ class GameGUI:
                 if not self.orchestrator.advance_game_turn():
                     self.running = False
 
-            self.screen.fill(self.colors.get('grey', GREY))
+            self.screen.fill(BACKGROUND_COLOR) # Use the main background color for the whole screen initially
 
             gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
 
