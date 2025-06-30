@@ -129,8 +129,16 @@ class GameOrchestrator:
         # Initialize the game board in the engine
         # The engine will internally create a Neutral player if is_two_player_mode is True.
         # For world_map mode, it will also perform special territory initialization.
+        player_init_data_for_engine = []
+        for p_stub in human_game_players_for_engine:
+            player_init_data_for_engine.append({
+                "name": p_stub.name,
+                "color": p_stub.color,
+                "preferred_core_country": p_stub.preferred_core_country # Pass along the preference
+            })
+
         self.engine.initialize_game_from_map(
-            players_data=[{"name": p.name, "color": p.color} for p in human_player_configs], # Pass only human player data
+            players_data=player_init_data_for_engine,
             is_two_player_game=self.is_two_player_mode,
             game_mode=self.game_mode # Pass game_mode to engine
         )
@@ -265,7 +273,8 @@ class GameOrchestrator:
             # Create GamePlayer stub for engine (engine creates the actual objects)
             # This list `human_game_players_for_engine` will only contain human players.
             # The engine will add the Neutral player itself in 2P mode.
-            human_game_players_for_engine.append(GamePlayer(name=player_name, color=player_color))
+            preferred_country = config.get("preferred_strong_country") # Returns None if not found
+            human_game_players_for_engine.append(GamePlayer(name=player_name, color=player_color, preferred_core_country=preferred_country))
 
             agent: BaseAIAgent | None = None
             if ai_type == "Gemini": agent = GeminiAgent(player_name, player_color)

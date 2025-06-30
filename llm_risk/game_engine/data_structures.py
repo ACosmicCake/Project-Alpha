@@ -51,10 +51,11 @@ class Card:
         }
 
 class Player:
-    def __init__(self, name: str, color: str, is_neutral: bool = False):
+    def __init__(self, name: str, color: str, is_neutral: bool = False, preferred_core_country: str | None = None):
         self.name = name
         self.color = color
         self.is_neutral = is_neutral
+        self.preferred_core_country = preferred_core_country
         self.armies_to_deploy: int = 0
         self.initial_armies_pool: int = 0
         self.armies_placed_in_setup: int = 0
@@ -65,8 +66,8 @@ class Player:
 
 
     def __repr__(self):
-        return (f"Player({self.name}, Color: {self.color}, Neutral: {self.is_neutral}, Territories: {len(self.territories)}, "
-                f"Cards: {len(self.hand)}, Deploy: {self.armies_to_deploy}, "
+        return (f"Player({self.name}, Color: {self.color}, Neutral: {self.is_neutral}, CorePref: {self.preferred_core_country}, "
+                f"Territories: {len(self.territories)}, Cards: {len(self.hand)}, Deploy: {self.armies_to_deploy}, "
                 f"InitialPool: {self.initial_armies_pool}, PlacedInSetup: {self.armies_placed_in_setup}, "
                 f"Fortified: {self.has_fortified_this_turn}, Conquered: {self.has_conquered_territory_this_turn})")
 
@@ -81,7 +82,8 @@ class Player:
             "territories": [t.name for t in self.territories],
             "hand": [card.to_dict() for card in self.hand],
             "has_fortified_this_turn": self.has_fortified_this_turn,
-            "has_conquered_territory_this_turn": self.has_conquered_territory_this_turn
+            "has_conquered_territory_this_turn": self.has_conquered_territory_this_turn,
+            "preferred_core_country": self.preferred_core_country
         }
 
 class GameState:

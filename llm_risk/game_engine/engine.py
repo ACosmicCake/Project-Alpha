@@ -87,7 +87,7 @@ class GameEngine:
         if not players_data:
             print("Error: No player data provided."); gs.current_game_phase = "ERROR"; return
         gs.players.clear()
-        human_players = [Player(p_info["name"], p_info["color"]) for p_info in players_data]
+        human_players = [Player(p_info["name"], p_info["color"], preferred_core_country=p_info.get("preferred_core_country")) for p_info in players_data]
         gs.players.extend(human_players)
 
         # --- Mode-Specific Setup ---
@@ -190,30 +190,80 @@ class GameEngine:
             gs.current_game_phase = "ERROR"
             return
 
-        random.shuffle(territory_list) # Shuffle for initial assignment fairness
+        random.shuffle(territory_list) # Shuffle for initial assignment fairness - territory_list is list of Territory objects
 
-        # Assign territories and armies
+        # Create a mutable list of all territory objects to be assigned
+        all_territories_to_assign = list(territory_list) # Make a copy to modify
+
+        assigned_core_countries_this_round = set() # To handle cases where multiple players want the same core country
         successful_assignments = 0
-        for i, territory in enumerate(territory_list):
-            player_to_assign = non_neutral_players[i % num_players]
-            territory.owner = player_to_assign
 
-            initial_armies = power_map.get(territory.name, default_armies_if_not_ranked)
-            # Ensure a minimum, e.g. 1 army even if data suggests 0 or less
-            territory.army_count = max(1, initial_armies)
+        # 1. Core Country Assignment
+        print("Engine: Assigning core countries based on player preferences.")
+        # Ensure non_neutral_players is up-to-date with preferred_core_country from Player objects
+        # This is already the case as gs.players was populated by initialize_game_from_map
 
-            player_to_assign.territories.append(territory)
-            # In this mode, initial_armies_pool and armies_placed_in_setup might not be used
-            # as armies are directly assigned. Or, we could sum them up.
-            # For now, let's assume they are not the primary mechanism for setup in this mode.
-            player_to_assign.initial_armies_pool += territory.army_count
-            player_to_assign.armies_placed_in_setup += territory.army_count
-            successful_assignments +=1
+        for player_obj in non_neutral_players:
+            if player_obj.preferred_core_country:
+                core_country_name = player_obj.preferred_core_country
+
+                if core_country_name in assigned_core_countries_this_round:
+                    print(f"Warning: Core country '{core_country_name}' preferred by {player_obj.name} was already assigned to another player with the same preference this round. Skipping for {player_obj.name}.")
+                    continue
+
+                core_territory_obj = gs.territories.get(core_country_name)
+
+                if core_territory_obj and core_territory_obj in all_territories_to_assign:
+                    core_territory_obj.owner = player_obj
+                    initial_armies = power_map.get(core_territory_obj.name)
+                    if initial_armies is None:
+                        print(f"Warning: Core country '{core_territory_obj.name}' not found in military_power_ranking.json. Using default: {default_armies_if_not_ranked}.")
+                        initial_armies = default_armies_if_not_ranked
+                    core_territory_obj.army_count = max(1, initial_armies)
+
+                    player_obj.territories.append(core_territory_obj)
+                    player_obj.initial_armies_pool += core_territory_obj.army_count
+                    player_obj.armies_placed_in_setup += core_territory_obj.army_count
+
+                    all_territories_to_assign.remove(core_territory_obj)
+                    assigned_core_countries_this_round.add(core_country_name)
+                    successful_assignments += 1
+                    print(f"Assigned core country '{core_territory_obj.name}' to {player_obj.name} with {core_territory_obj.army_count} armies.")
+                elif not core_territory_obj:
+                    print(f"Warning: Preferred core country '{core_country_name}' for player {player_obj.name} not found in map territories.")
+                elif core_territory_obj not in all_territories_to_assign:
+                     print(f"Warning: Preferred core country '{core_country_name}' for {player_obj.name} was already assigned or is not available.")
+
+        # 2. Distribute Remaining Territories (using round-robin)
+        print(f"Engine: Distributing {len(all_territories_to_assign)} remaining territories.")
+        random.shuffle(all_territories_to_assign) # Shuffle remaining for fairness
+
+        if not non_neutral_players and all_territories_to_assign:
+             print("Error: No non-neutral players to assign remaining territories, but territories remain.")
+             gs.current_game_phase = "ERROR"; return
+
+        if non_neutral_players: # Only proceed if there are players
+            player_idx_for_remaining = 0
+            for territory_to_assign in all_territories_to_assign: # These are territory objects
+                player_to_assign_remaining = non_neutral_players[player_idx_for_remaining % len(non_neutral_players)]
+
+                territory_to_assign.owner = player_to_assign_remaining
+                initial_armies = power_map.get(territory_to_assign.name)
+                if initial_armies is None:
+                    print(f"Warning: Country '{territory_to_assign.name}' (remaining) not found in military_power_ranking.json. Default: {default_armies_if_not_ranked}.")
+                    initial_armies = default_armies_if_not_ranked
+                territory_to_assign.army_count = max(1, initial_armies)
+
+                player_to_assign_remaining.territories.append(territory_to_assign) # Add to player's list
+                player_to_assign_remaining.initial_armies_pool += territory_to_assign.army_count
+                player_to_assign_remaining.armies_placed_in_setup += territory_to_assign.army_count
+                successful_assignments +=1
+                player_idx_for_remaining += 1
 
         gs.unclaimed_territory_names.clear() # All territories are now claimed
 
         if successful_assignments > 0 :
-            print(f"World Map Init: Assigned {successful_assignments} countries among {num_players} players with armies based on military ranking (default: {default_armies_if_not_ranked}).")
+            print(f"World Map Init: Assigned {successful_assignments} countries among {num_players if num_players > 0 else len(non_neutral_players)} players. Armies based on military ranking (default: {default_armies_if_not_ranked}).")
             # Setup for the first turn
             gs.player_setup_order = [] # Not used in this mode for initial placement
             gs.current_setup_player_index = -1 # Not used
