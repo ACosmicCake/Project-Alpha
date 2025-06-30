@@ -4,10 +4,9 @@ import json
 import requests # Would be used in a real environment
 import time # For potential retries
 import ast # For safely evaluating string literals
-import re # For regex-based extraction
 
 class LlamaAgent(BaseAIAgent):
-    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "mminimax/minimax-m1:extended"): # Or specific model version
+    def __init__(self, player_name: str, player_color: str, api_key: str = None, model_name: str = "meta-llama/llama-4-maverick:free"): # Or specific model version
         super().__init__(player_name, player_color)
         # Updated for OpenRouter API
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
@@ -17,10 +16,12 @@ class LlamaAgent(BaseAIAgent):
         self.api_base_url = "https://openrouter.ai/api/v1" # OpenRouter endpoint
 
         # Llama API (via OpenRouter, assuming similar compatibility to OpenAI for JSON)
-        # EXPERIMENT: Drastically simplified system prompt
         self.base_system_prompt = (
-            "You are an AI assistant. Respond with a single valid JSON object. "
-            "This JSON object must contain two keys: 'thought' (a string) and 'action' (a JSON object)."
+            f"You are an exceptionally intelligent AI player in the game of Risk, known as {self.player_name}. "
+            f"You are playing with the {self.player_color} pieces. Your goal is world conquest. "
+            f"Think step-by-step and make bold, calculated moves. "
+            f"You MUST respond with a single valid JSON object. This JSON object must contain exactly two keys: "
+            f"'thought' (a string detailing your reasoning) and 'action' (a JSON object representing one of the provided valid actions)."
         )
         # Optional headers for OpenRouter analytics
         self.http_referer = os.getenv("YOUR_SITE_URL", "http://localhost:8000") # Example URL
@@ -73,7 +74,7 @@ class LlamaAgent(BaseAIAgent):
             "model": self.model_name,
             "messages": messages,
             # Assuming Llama via OpenRouter supports response_format for JSON like OpenAI
-            # "response_format": {"type": "json_object"} # EXPERIMENT: Comment out to see if it helps with the truncated '{' response
+            "response_format": {"type": "json_object"}
             # "temperature": 0.7, # Optional: Adjust creativity
             # "max_tokens": 1000, # Optional: Limit response length
         }
@@ -85,59 +86,34 @@ class LlamaAgent(BaseAIAgent):
                 response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
 
                 response_data = response.json()
-                raw_content_str = response_data["choices"][0]["message"]["content"].strip()
+                action_data_str = response_data["choices"][0]["message"]["content"].strip()
 
-                if not raw_content_str: # Handle empty string response
+                if not action_data_str: # Handle empty string response
                     raise ValueError("Received empty content from LLM.")
-
-                action_data_str = raw_content_str
-                # If response_format was not used, LLM might wrap JSON in markdown or text.
-                # Try to extract JSON from potential markdown code blocks.
-                if "```json" in action_data_str:
-                    match = re.search(r"```json\s*([\s\S]*?)\s*```", action_data_str, re.IGNORECASE)
-                    if match:
-                        action_data_str = match.group(1).strip()
-                        print(f"LlamaAgent ({self.player_name}): Extracted JSON from markdown block.")
-                    else: # Fallback if ```json is present but regex fails (e.g. no closing ```)
-                        action_data_str = action_data_str.split("```json", 1)[-1].split("```",1)[0].strip()
-
-                elif action_data_str.startswith("{") and action_data_str.endswith("}"):
-                    # Already looks like a JSON string, proceed.
-                    pass
-                else:
-                    # Attempt to find the first '{' and last '}' if no markdown found
-                    # This is a more risky extraction, might grab too much or too little.
-                    first_brace = action_data_str.find("{")
-                    last_brace = action_data_str.rfind("}")
-                    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-                        action_data_str = action_data_str[first_brace : last_brace + 1]
-                        print(f"LlamaAgent ({self.player_name}): Extracted content between first and last braces.")
-                    # If none of these, proceed with action_data_str as is, parsing will likely fail but log will show original.
-
-                if not action_data_str: # After potential extraction, it might be empty
-                     raise ValueError(f"Extracted JSON string is empty. Original content: '{raw_content_str}'")
 
                 action_data = None
                 try:
-                    # Attempt to parse the extracted/original string as JSON
+                    # Attempt to parse the entire response string as JSON first
                     action_data = json.loads(action_data_str)
                 except json.JSONDecodeError as e_json:
-                    print(f"LlamaAgent ({self.player_name}): json.loads failed for processed response string ('{action_data_str[:100]}...'). Trying ast.literal_eval. Error: {e_json}")
+                    print(f"LlamaAgent ({self.player_name}): json.loads failed for initial response. Trying ast.literal_eval. Error: {e_json}")
                     try:
+                        # Sanitize Python bools/None to JSON true/false/null for ast.literal_eval compatibility
+                        # and general robustness if ast.literal_eval were to expect more JSON-like structures
+                        # for some edge cases, though it primarily handles Python literals.
                         sanitized_str = action_data_str.replace("True", "true").replace("False", "false").replace("None", "null")
+
+                        # ast.literal_eval can handle Python dicts with single quotes.
                         action_data = ast.literal_eval(sanitized_str)
                         if not isinstance(action_data, dict):
-                            raise ValueError(f"ast.literal_eval on main response produced type {type(action_data).__name__}, not a dictionary. Processed content: '{action_data_str[:100]}...'")
-                        print(f"LlamaAgent ({self.player_name}): Successfully parsed processed response string with ast.literal_eval after sanitization.")
+                            raise ValueError(f"ast.literal_eval on main response produced type {type(action_data).__name__}, not a dictionary. Content: '{action_data_str}'")
+                        print(f"LlamaAgent ({self.player_name}): Successfully parsed initial response with ast.literal_eval after sanitization.")
                     except (ValueError, SyntaxError) as e_ast:
-                        print(f"LlamaAgent ({self.player_name}): ast.literal_eval also failed for processed response string. Error: {e_ast}. Processed content: '{action_data_str[:100]}...'")
-                        # Log original raw content if different for better debugging
-                        if raw_content_str != action_data_str:
-                            print(f"LlamaAgent ({self.player_name}): Original raw content was: '{raw_content_str[:100]}...'")
-                        raise e_json
+                        print(f"LlamaAgent ({self.player_name}): ast.literal_eval also failed for initial response. Error: {e_ast}. Content: '{action_data_str}'")
+                        raise e_json # Re-raise the original JSONDecodeError to be caught by the retry loop's handler
 
                 if action_data is None:
-                    raise ValueError(f"Failed to parse LLM response content into a dictionary. Processed content: '{action_data_str[:100]}...'")
+                    raise ValueError(f"Failed to parse LLM response content into a dictionary using any method. Content: '{action_data_str}'")
 
                 if "thought" not in action_data or "action" not in action_data:
                     raise ValueError(f"Response JSON must contain 'thought' and 'action' keys. Received: {action_data}")
