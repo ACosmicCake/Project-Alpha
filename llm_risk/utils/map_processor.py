@@ -125,9 +125,7 @@ class MapProcessor:
         # Convert dict to list of dicts for map_config.json format
         self.map_config["continents"] = [cont_data for cont_data in gs_continents.values()]
         print(f"MapProcessor: Generated continent configurations for {len(self.map_config['continents'])} continents.")
-        # Add a sample print:
-        if self.map_config["continents"]:
-            print(f"MapProcessor: Sample continent config: {json.dumps(self.map_config['continents'][0], indent=2)}")
+
 
 
     def _calculate_adjacencies(self):

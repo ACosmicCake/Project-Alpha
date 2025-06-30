@@ -137,8 +137,7 @@ class GameGUI:
         print(f"DEBUG: GameGUI._load_map_display_config - Attempting to load display config from '{config_file}' for game_mode '{self.game_mode}'.")
         try:
             with open(config_file, 'r') as f:
-                content_for_debug = f.read()
-                print(f"DEBUG: GameGUI._load_map_display_config - First 500 chars of '{config_file}':\n{content_for_debug[:500]}...")
+
                 f.seek(0) # Reset file pointer to read JSON
                 display_data = json.load(f)
 

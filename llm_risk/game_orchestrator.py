@@ -74,8 +74,6 @@ class GameOrchestrator:
                 # DEBUG: Inspect content of the generated display config
                 try:
                     with open(self.map_display_config_to_load, 'r') as f_inspect:
-                        content_snippet = f_inspect.read(500) # Read first 500 chars
-                        print(f"DEBUG: GameOrchestrator - Snippet of generated '{self.map_display_config_to_load}':\n{content_snippet}...")
                         # Attempt to load it as JSON to check structure
                         f_inspect.seek(0)
                         loaded_json_for_debug = json.load(f_inspect)
