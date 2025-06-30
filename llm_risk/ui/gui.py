@@ -60,7 +60,7 @@ class GameGUI:
         self.orchestrator = orchestrator
         self.game_mode = game_mode # Store the game mode
         print(f"DEBUG: GameGUI.__init__ - Received game_mode: '{self.game_mode}', map_display_config_file: '{map_display_config_file}'")
-        print(f"DEBUG: GameGUI.__init__ - Engine's map_file_path: '{engine.game_state.map_file_path if engine and engine.game_state else 'N/A'}'")
+        print(f"DEBUG: GameGUI.__init__ - Engine's map_file_path: '{engine.map_file_path if engine else 'N/A'}'") # Corrected attribute access
 
         self.current_game_state: GameState = engine.game_state
         self.global_chat_messages: list[dict] = []
