@@ -265,48 +265,55 @@ class MapProcessor:
             # If using only the largest polygon from a MultiPolygon, calculate centroid of that.
 
             # Re-create a scaled shapely object to get its centroid easily
-            # This is a bit inefficient but simpler for now.
             scaled_shapely_polygons = []
             for poly_coords_list in scaled_polygons_for_country:
-                 if len(poly_coords_list) >= 3: # Need at least 3 points for a polygon
+                if len(poly_coords_list) >= 3: # Need at least 3 points for a polygon
                     try:
-                        scaled_shapely_polygons.append(Polygon(poly_coords_list))
+                        polygon = Polygon(poly_coords_list)
+                        if not polygon.is_valid:
+                            # Try to fix invalid polygon
+                            polygon = polygon.buffer(0)
+                        if polygon.is_valid and not polygon.is_empty:
+                            scaled_shapely_polygons.append(polygon)
+                        # else:
+                            # print(f"MapProcessor: Scaled polygon part for {name} is invalid or empty after buffer(0). Skipping this part for centroid.")
                     except Exception as e:
-                        print(f"MapProcessor: Error creating Polygon for centroid for {name}: {e}")
+                        print(f"MapProcessor: Error creating/validating Polygon part for centroid for {name}: {e}")
 
             if scaled_shapely_polygons:
-                # If multiple polygons after scaling (from MultiPolygon), unite them for centroid
-                country_shape_scaled = unary_union(scaled_shapely_polygons) if len(scaled_shapely_polygons) > 1 else scaled_shapely_polygons[0]
-                if country_shape_scaled.is_valid and not country_shape_scaled.is_empty:
-                    centroid = country_shape_scaled.centroid
+                final_shape_for_centroid = None
+                if len(scaled_shapely_polygons) > 1:
+                    try:
+                        final_shape_for_centroid = unary_union(scaled_shapely_polygons)
+                        if not final_shape_for_centroid.is_valid:
+                            final_shape_for_centroid = final_shape_for_centroid.buffer(0)
+                    except Exception as e: # Catches GEOSException like TopologyException
+                        print(f"MapProcessor: unary_union failed for {name}: {e}. Trying largest valid part for centroid.")
+                        valid_polys_for_largest = [p for p in scaled_shapely_polygons if p.is_valid and not p.is_empty]
+                        if valid_polys_for_largest:
+                            final_shape_for_centroid = max(valid_polys_for_largest, key=lambda p: p.area)
+                        else:
+                            final_shape_for_centroid = None
+                elif len(scaled_shapely_polygons) == 1:
+                    final_shape_for_centroid = scaled_shapely_polygons[0]
+
+                if final_shape_for_centroid and final_shape_for_centroid.is_valid and not final_shape_for_centroid.is_empty:
+                    centroid = final_shape_for_centroid.centroid
                     self.map_display_config["territory_centroids"][name] = (int(centroid.x), int(centroid.y))
                 else:
-                    print(f"MapProcessor: Scaled shape for {name} is invalid/empty for centroid calculation. Using default.")
+                    print(f"MapProcessor: No valid shape for centroid calculation for {name} after fallbacks. Using default.")
                     self.map_display_config["territory_centroids"][name] = (self.map_area_width // 2, self.map_area_height // 2)
             else:
-                # Fallback if no valid scaled polygons were generated
-                print(f"MapProcessor: No valid scaled polygons for {name} to calculate centroid. Using default.")
+                # Fallback if no valid scaled polygons were generated at all
+                print(f"MapProcessor: No valid scaled polygon parts for {name} to calculate centroid. Using default.")
                 self.map_display_config["territory_centroids"][name] = (self.map_area_width // 2, self.map_area_height // 2)
 
-
-    def _generate_map_config_entries(self):
-        """Generates entries for map_config.json (territory names)."""
-        for country_data in self.countries:
-            name = country_data["name"]
-            # Adjacencies will be empty for now.
-            # Continent will be None as we are not processing continents from this GeoJSON.
-            self.map_config["countries"][name] = {"continent": None, "adjacent_to": []}
-            # Note: map_config.json uses "territories", but for world map, let's use "countries" internally
-            # and the GameEngine will adapt. Or, we stick to "territories" key even for world map.
-            # For consistency with GameEngine's current map_config loader, let's use "territories"
-            # and just populate it with country data.
-            # Decision: Sticking to "countries" for the new map_config to differentiate,
-            # GameEngine's initialize_from_map will need to check for this key if game_mode is world_map.
+    # The _generate_map_config_entries method was previously responsible for creating the
+    # self.map_config["countries"] structure. This initialization is now handled within
+    # _calculate_adjacencies, which also populates the continent for each country.
+    # Therefore, _generate_map_config_entries as a separate method for this purpose is removed.
 
     def get_map_config(self) -> dict:
-        # Adjusting the output key to be "territories" for compatibility with current GameEngine map loading
-        # if GameEngine is not modified to look for "countries".
-        # For now, let's assume GameEngine will be updated.
         return self.map_config
 
     def get_map_display_config(self) -> dict:
