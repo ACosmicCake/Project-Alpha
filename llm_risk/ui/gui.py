@@ -429,17 +429,34 @@ class GameGUI:
                             pygame.draw.polygon(self.screen, owner_color, screen_polygon_part_points)
                             pygame.draw.polygon(self.screen, BORDER_COLOR, screen_polygon_part_points, 1) # Use theme BORDER_COLOR
                         except TypeError as e:
-                            print(f"DEBUG: GameGUI._draw_world_map_polygons - Error drawing polygon part {i} for {terr_name}: {e}. Screen points: {screen_polygon_part_points}")
-                            if screen_centroid_coords:
-                                pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, max(2, int(5 * self.zoom_level)), 0)
-            elif screen_centroid_coords:
+                            print(f"DEBUG: GameGUI._draw_world_map_polygons - Error drawing polygon part {i} for {terr_name}: {e}.")
+                            if original_centroid_coords: # Use original_centroid_coords for fallback
+                                screen_centroid_for_fallback = ( (original_centroid_coords[0] * self.zoom_level) + self.camera_offset_x,
+                                                                 (original_centroid_coords[1] * self.zoom_level) + self.camera_offset_y )
+                                pygame.draw.circle(self.screen, owner_color, screen_centroid_for_fallback, max(2, int(5 * self.zoom_level)), 0)
+            elif original_centroid_coords: # If no polygons, but original_centroid_coords exists
+                screen_centroid_for_fallback = ( (original_centroid_coords[0] * self.zoom_level) + self.camera_offset_x,
+                                                 (original_centroid_coords[1] * self.zoom_level) + self.camera_offset_y )
                 radius = max(3, int(10 * self.zoom_level))
-                pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, radius)
-                pygame.draw.circle(self.screen, BORDER_COLOR, screen_centroid_coords, radius, 1) # Use theme BORDER_COLOR
+                pygame.draw.circle(self.screen, owner_color, screen_centroid_for_fallback, radius)
+                pygame.draw.circle(self.screen, BORDER_COLOR, screen_centroid_for_fallback, radius, 1) # Use theme BORDER_COLOR
 
-            if screen_centroid_coords:
-                if self.zoom_level >= 0.25: # Lowered threshold
-                    luminance = 0.299 * owner_color[0] + 0.587 * owner_color[1] + 0.114 * owner_color[2]
+        # --- Second Pass: Draw all text elements (army counts and names) ---
+        # This ensures text is drawn on top of all polygons.
+        for terr_name, territory_obj in gs_to_draw.territories.items():
+            original_centroid_coords = self.territory_coordinates.get(terr_name)
+            if not original_centroid_coords: # Skip if no centroid to place text
+                continue
+
+            screen_centroid_coords = ( (original_centroid_coords[0] * self.zoom_level) + self.camera_offset_x,
+                                       (original_centroid_coords[1] * self.zoom_level) + self.camera_offset_y )
+
+            owner_color = DEFAULT_PLAYER_COLORS.get("Default", (75,75,75))
+            if territory_obj.owner and territory_obj.owner.color:
+                owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, owner_color)
+
+            if screen_centroid_coords and self.zoom_level >= 0.25: # Lowered threshold & check screen_centroid_coords
+                luminance = 0.299 * owner_color[0] + 0.587 * owner_color[1] + 0.114 * owner_color[2]
                     army_text_color = TEXT_COLOR if luminance < 140 else PANEL_BACKGROUND_COLOR
                     army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
                     army_text_rect = army_text.get_rect(center=screen_centroid_coords)
@@ -668,7 +685,7 @@ class GameGUI:
                 setattr(self, active_tab_var_name, option_name)
                 print(f"GUI: Switched {panel_title} tab to {option_name}")
 
-            current_x += tab_width + 2 # Small gap
+            current_x += current_tab_actual_width + spacing_between_tabs
 
         return base_y_offset + TAB_HEIGHT
 
