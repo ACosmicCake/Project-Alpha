@@ -4,5 +4,9 @@
   {"country": "China", "rank": 3, "power_index": 0.0706, "initial_armies": 17},
   {"country": "India", "rank": 4, "power_index": 0.1023, "initial_armies": 16},
   {"country": "South Korea", "rank": 5, "power_index": 0.1416, "initial_armies": 15},
-  {"country": "United Kingdom", "rank": 6, "power_index": 0.1443, "initial_armies": 14}
+  {"country": "United Kingdom", "rank": 6, "power_index": 0.1443, "initial_armies": 14},
+  {"country": "TestCountryA", "rank": 7, "power_index": 0.20, "initial_armies": 10},
+  {"country": "TestCountryB", "rank": 8, "power_index": 0.10, "initial_armies": 5},
+  {"country": "TestCountryC", "rank": 9, "power_index": 0.30, "initial_armies": 12},
+  {"country": "TestCountryD", "rank": 10, "power_index": 0.05, "initial_armies": 3}
 ]

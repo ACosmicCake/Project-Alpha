@@ -301,6 +301,48 @@ class TestSetupPhases(unittest.TestCase):
         self.assertFalse(gs.get_current_player().is_neutral)
         self.assertGreater(gs.get_current_player().armies_to_deploy, 0)
 
+    def test_initialize_world_map_mode_with_balancing(self):
+        print("\n--- Testing World Map Initialization with Army Balancing ---")
+        players_data_2p = [
+            {"name": "WM_Player1", "color": "Orange"}, {"name": "WM_Player2", "color": "Purple"}
+        ]
+
+        # Use the specific world map config and ensure game_mode is "world_map"
+        # The GameEngine will use military_power_ranking.json internally for this mode.
+        engine_world_map = GameEngine(map_file_path="test_world_map_config.json")
+        engine_world_map.initialize_game_from_map(players_data_2p, is_two_player_game=False, game_mode="world_map") # is_two_player_game=False for world map mode for now
+
+        gs = engine_world_map.game_state
+        self.assertEqual(gs.game_mode, "world_map")
+        self.assertEqual(len(gs.players), 2) # Only the two players, no Neutral for world_map
+
+        wm_p1 = next((p for p in gs.players if p.name == "WM_Player1"), None)
+        wm_p2 = next((p for p in gs.players if p.name == "WM_Player2"), None)
+
+        self.assertIsNotNone(wm_p1)
+        self.assertIsNotNone(wm_p2)
+
+        # Verify territories are distributed (each should have 2 in this 4-territory map)
+        self.assertEqual(len(wm_p1.territories), 2)
+        self.assertEqual(len(wm_p2.territories), 2)
+
+        # Verify total armies are balanced
+        p1_total_armies = sum(t.army_count for t in wm_p1.territories)
+        p2_total_armies = sum(t.army_count for t in wm_p2.territories)
+
+        print(f"WM_Player1 final army count: {p1_total_armies}")
+        print(f"WM_Player2 final army count: {p2_total_armies}")
+        self.assertEqual(p1_total_armies, p2_total_armies, "Players should have balanced total armies after world map setup.")
+
+        # Check if game proceeds to REINFORCE phase
+        self.assertEqual(gs.current_game_phase, "REINFORCE")
+        self.assertIsNotNone(gs.first_player_of_game)
+        current_player = gs.get_current_player()
+        self.assertIsNotNone(current_player)
+        self.assertGreaterEqual(current_player.armies_to_deploy, 3) # Should have some reinforcements calculated
+
+        print("--- World Map Initialization Test Complete ---")
+
 
 if __name__ == '__main__':
     unittest.main()

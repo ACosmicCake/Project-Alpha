@@ -289,9 +289,59 @@ class GameEngine:
                 # Find player object by name from gs.players list
                 player_obj = next((p for p in gs.players if p.name == p_name), None)
                 if player_obj:
-                    print(f"Player {p_name} total power_index: {total_power:.4f}, territories: {len(player_obj.territories)}")
+                    current_player_army_total = sum(t.army_count for t in player_obj.territories)
+                    print(f"Player {p_name} total power_index: {total_power:.4f}, territories: {len(player_obj.territories)}, initial_armies_from_json: {current_player_army_total}")
                 else:
                     print(f"Player {p_name} total power_index: {total_power:.4f}, territories: (Could not find player object to count)")
+
+            # Balance total armies per player
+            player_army_counts = {p.name: sum(t.army_count for t in p.territories) for p in non_neutral_players}
+            total_armies_on_board = sum(player_army_counts.values())
+
+            if non_neutral_players: # Avoid division by zero if no players
+                average_armies_per_player = total_armies_on_board // len(non_neutral_players)
+                print(f"Total armies on board after initial assignment: {total_armies_on_board}, Average per player: {average_armies_per_player}")
+
+                for player in non_neutral_players:
+                    deficit_surplus = average_armies_per_player - player_army_counts[player.name]
+                    if deficit_surplus > 0: # Player has a deficit
+                        # Add armies
+                        armies_to_add = deficit_surplus
+                        # Sort player's territories by power_index (descending) to add to stronger ones first
+                        sorted_territories = sorted(player.territories, key=lambda t: t.power_index, reverse=True)
+                        if not sorted_territories: continue # Skip if player has no territories (should not happen here)
+
+                        idx = 0
+                        while armies_to_add > 0:
+                            sorted_territories[idx % len(sorted_territories)].army_count += 1
+                            armies_to_add -= 1
+                            idx += 1
+                        print(f"Added {deficit_surplus} armies to {player.name}.")
+                    elif deficit_surplus < 0: # Player has a surplus
+                        # Remove armies
+                        armies_to_remove = abs(deficit_surplus)
+                        # Sort player's territories by power_index (ascending) to remove from weaker ones first, or those with most armies
+                        sorted_territories = sorted(player.territories, key=lambda t: (t.army_count > 1, t.power_index)) # Prioritize leaving at least 1
+                        if not sorted_territories: continue
+
+                        idx = 0
+                        while armies_to_remove > 0 and idx < len(sorted_territories):
+                            territory_to_adjust = sorted_territories[idx % len(sorted_territories)]
+                            if territory_to_adjust.army_count > 1:
+                                territory_to_adjust.army_count -= 1
+                                armies_to_remove -= 1
+                            idx +=1
+                            if idx > len(sorted_territories) * 2 : break # Safety break
+                        print(f"Removed {abs(deficit_surplus) - armies_to_remove} armies from {player.name}. {armies_to_remove} could not be removed while maintaining min 1.")
+
+                # Recalculate and print final army counts
+                print("Final army counts after balancing:")
+                for player in non_neutral_players:
+                    final_army_total = sum(t.army_count for t in player.territories)
+                    player.initial_armies_pool = final_army_total # Update pool to reflect actual starting armies
+                    player.armies_placed_in_setup = final_army_total
+                    print(f"Player {player.name}: {final_army_total} armies")
+
             # Setup for the first turn
             gs.player_setup_order = [] # Not used in this mode for initial placement
             gs.current_setup_player_index = -1 # Not used
