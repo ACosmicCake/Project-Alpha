@@ -1773,35 +1773,39 @@ class GameEngine:
             # Valid attack actions: (from_territory, to_territory, num_armies)
             for territory in player.territories:
                 if territory.army_count > 1:
-                    for neighbor in territory.adjacent_territories:
-                        if neighbor.owner != player:
-                            diplomatic_key = frozenset({player.name, neighbor.owner.name})
-                            current_status = gs.diplomacy.get(diplomatic_key)
+                    # territory.adjacent_territories now holds dicts like {"name": "other_terr", "type": "land"}
+                    for adj_info in territory.adjacent_territories:
+                        if not isinstance(adj_info, dict) or "name" not in adj_info:
+                            continue # Skip malformed entries
+
+                        neighbor_name = adj_info["name"]
+                        neighbor_obj = gs.territories.get(neighbor_name)
+
+                        if not neighbor_obj: # Should not happen if map is consistent
+                            print(f"Warning: Neighbor territory '{neighbor_name}' not found in game state for attack check from '{territory.name}'.")
+                            continue
+
+                        if neighbor_obj.owner != player: # Can only attack territories not owned by the player
+                            # All types of adjacencies (land, sea, air) allow attack for now.
+                            diplomatic_key = frozenset({player.name, neighbor_obj.owner.name}) if neighbor_obj.owner else None
+                            current_status = gs.diplomacy.get(diplomatic_key) if diplomatic_key else "NEUTRAL" # Treat unowned/neutral owner as NEUTRAL diplo
+
+                            action_details = {
+                                "from": territory.name,
+                                "to": neighbor_name, # Use neighbor_name from adj_info
+                                "max_armies_for_attack": territory.army_count - 1
+                            }
 
                             if current_status == "ALLIANCE":
-                                # Option to BETRAY_ALLY
-                                actions.append({
-                                    "type": "BETRAY_ALLY",
-                                    "from": territory.name,
-                                    "to": neighbor.name,
-                                    "max_armies_for_attack": territory.army_count - 1
-                                })
-                            elif current_status != "WAR": # WAR status also allows attack
-                                # Regular ATTACK action if not ALLIANCE (NEUTRAL or no status)
-                                actions.append({
-                                    "type": "ATTACK",
-                                    "from": territory.name,
-                                    "to": neighbor.name,
-                                    "max_armies_for_attack": territory.army_count - 1
-                                })
-                            elif current_status == "WAR":
-                                # Regular ATTACK action
-                                actions.append({
-                                    "type": "ATTACK",
-                                    "from": territory.name,
-                                    "to": neighbor.name,
-                                    "max_armies_for_attack": territory.army_count - 1
-                                })
+                                action_details["type"] = "BETRAY_ALLY"
+                                actions.append(action_details)
+                            # Standard attack if not ALLIANCE (NEUTRAL, WAR, or no status)
+                            # WAR status explicitly allows attack. NEUTRAL or no status also allows.
+                            # So, if not ALLIANCE, it's a regular ATTACK.
+                            else: # Covers NEUTRAL, WAR, or no diplomatic status
+                                action_details["type"] = "ATTACK"
+                                actions.append(action_details)
+
             actions.append({"type": "END_ATTACK_PHASE"}) # Always possible to end attack phase
             # Add CHAT actions later
 
