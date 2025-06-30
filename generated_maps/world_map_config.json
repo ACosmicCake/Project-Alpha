@@ -229,43 +229,87 @@
     "Costa Rica": {
       "continent": "North America",
       "adjacent_to": [
-        "Nicaragua",
-        "Panama"
+        {
+          "name": "Nicaragua",
+          "type": "land"
+        },
+        {
+          "name": "Panama",
+          "type": "land"
+        }
       ]
     },
     "Nicaragua": {
       "continent": "North America",
       "adjacent_to": [
-        "Costa Rica",
-        "Honduras"
+        {
+          "name": "Costa Rica",
+          "type": "land"
+        },
+        {
+          "name": "El Salvador",
+          "type": "sea"
+        },
+        {
+          "name": "Honduras",
+          "type": "land"
+        }
       ]
     },
     "Haiti": {
       "continent": "North America",
       "adjacent_to": [
-        "Dominican Rep."
+        {
+          "name": "Dominican Rep.",
+          "type": "land"
+        }
       ]
     },
     "Dominican Rep.": {
       "continent": "North America",
       "adjacent_to": [
-        "Haiti"
+        {
+          "name": "Haiti",
+          "type": "land"
+        }
       ]
     },
     "El Salvador": {
       "continent": "North America",
       "adjacent_to": [
-        "Guatemala",
-        "Honduras"
+        {
+          "name": "Guatemala",
+          "type": "land"
+        },
+        {
+          "name": "Honduras",
+          "type": "land"
+        },
+        {
+          "name": "Nicaragua",
+          "type": "sea"
+        }
       ]
     },
     "Guatemala": {
       "continent": "North America",
       "adjacent_to": [
-        "Belize",
-        "El Salvador",
-        "Honduras",
-        "Mexico"
+        {
+          "name": "Belize",
+          "type": "land"
+        },
+        {
+          "name": "El Salvador",
+          "type": "land"
+        },
+        {
+          "name": "Honduras",
+          "type": "land"
+        },
+        {
+          "name": "Mexico",
+          "type": "land"
+        }
       ]
     },
     "Cuba": {
@@ -275,49 +319,109 @@
     "Honduras": {
       "continent": "North America",
       "adjacent_to": [
-        "El Salvador",
-        "Guatemala",
-        "Nicaragua"
+        {
+          "name": "El Salvador",
+          "type": "land"
+        },
+        {
+          "name": "Guatemala",
+          "type": "land"
+        },
+        {
+          "name": "Nicaragua",
+          "type": "land"
+        }
       ]
     },
     "United States of America": {
       "continent": "North America",
       "adjacent_to": [
-        "Canada",
-        "Mexico"
+        {
+          "name": "Canada",
+          "type": "land"
+        },
+        {
+          "name": "India",
+          "type": "air"
+        },
+        {
+          "name": "Mexico",
+          "type": "land"
+        },
+        {
+          "name": "Saudi Arabia",
+          "type": "air"
+        },
+        {
+          "name": "United Kingdom",
+          "type": "air"
+        }
       ]
     },
     "Canada": {
       "continent": "North America",
       "adjacent_to": [
-        "United States of America"
+        {
+          "name": "Greenland",
+          "type": "sea"
+        },
+        {
+          "name": "United States of America",
+          "type": "land"
+        }
       ]
     },
     "Mexico": {
       "continent": "North America",
       "adjacent_to": [
-        "Belize",
-        "Guatemala",
-        "United States of America"
+        {
+          "name": "Belize",
+          "type": "land"
+        },
+        {
+          "name": "Guatemala",
+          "type": "land"
+        },
+        {
+          "name": "United States of America",
+          "type": "land"
+        }
       ]
     },
     "Belize": {
       "continent": "North America",
       "adjacent_to": [
-        "Guatemala",
-        "Mexico"
+        {
+          "name": "Guatemala",
+          "type": "land"
+        },
+        {
+          "name": "Mexico",
+          "type": "land"
+        }
       ]
     },
     "Panama": {
       "continent": "North America",
       "adjacent_to": [
-        "Colombia",
-        "Costa Rica"
+        {
+          "name": "Colombia",
+          "type": "land"
+        },
+        {
+          "name": "Costa Rica",
+          "type": "land"
+        }
       ]
     },
     "Greenland": {
       "continent": "North America",
-      "adjacent_to": []
+      "adjacent_to": [
+        {
+          "name": "Canada",
+          "type": "sea"
+        }
+      ]
     },
     "Bahamas": {
       "continent": "North America",
@@ -325,7 +429,12 @@
     },
     "Trinidad and Tobago": {
       "continent": "North America",
-      "adjacent_to": []
+      "adjacent_to": [
+        {
+          "name": "Venezuela",
+          "type": "sea"
+        }
+      ]
     },
     "Puerto Rico": {
       "continent": "North America",
@@ -338,380 +447,988 @@
     "Indonesia": {
       "continent": "Asia",
       "adjacent_to": [
-        "Malaysia",
-        "Papua New Guinea",
-        "Timor-Leste"
+        {
+          "name": "Brunei",
+          "type": "sea"
+        },
+        {
+          "name": "Malaysia",
+          "type": "land"
+        },
+        {
+          "name": "Papua New Guinea",
+          "type": "land"
+        },
+        {
+          "name": "Timor-Leste",
+          "type": "land"
+        }
       ]
     },
     "Malaysia": {
       "continent": "Asia",
       "adjacent_to": [
-        "Brunei",
-        "Indonesia",
-        "Thailand"
+        {
+          "name": "Brunei",
+          "type": "land"
+        },
+        {
+          "name": "Indonesia",
+          "type": "land"
+        },
+        {
+          "name": "Thailand",
+          "type": "land"
+        }
       ]
     },
     "Cyprus": {
       "continent": "Asia",
       "adjacent_to": [
-        "N. Cyprus"
+        {
+          "name": "N. Cyprus",
+          "type": "land"
+        }
       ]
     },
     "India": {
       "continent": "Asia",
       "adjacent_to": [
-        "Bangladesh",
-        "Bhutan",
-        "China",
-        "Myanmar",
-        "Nepal",
-        "Pakistan"
+        {
+          "name": "Bangladesh",
+          "type": "land"
+        },
+        {
+          "name": "Bhutan",
+          "type": "land"
+        },
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "Myanmar",
+          "type": "land"
+        },
+        {
+          "name": "Nepal",
+          "type": "land"
+        },
+        {
+          "name": "Pakistan",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "air"
+        },
+        {
+          "name": "United States of America",
+          "type": "air"
+        }
       ]
     },
     "China": {
       "continent": "Asia",
       "adjacent_to": [
-        "Afghanistan",
-        "Bhutan",
-        "India",
-        "Kazakhstan",
-        "Kyrgyzstan",
-        "Laos",
-        "Mongolia",
-        "Myanmar",
-        "Nepal",
-        "North Korea",
-        "Pakistan",
-        "Russia",
-        "Tajikistan",
-        "Vietnam"
+        {
+          "name": "Afghanistan",
+          "type": "land"
+        },
+        {
+          "name": "Bhutan",
+          "type": "land"
+        },
+        {
+          "name": "India",
+          "type": "land"
+        },
+        {
+          "name": "Kazakhstan",
+          "type": "land"
+        },
+        {
+          "name": "Kyrgyzstan",
+          "type": "land"
+        },
+        {
+          "name": "Laos",
+          "type": "land"
+        },
+        {
+          "name": "Mongolia",
+          "type": "land"
+        },
+        {
+          "name": "Myanmar",
+          "type": "land"
+        },
+        {
+          "name": "Nepal",
+          "type": "land"
+        },
+        {
+          "name": "North Korea",
+          "type": "land"
+        },
+        {
+          "name": "Pakistan",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        },
+        {
+          "name": "Saudi Arabia",
+          "type": "air"
+        },
+        {
+          "name": "Tajikistan",
+          "type": "land"
+        },
+        {
+          "name": "United Kingdom",
+          "type": "air"
+        },
+        {
+          "name": "Vietnam",
+          "type": "land"
+        }
       ]
     },
     "Israel": {
       "continent": "Asia",
       "adjacent_to": [
-        "Egypt",
-        "Jordan",
-        "Lebanon",
-        "Palestine",
-        "Syria"
+        {
+          "name": "Egypt",
+          "type": "land"
+        },
+        {
+          "name": "Jordan",
+          "type": "land"
+        },
+        {
+          "name": "Lebanon",
+          "type": "land"
+        },
+        {
+          "name": "Palestine",
+          "type": "land"
+        },
+        {
+          "name": "Saudi Arabia",
+          "type": "sea"
+        },
+        {
+          "name": "Syria",
+          "type": "land"
+        }
       ]
     },
     "Palestine": {
       "continent": "Asia",
       "adjacent_to": [
-        "Israel",
-        "Jordan"
+        {
+          "name": "Israel",
+          "type": "land"
+        },
+        {
+          "name": "Jordan",
+          "type": "land"
+        },
+        {
+          "name": "Syria",
+          "type": "sea"
+        }
       ]
     },
     "Lebanon": {
       "continent": "Asia",
       "adjacent_to": [
-        "Israel",
-        "Syria"
+        {
+          "name": "Israel",
+          "type": "land"
+        },
+        {
+          "name": "Jordan",
+          "type": "sea"
+        },
+        {
+          "name": "Syria",
+          "type": "land"
+        }
       ]
     },
     "Syria": {
       "continent": "Asia",
       "adjacent_to": [
-        "Iraq",
-        "Israel",
-        "Jordan",
-        "Lebanon",
-        "Turkey"
+        {
+          "name": "Iraq",
+          "type": "land"
+        },
+        {
+          "name": "Israel",
+          "type": "land"
+        },
+        {
+          "name": "Jordan",
+          "type": "land"
+        },
+        {
+          "name": "Lebanon",
+          "type": "land"
+        },
+        {
+          "name": "Palestine",
+          "type": "sea"
+        },
+        {
+          "name": "Turkey",
+          "type": "land"
+        }
       ]
     },
     "South Korea": {
       "continent": "Asia",
       "adjacent_to": [
-        "North Korea"
+        {
+          "name": "North Korea",
+          "type": "land"
+        }
       ]
     },
     "North Korea": {
       "continent": "Asia",
       "adjacent_to": [
-        "China",
-        "Russia",
-        "South Korea"
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        },
+        {
+          "name": "South Korea",
+          "type": "land"
+        }
       ]
     },
     "Bhutan": {
       "continent": "Asia",
       "adjacent_to": [
-        "China",
-        "India"
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "India",
+          "type": "land"
+        }
       ]
     },
     "Oman": {
       "continent": "Asia",
       "adjacent_to": [
-        "Saudi Arabia",
-        "United Arab Emirates",
-        "Yemen"
+        {
+          "name": "Saudi Arabia",
+          "type": "land"
+        },
+        {
+          "name": "United Arab Emirates",
+          "type": "land"
+        },
+        {
+          "name": "Yemen",
+          "type": "land"
+        }
       ]
     },
     "Uzbekistan": {
       "continent": "Asia",
       "adjacent_to": [
-        "Afghanistan",
-        "Kazakhstan",
-        "Kyrgyzstan",
-        "Tajikistan",
-        "Turkmenistan"
+        {
+          "name": "Afghanistan",
+          "type": "land"
+        },
+        {
+          "name": "Kazakhstan",
+          "type": "land"
+        },
+        {
+          "name": "Kyrgyzstan",
+          "type": "land"
+        },
+        {
+          "name": "Tajikistan",
+          "type": "land"
+        },
+        {
+          "name": "Turkmenistan",
+          "type": "land"
+        }
       ]
     },
     "Kazakhstan": {
       "continent": "Asia",
       "adjacent_to": [
-        "China",
-        "Kyrgyzstan",
-        "Russia",
-        "Turkmenistan",
-        "Uzbekistan"
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "Kyrgyzstan",
+          "type": "land"
+        },
+        {
+          "name": "Mongolia",
+          "type": "sea"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        },
+        {
+          "name": "Turkmenistan",
+          "type": "land"
+        },
+        {
+          "name": "Uzbekistan",
+          "type": "land"
+        }
       ]
     },
     "Tajikistan": {
       "continent": "Asia",
       "adjacent_to": [
-        "Afghanistan",
-        "China",
-        "Kyrgyzstan",
-        "Uzbekistan"
+        {
+          "name": "Afghanistan",
+          "type": "land"
+        },
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "Kyrgyzstan",
+          "type": "land"
+        },
+        {
+          "name": "Pakistan",
+          "type": "sea"
+        },
+        {
+          "name": "Uzbekistan",
+          "type": "land"
+        }
       ]
     },
     "Mongolia": {
       "continent": "Asia",
       "adjacent_to": [
-        "China",
-        "Russia"
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "Kazakhstan",
+          "type": "sea"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        }
       ]
     },
     "Vietnam": {
       "continent": "Asia",
       "adjacent_to": [
-        "Cambodia",
-        "China",
-        "Laos"
+        {
+          "name": "Cambodia",
+          "type": "land"
+        },
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "Laos",
+          "type": "land"
+        }
       ]
     },
     "Cambodia": {
       "continent": "Asia",
       "adjacent_to": [
-        "Laos",
-        "Thailand",
-        "Vietnam"
+        {
+          "name": "Laos",
+          "type": "land"
+        },
+        {
+          "name": "Thailand",
+          "type": "land"
+        },
+        {
+          "name": "Vietnam",
+          "type": "land"
+        }
       ]
     },
     "United Arab Emirates": {
       "continent": "Asia",
       "adjacent_to": [
-        "Oman",
-        "Saudi Arabia"
+        {
+          "name": "Oman",
+          "type": "land"
+        },
+        {
+          "name": "Qatar",
+          "type": "sea"
+        },
+        {
+          "name": "Saudi Arabia",
+          "type": "land"
+        }
       ]
     },
     "Georgia": {
       "continent": "Asia",
       "adjacent_to": [
-        "Armenia",
-        "Azerbaijan",
-        "Russia",
-        "Turkey"
+        {
+          "name": "Armenia",
+          "type": "land"
+        },
+        {
+          "name": "Azerbaijan",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        },
+        {
+          "name": "Turkey",
+          "type": "land"
+        }
       ]
     },
     "Azerbaijan": {
       "continent": "Asia",
       "adjacent_to": [
-        "Armenia",
-        "Georgia",
-        "Iran",
-        "Russia",
-        "Turkey"
+        {
+          "name": "Armenia",
+          "type": "land"
+        },
+        {
+          "name": "Georgia",
+          "type": "land"
+        },
+        {
+          "name": "Iran",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        },
+        {
+          "name": "Turkey",
+          "type": "land"
+        }
       ]
     },
     "Turkey": {
       "continent": "Asia",
       "adjacent_to": [
-        "Armenia",
-        "Azerbaijan",
-        "Bulgaria",
-        "Georgia",
-        "Greece",
-        "Iran",
-        "Iraq",
-        "Syria"
+        {
+          "name": "Armenia",
+          "type": "land"
+        },
+        {
+          "name": "Azerbaijan",
+          "type": "land"
+        },
+        {
+          "name": "Bulgaria",
+          "type": "land"
+        },
+        {
+          "name": "Georgia",
+          "type": "land"
+        },
+        {
+          "name": "Greece",
+          "type": "land"
+        },
+        {
+          "name": "Iran",
+          "type": "land"
+        },
+        {
+          "name": "Iraq",
+          "type": "land"
+        },
+        {
+          "name": "Syria",
+          "type": "land"
+        }
       ]
     },
     "Laos": {
       "continent": "Asia",
       "adjacent_to": [
-        "Cambodia",
-        "China",
-        "Myanmar",
-        "Thailand",
-        "Vietnam"
+        {
+          "name": "Cambodia",
+          "type": "land"
+        },
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "Myanmar",
+          "type": "land"
+        },
+        {
+          "name": "Thailand",
+          "type": "land"
+        },
+        {
+          "name": "Vietnam",
+          "type": "land"
+        }
       ]
     },
     "Kyrgyzstan": {
       "continent": "Asia",
       "adjacent_to": [
-        "China",
-        "Kazakhstan",
-        "Tajikistan",
-        "Uzbekistan"
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "Kazakhstan",
+          "type": "land"
+        },
+        {
+          "name": "Tajikistan",
+          "type": "land"
+        },
+        {
+          "name": "Uzbekistan",
+          "type": "land"
+        }
       ]
     },
     "Armenia": {
       "continent": "Asia",
       "adjacent_to": [
-        "Azerbaijan",
-        "Georgia",
-        "Iran",
-        "Turkey"
+        {
+          "name": "Azerbaijan",
+          "type": "land"
+        },
+        {
+          "name": "Georgia",
+          "type": "land"
+        },
+        {
+          "name": "Iran",
+          "type": "land"
+        },
+        {
+          "name": "Turkey",
+          "type": "land"
+        }
       ]
     },
     "Iraq": {
       "continent": "Asia",
       "adjacent_to": [
-        "Iran",
-        "Jordan",
-        "Kuwait",
-        "Saudi Arabia",
-        "Syria",
-        "Turkey"
+        {
+          "name": "Iran",
+          "type": "land"
+        },
+        {
+          "name": "Jordan",
+          "type": "land"
+        },
+        {
+          "name": "Kuwait",
+          "type": "land"
+        },
+        {
+          "name": "Saudi Arabia",
+          "type": "land"
+        },
+        {
+          "name": "Syria",
+          "type": "land"
+        },
+        {
+          "name": "Turkey",
+          "type": "land"
+        }
       ]
     },
     "Iran": {
       "continent": "Asia",
       "adjacent_to": [
-        "Afghanistan",
-        "Armenia",
-        "Azerbaijan",
-        "Iraq",
-        "Pakistan",
-        "Turkey",
-        "Turkmenistan"
+        {
+          "name": "Afghanistan",
+          "type": "land"
+        },
+        {
+          "name": "Armenia",
+          "type": "land"
+        },
+        {
+          "name": "Azerbaijan",
+          "type": "land"
+        },
+        {
+          "name": "Iraq",
+          "type": "land"
+        },
+        {
+          "name": "Kuwait",
+          "type": "sea"
+        },
+        {
+          "name": "Pakistan",
+          "type": "land"
+        },
+        {
+          "name": "Turkey",
+          "type": "land"
+        },
+        {
+          "name": "Turkmenistan",
+          "type": "land"
+        }
       ]
     },
     "Qatar": {
       "continent": "Asia",
       "adjacent_to": [
-        "Saudi Arabia"
+        {
+          "name": "Saudi Arabia",
+          "type": "land"
+        },
+        {
+          "name": "United Arab Emirates",
+          "type": "sea"
+        }
       ]
     },
     "Saudi Arabia": {
       "continent": "Asia",
       "adjacent_to": [
-        "Iraq",
-        "Jordan",
-        "Kuwait",
-        "Oman",
-        "Qatar",
-        "United Arab Emirates",
-        "Yemen"
+        {
+          "name": "China",
+          "type": "air"
+        },
+        {
+          "name": "Egypt",
+          "type": "sea"
+        },
+        {
+          "name": "Iraq",
+          "type": "land"
+        },
+        {
+          "name": "Israel",
+          "type": "sea"
+        },
+        {
+          "name": "Jordan",
+          "type": "land"
+        },
+        {
+          "name": "Kuwait",
+          "type": "land"
+        },
+        {
+          "name": "Oman",
+          "type": "land"
+        },
+        {
+          "name": "Qatar",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "air"
+        },
+        {
+          "name": "United Arab Emirates",
+          "type": "land"
+        },
+        {
+          "name": "United States of America",
+          "type": "air"
+        },
+        {
+          "name": "Yemen",
+          "type": "land"
+        }
       ]
     },
     "Pakistan": {
       "continent": "Asia",
       "adjacent_to": [
-        "Afghanistan",
-        "China",
-        "India",
-        "Iran"
+        {
+          "name": "Afghanistan",
+          "type": "land"
+        },
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "India",
+          "type": "land"
+        },
+        {
+          "name": "Iran",
+          "type": "land"
+        },
+        {
+          "name": "Tajikistan",
+          "type": "sea"
+        }
       ]
     },
     "Thailand": {
       "continent": "Asia",
       "adjacent_to": [
-        "Cambodia",
-        "Laos",
-        "Malaysia",
-        "Myanmar"
+        {
+          "name": "Cambodia",
+          "type": "land"
+        },
+        {
+          "name": "Laos",
+          "type": "land"
+        },
+        {
+          "name": "Malaysia",
+          "type": "land"
+        },
+        {
+          "name": "Myanmar",
+          "type": "land"
+        }
       ]
     },
     "Kuwait": {
       "continent": "Asia",
       "adjacent_to": [
-        "Iraq",
-        "Saudi Arabia"
+        {
+          "name": "Iran",
+          "type": "sea"
+        },
+        {
+          "name": "Iraq",
+          "type": "land"
+        },
+        {
+          "name": "Saudi Arabia",
+          "type": "land"
+        }
       ]
     },
     "Timor-Leste": {
       "continent": "Asia",
       "adjacent_to": [
-        "Indonesia"
+        {
+          "name": "Indonesia",
+          "type": "land"
+        }
       ]
     },
     "Brunei": {
       "continent": "Asia",
       "adjacent_to": [
-        "Malaysia"
+        {
+          "name": "Indonesia",
+          "type": "sea"
+        },
+        {
+          "name": "Malaysia",
+          "type": "land"
+        }
       ]
     },
     "Myanmar": {
       "continent": "Asia",
       "adjacent_to": [
-        "Bangladesh",
-        "China",
-        "India",
-        "Laos",
-        "Thailand"
+        {
+          "name": "Bangladesh",
+          "type": "land"
+        },
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "India",
+          "type": "land"
+        },
+        {
+          "name": "Laos",
+          "type": "land"
+        },
+        {
+          "name": "Thailand",
+          "type": "land"
+        }
       ]
     },
     "Bangladesh": {
       "continent": "Asia",
       "adjacent_to": [
-        "India",
-        "Myanmar"
+        {
+          "name": "India",
+          "type": "land"
+        },
+        {
+          "name": "Myanmar",
+          "type": "land"
+        },
+        {
+          "name": "Nepal",
+          "type": "sea"
+        }
       ]
     },
     "Afghanistan": {
       "continent": "Asia",
       "adjacent_to": [
-        "China",
-        "Iran",
-        "Pakistan",
-        "Tajikistan",
-        "Turkmenistan",
-        "Uzbekistan"
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "Iran",
+          "type": "land"
+        },
+        {
+          "name": "Pakistan",
+          "type": "land"
+        },
+        {
+          "name": "Tajikistan",
+          "type": "land"
+        },
+        {
+          "name": "Turkmenistan",
+          "type": "land"
+        },
+        {
+          "name": "Uzbekistan",
+          "type": "land"
+        }
       ]
     },
     "Turkmenistan": {
       "continent": "Asia",
       "adjacent_to": [
-        "Afghanistan",
-        "Iran",
-        "Kazakhstan",
-        "Uzbekistan"
+        {
+          "name": "Afghanistan",
+          "type": "land"
+        },
+        {
+          "name": "Iran",
+          "type": "land"
+        },
+        {
+          "name": "Kazakhstan",
+          "type": "land"
+        },
+        {
+          "name": "Uzbekistan",
+          "type": "land"
+        }
       ]
     },
     "Jordan": {
       "continent": "Asia",
       "adjacent_to": [
-        "Iraq",
-        "Israel",
-        "Palestine",
-        "Saudi Arabia",
-        "Syria"
+        {
+          "name": "Egypt",
+          "type": "sea"
+        },
+        {
+          "name": "Iraq",
+          "type": "land"
+        },
+        {
+          "name": "Israel",
+          "type": "land"
+        },
+        {
+          "name": "Lebanon",
+          "type": "sea"
+        },
+        {
+          "name": "Palestine",
+          "type": "land"
+        },
+        {
+          "name": "Saudi Arabia",
+          "type": "land"
+        },
+        {
+          "name": "Syria",
+          "type": "land"
+        }
       ]
     },
     "Nepal": {
       "continent": "Asia",
       "adjacent_to": [
-        "China",
-        "India"
+        {
+          "name": "Bangladesh",
+          "type": "sea"
+        },
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "India",
+          "type": "land"
+        }
       ]
     },
     "Yemen": {
       "continent": "Asia",
       "adjacent_to": [
-        "Oman",
-        "Saudi Arabia"
+        {
+          "name": "Djibouti",
+          "type": "sea"
+        },
+        {
+          "name": "Eritrea",
+          "type": "sea"
+        },
+        {
+          "name": "Oman",
+          "type": "land"
+        },
+        {
+          "name": "Saudi Arabia",
+          "type": "land"
+        }
       ]
     },
     "N. Cyprus": {
       "continent": "Asia",
       "adjacent_to": [
-        "Cyprus"
+        {
+          "name": "Cyprus",
+          "type": "land"
+        }
       ]
     },
     "Philippines": {
@@ -728,115 +1445,271 @@
     },
     "Japan": {
       "continent": "Asia",
-      "adjacent_to": []
+      "adjacent_to": [
+        {
+          "name": "Russia",
+          "type": "sea"
+        }
+      ]
     },
     "Chile": {
       "continent": "South America",
       "adjacent_to": [
-        "Argentina",
-        "Bolivia",
-        "Peru"
+        {
+          "name": "Argentina",
+          "type": "land"
+        },
+        {
+          "name": "Bolivia",
+          "type": "land"
+        },
+        {
+          "name": "Peru",
+          "type": "land"
+        }
       ]
     },
     "Bolivia": {
       "continent": "South America",
       "adjacent_to": [
-        "Argentina",
-        "Brazil",
-        "Chile",
-        "Paraguay",
-        "Peru"
+        {
+          "name": "Argentina",
+          "type": "land"
+        },
+        {
+          "name": "Brazil",
+          "type": "land"
+        },
+        {
+          "name": "Chile",
+          "type": "land"
+        },
+        {
+          "name": "Paraguay",
+          "type": "land"
+        },
+        {
+          "name": "Peru",
+          "type": "land"
+        }
       ]
     },
     "Peru": {
       "continent": "South America",
       "adjacent_to": [
-        "Bolivia",
-        "Brazil",
-        "Chile",
-        "Colombia",
-        "Ecuador"
+        {
+          "name": "Bolivia",
+          "type": "land"
+        },
+        {
+          "name": "Brazil",
+          "type": "land"
+        },
+        {
+          "name": "Chile",
+          "type": "land"
+        },
+        {
+          "name": "Colombia",
+          "type": "land"
+        },
+        {
+          "name": "Ecuador",
+          "type": "land"
+        }
       ]
     },
     "Argentina": {
       "continent": "South America",
       "adjacent_to": [
-        "Bolivia",
-        "Brazil",
-        "Chile",
-        "Paraguay",
-        "Uruguay"
+        {
+          "name": "Bolivia",
+          "type": "land"
+        },
+        {
+          "name": "Brazil",
+          "type": "land"
+        },
+        {
+          "name": "Chile",
+          "type": "land"
+        },
+        {
+          "name": "Paraguay",
+          "type": "land"
+        },
+        {
+          "name": "Uruguay",
+          "type": "land"
+        }
       ]
     },
     "Suriname": {
       "continent": "South America",
       "adjacent_to": [
-        "Brazil",
-        "France",
-        "Guyana"
+        {
+          "name": "Brazil",
+          "type": "land"
+        },
+        {
+          "name": "France",
+          "type": "land"
+        },
+        {
+          "name": "Guyana",
+          "type": "land"
+        }
       ]
     },
     "Guyana": {
       "continent": "South America",
       "adjacent_to": [
-        "Brazil",
-        "Suriname",
-        "Venezuela"
+        {
+          "name": "Brazil",
+          "type": "land"
+        },
+        {
+          "name": "Suriname",
+          "type": "land"
+        },
+        {
+          "name": "Venezuela",
+          "type": "land"
+        }
       ]
     },
     "Brazil": {
       "continent": "South America",
       "adjacent_to": [
-        "Argentina",
-        "Bolivia",
-        "Colombia",
-        "France",
-        "Guyana",
-        "Paraguay",
-        "Peru",
-        "Suriname",
-        "Uruguay",
-        "Venezuela"
+        {
+          "name": "Argentina",
+          "type": "land"
+        },
+        {
+          "name": "Bolivia",
+          "type": "land"
+        },
+        {
+          "name": "Colombia",
+          "type": "land"
+        },
+        {
+          "name": "France",
+          "type": "land"
+        },
+        {
+          "name": "Guyana",
+          "type": "land"
+        },
+        {
+          "name": "Paraguay",
+          "type": "land"
+        },
+        {
+          "name": "Peru",
+          "type": "land"
+        },
+        {
+          "name": "Suriname",
+          "type": "land"
+        },
+        {
+          "name": "Uruguay",
+          "type": "land"
+        },
+        {
+          "name": "Venezuela",
+          "type": "land"
+        }
       ]
     },
     "Uruguay": {
       "continent": "South America",
       "adjacent_to": [
-        "Argentina",
-        "Brazil"
+        {
+          "name": "Argentina",
+          "type": "land"
+        },
+        {
+          "name": "Brazil",
+          "type": "land"
+        }
       ]
     },
     "Ecuador": {
       "continent": "South America",
       "adjacent_to": [
-        "Colombia",
-        "Peru"
+        {
+          "name": "Colombia",
+          "type": "land"
+        },
+        {
+          "name": "Peru",
+          "type": "land"
+        }
       ]
     },
     "Colombia": {
       "continent": "South America",
       "adjacent_to": [
-        "Brazil",
-        "Ecuador",
-        "Panama",
-        "Peru",
-        "Venezuela"
+        {
+          "name": "Brazil",
+          "type": "land"
+        },
+        {
+          "name": "Ecuador",
+          "type": "land"
+        },
+        {
+          "name": "Panama",
+          "type": "land"
+        },
+        {
+          "name": "Peru",
+          "type": "land"
+        },
+        {
+          "name": "Venezuela",
+          "type": "land"
+        }
       ]
     },
     "Paraguay": {
       "continent": "South America",
       "adjacent_to": [
-        "Argentina",
-        "Bolivia",
-        "Brazil"
+        {
+          "name": "Argentina",
+          "type": "land"
+        },
+        {
+          "name": "Bolivia",
+          "type": "land"
+        },
+        {
+          "name": "Brazil",
+          "type": "land"
+        }
       ]
     },
     "Venezuela": {
       "continent": "South America",
       "adjacent_to": [
-        "Brazil",
-        "Colombia",
-        "Guyana"
+        {
+          "name": "Brazil",
+          "type": "land"
+        },
+        {
+          "name": "Colombia",
+          "type": "land"
+        },
+        {
+          "name": "Guyana",
+          "type": "land"
+        },
+        {
+          "name": "Trinidad and Tobago",
+          "type": "sea"
+        }
       ]
     },
     "Falkland Is.": {
@@ -846,451 +1719,1134 @@
     "Ethiopia": {
       "continent": "Africa",
       "adjacent_to": [
-        "Djibouti",
-        "Eritrea",
-        "Kenya",
-        "Somalia",
-        "Somaliland"
+        {
+          "name": "Djibouti",
+          "type": "land"
+        },
+        {
+          "name": "Eritrea",
+          "type": "land"
+        },
+        {
+          "name": "Kenya",
+          "type": "land"
+        },
+        {
+          "name": "S. Sudan",
+          "type": "sea"
+        },
+        {
+          "name": "Somalia",
+          "type": "land"
+        },
+        {
+          "name": "Somaliland",
+          "type": "land"
+        }
       ]
     },
     "S. Sudan": {
       "continent": "Africa",
       "adjacent_to": [
-        "Central African Rep.",
-        "Dem. Rep. Congo",
-        "Kenya",
-        "Uganda"
+        {
+          "name": "Central African Rep.",
+          "type": "land"
+        },
+        {
+          "name": "Dem. Rep. Congo",
+          "type": "land"
+        },
+        {
+          "name": "Ethiopia",
+          "type": "sea"
+        },
+        {
+          "name": "Kenya",
+          "type": "land"
+        },
+        {
+          "name": "Uganda",
+          "type": "land"
+        }
       ]
     },
     "Somalia": {
       "continent": "Africa",
       "adjacent_to": [
-        "Ethiopia",
-        "Kenya",
-        "Somaliland"
+        {
+          "name": "Ethiopia",
+          "type": "land"
+        },
+        {
+          "name": "Kenya",
+          "type": "land"
+        },
+        {
+          "name": "Somaliland",
+          "type": "land"
+        }
       ]
     },
     "Kenya": {
       "continent": "Africa",
       "adjacent_to": [
-        "Ethiopia",
-        "S. Sudan",
-        "Somalia",
-        "Tanzania",
-        "Uganda"
+        {
+          "name": "Ethiopia",
+          "type": "land"
+        },
+        {
+          "name": "S. Sudan",
+          "type": "land"
+        },
+        {
+          "name": "Somalia",
+          "type": "land"
+        },
+        {
+          "name": "Tanzania",
+          "type": "land"
+        },
+        {
+          "name": "Uganda",
+          "type": "land"
+        }
       ]
     },
     "Malawi": {
       "continent": "Africa",
       "adjacent_to": [
-        "Mozambique",
-        "Tanzania",
-        "Zambia"
+        {
+          "name": "Mozambique",
+          "type": "land"
+        },
+        {
+          "name": "Tanzania",
+          "type": "land"
+        },
+        {
+          "name": "Zambia",
+          "type": "land"
+        }
       ]
     },
     "Tanzania": {
       "continent": "Africa",
       "adjacent_to": [
-        "Burundi",
-        "Dem. Rep. Congo",
-        "Kenya",
-        "Malawi",
-        "Mozambique",
-        "Rwanda",
-        "Uganda",
-        "Zambia"
+        {
+          "name": "Burundi",
+          "type": "land"
+        },
+        {
+          "name": "Dem. Rep. Congo",
+          "type": "land"
+        },
+        {
+          "name": "Kenya",
+          "type": "land"
+        },
+        {
+          "name": "Malawi",
+          "type": "land"
+        },
+        {
+          "name": "Mozambique",
+          "type": "land"
+        },
+        {
+          "name": "Rwanda",
+          "type": "land"
+        },
+        {
+          "name": "Uganda",
+          "type": "land"
+        },
+        {
+          "name": "Zambia",
+          "type": "land"
+        }
       ]
     },
     "Somaliland": {
       "continent": "Africa",
       "adjacent_to": [
-        "Djibouti",
-        "Ethiopia",
-        "Somalia"
+        {
+          "name": "Djibouti",
+          "type": "land"
+        },
+        {
+          "name": "Ethiopia",
+          "type": "land"
+        },
+        {
+          "name": "Somalia",
+          "type": "land"
+        }
       ]
     },
     "Morocco": {
       "continent": "Africa",
       "adjacent_to": [
-        "Algeria",
-        "W. Sahara"
+        {
+          "name": "Algeria",
+          "type": "land"
+        },
+        {
+          "name": "Mauritania",
+          "type": "sea"
+        },
+        {
+          "name": "Spain",
+          "type": "sea"
+        },
+        {
+          "name": "W. Sahara",
+          "type": "land"
+        }
       ]
     },
     "W. Sahara": {
       "continent": "Africa",
       "adjacent_to": [
-        "Algeria",
-        "Mauritania",
-        "Morocco"
+        {
+          "name": "Algeria",
+          "type": "land"
+        },
+        {
+          "name": "Mauritania",
+          "type": "land"
+        },
+        {
+          "name": "Morocco",
+          "type": "land"
+        }
       ]
     },
     "Congo": {
       "continent": "Africa",
       "adjacent_to": [
-        "Angola",
-        "Cameroon",
-        "Central African Rep.",
-        "Dem. Rep. Congo",
-        "Gabon"
+        {
+          "name": "Angola",
+          "type": "land"
+        },
+        {
+          "name": "Cameroon",
+          "type": "land"
+        },
+        {
+          "name": "Central African Rep.",
+          "type": "land"
+        },
+        {
+          "name": "Dem. Rep. Congo",
+          "type": "land"
+        },
+        {
+          "name": "Gabon",
+          "type": "land"
+        }
       ]
     },
     "Dem. Rep. Congo": {
       "continent": "Africa",
       "adjacent_to": [
-        "Angola",
-        "Burundi",
-        "Central African Rep.",
-        "Congo",
-        "Rwanda",
-        "S. Sudan",
-        "Tanzania",
-        "Uganda",
-        "Zambia"
+        {
+          "name": "Angola",
+          "type": "land"
+        },
+        {
+          "name": "Burundi",
+          "type": "land"
+        },
+        {
+          "name": "Central African Rep.",
+          "type": "land"
+        },
+        {
+          "name": "Congo",
+          "type": "land"
+        },
+        {
+          "name": "Rwanda",
+          "type": "land"
+        },
+        {
+          "name": "S. Sudan",
+          "type": "land"
+        },
+        {
+          "name": "Tanzania",
+          "type": "land"
+        },
+        {
+          "name": "Uganda",
+          "type": "land"
+        },
+        {
+          "name": "Zambia",
+          "type": "land"
+        }
       ]
     },
     "Namibia": {
       "continent": "Africa",
       "adjacent_to": [
-        "Angola",
-        "Botswana",
-        "South Africa",
-        "Zambia"
+        {
+          "name": "Angola",
+          "type": "land"
+        },
+        {
+          "name": "Botswana",
+          "type": "land"
+        },
+        {
+          "name": "South Africa",
+          "type": "land"
+        },
+        {
+          "name": "Zambia",
+          "type": "land"
+        },
+        {
+          "name": "Zimbabwe",
+          "type": "sea"
+        }
       ]
     },
     "South Africa": {
       "continent": "Africa",
       "adjacent_to": [
-        "Botswana",
-        "Lesotho",
-        "Mozambique",
-        "Namibia",
-        "Zimbabwe",
-        "eSwatini"
+        {
+          "name": "Botswana",
+          "type": "land"
+        },
+        {
+          "name": "Lesotho",
+          "type": "land"
+        },
+        {
+          "name": "Mozambique",
+          "type": "land"
+        },
+        {
+          "name": "Namibia",
+          "type": "land"
+        },
+        {
+          "name": "Zimbabwe",
+          "type": "land"
+        },
+        {
+          "name": "eSwatini",
+          "type": "land"
+        }
       ]
     },
     "Libya": {
       "continent": "Africa",
       "adjacent_to": [
-        "Algeria",
-        "Chad",
-        "Egypt",
-        "Niger",
-        "Tunisia"
+        {
+          "name": "Algeria",
+          "type": "land"
+        },
+        {
+          "name": "Chad",
+          "type": "land"
+        },
+        {
+          "name": "Egypt",
+          "type": "land"
+        },
+        {
+          "name": "Niger",
+          "type": "land"
+        },
+        {
+          "name": "Tunisia",
+          "type": "land"
+        }
       ]
     },
     "Tunisia": {
       "continent": "Africa",
       "adjacent_to": [
-        "Algeria",
-        "Libya"
+        {
+          "name": "Algeria",
+          "type": "land"
+        },
+        {
+          "name": "Libya",
+          "type": "land"
+        }
       ]
     },
     "Zambia": {
       "continent": "Africa",
       "adjacent_to": [
-        "Angola",
-        "Botswana",
-        "Dem. Rep. Congo",
-        "Malawi",
-        "Mozambique",
-        "Namibia",
-        "Tanzania",
-        "Zimbabwe"
+        {
+          "name": "Angola",
+          "type": "land"
+        },
+        {
+          "name": "Botswana",
+          "type": "land"
+        },
+        {
+          "name": "Dem. Rep. Congo",
+          "type": "land"
+        },
+        {
+          "name": "Malawi",
+          "type": "land"
+        },
+        {
+          "name": "Mozambique",
+          "type": "land"
+        },
+        {
+          "name": "Namibia",
+          "type": "land"
+        },
+        {
+          "name": "Tanzania",
+          "type": "land"
+        },
+        {
+          "name": "Zimbabwe",
+          "type": "land"
+        }
       ]
     },
     "Sierra Leone": {
       "continent": "Africa",
       "adjacent_to": [
-        "Guinea",
-        "Liberia"
+        {
+          "name": "Guinea",
+          "type": "land"
+        },
+        {
+          "name": "Liberia",
+          "type": "land"
+        }
       ]
     },
     "Guinea": {
       "continent": "Africa",
       "adjacent_to": [
-        "C\u00f4te d'Ivoire",
-        "Guinea-Bissau",
-        "Liberia",
-        "Mali",
-        "Senegal",
-        "Sierra Leone"
+        {
+          "name": "C\u00f4te d'Ivoire",
+          "type": "land"
+        },
+        {
+          "name": "Guinea-Bissau",
+          "type": "land"
+        },
+        {
+          "name": "Liberia",
+          "type": "land"
+        },
+        {
+          "name": "Mali",
+          "type": "land"
+        },
+        {
+          "name": "Senegal",
+          "type": "land"
+        },
+        {
+          "name": "Sierra Leone",
+          "type": "land"
+        }
       ]
     },
     "Liberia": {
       "continent": "Africa",
       "adjacent_to": [
-        "C\u00f4te d'Ivoire",
-        "Guinea",
-        "Sierra Leone"
+        {
+          "name": "C\u00f4te d'Ivoire",
+          "type": "land"
+        },
+        {
+          "name": "Guinea",
+          "type": "land"
+        },
+        {
+          "name": "Sierra Leone",
+          "type": "land"
+        }
       ]
     },
     "Central African Rep.": {
       "continent": "Africa",
       "adjacent_to": [
-        "Cameroon",
-        "Chad",
-        "Congo",
-        "Dem. Rep. Congo",
-        "S. Sudan"
+        {
+          "name": "Cameroon",
+          "type": "land"
+        },
+        {
+          "name": "Chad",
+          "type": "land"
+        },
+        {
+          "name": "Congo",
+          "type": "land"
+        },
+        {
+          "name": "Dem. Rep. Congo",
+          "type": "land"
+        },
+        {
+          "name": "S. Sudan",
+          "type": "land"
+        }
       ]
     },
     "Djibouti": {
       "continent": "Africa",
       "adjacent_to": [
-        "Eritrea",
-        "Ethiopia",
-        "Somaliland"
+        {
+          "name": "Eritrea",
+          "type": "land"
+        },
+        {
+          "name": "Ethiopia",
+          "type": "land"
+        },
+        {
+          "name": "Somaliland",
+          "type": "land"
+        },
+        {
+          "name": "Yemen",
+          "type": "sea"
+        }
       ]
     },
     "Eritrea": {
       "continent": "Africa",
       "adjacent_to": [
-        "Djibouti",
-        "Ethiopia"
+        {
+          "name": "Djibouti",
+          "type": "land"
+        },
+        {
+          "name": "Ethiopia",
+          "type": "land"
+        },
+        {
+          "name": "Yemen",
+          "type": "sea"
+        }
       ]
     },
     "C\u00f4te d'Ivoire": {
       "continent": "Africa",
       "adjacent_to": [
-        "Burkina Faso",
-        "Ghana",
-        "Guinea",
-        "Liberia",
-        "Mali"
+        {
+          "name": "Burkina Faso",
+          "type": "land"
+        },
+        {
+          "name": "Ghana",
+          "type": "land"
+        },
+        {
+          "name": "Guinea",
+          "type": "land"
+        },
+        {
+          "name": "Liberia",
+          "type": "land"
+        },
+        {
+          "name": "Mali",
+          "type": "land"
+        }
       ]
     },
     "Mali": {
       "continent": "Africa",
       "adjacent_to": [
-        "Algeria",
-        "Burkina Faso",
-        "C\u00f4te d'Ivoire",
-        "Guinea",
-        "Mauritania",
-        "Niger",
-        "Senegal"
+        {
+          "name": "Algeria",
+          "type": "land"
+        },
+        {
+          "name": "Burkina Faso",
+          "type": "land"
+        },
+        {
+          "name": "C\u00f4te d'Ivoire",
+          "type": "land"
+        },
+        {
+          "name": "Guinea",
+          "type": "land"
+        },
+        {
+          "name": "Mauritania",
+          "type": "land"
+        },
+        {
+          "name": "Niger",
+          "type": "land"
+        },
+        {
+          "name": "Senegal",
+          "type": "land"
+        }
       ]
     },
     "Senegal": {
       "continent": "Africa",
       "adjacent_to": [
-        "Gambia",
-        "Guinea",
-        "Guinea-Bissau",
-        "Mali",
-        "Mauritania"
+        {
+          "name": "Gambia",
+          "type": "land"
+        },
+        {
+          "name": "Guinea",
+          "type": "land"
+        },
+        {
+          "name": "Guinea-Bissau",
+          "type": "land"
+        },
+        {
+          "name": "Mali",
+          "type": "land"
+        },
+        {
+          "name": "Mauritania",
+          "type": "land"
+        }
       ]
     },
     "Nigeria": {
       "continent": "Africa",
       "adjacent_to": [
-        "Benin",
-        "Cameroon",
-        "Niger"
+        {
+          "name": "Benin",
+          "type": "land"
+        },
+        {
+          "name": "Cameroon",
+          "type": "land"
+        },
+        {
+          "name": "Chad",
+          "type": "sea"
+        },
+        {
+          "name": "Niger",
+          "type": "land"
+        }
       ]
     },
     "Benin": {
       "continent": "Africa",
       "adjacent_to": [
-        "Burkina Faso",
-        "Niger",
-        "Nigeria",
-        "Togo"
+        {
+          "name": "Burkina Faso",
+          "type": "land"
+        },
+        {
+          "name": "Ghana",
+          "type": "sea"
+        },
+        {
+          "name": "Niger",
+          "type": "land"
+        },
+        {
+          "name": "Nigeria",
+          "type": "land"
+        },
+        {
+          "name": "Togo",
+          "type": "land"
+        }
       ]
     },
     "Angola": {
       "continent": "Africa",
       "adjacent_to": [
-        "Congo",
-        "Dem. Rep. Congo",
-        "Namibia",
-        "Zambia"
+        {
+          "name": "Botswana",
+          "type": "sea"
+        },
+        {
+          "name": "Congo",
+          "type": "land"
+        },
+        {
+          "name": "Dem. Rep. Congo",
+          "type": "land"
+        },
+        {
+          "name": "Namibia",
+          "type": "land"
+        },
+        {
+          "name": "Zambia",
+          "type": "land"
+        }
       ]
     },
     "Botswana": {
       "continent": "Africa",
       "adjacent_to": [
-        "Namibia",
-        "South Africa",
-        "Zambia",
-        "Zimbabwe"
+        {
+          "name": "Angola",
+          "type": "sea"
+        },
+        {
+          "name": "Namibia",
+          "type": "land"
+        },
+        {
+          "name": "South Africa",
+          "type": "land"
+        },
+        {
+          "name": "Zambia",
+          "type": "land"
+        },
+        {
+          "name": "Zimbabwe",
+          "type": "land"
+        }
       ]
     },
     "Zimbabwe": {
       "continent": "Africa",
       "adjacent_to": [
-        "Botswana",
-        "Mozambique",
-        "South Africa",
-        "Zambia"
+        {
+          "name": "Botswana",
+          "type": "land"
+        },
+        {
+          "name": "Mozambique",
+          "type": "land"
+        },
+        {
+          "name": "Namibia",
+          "type": "sea"
+        },
+        {
+          "name": "South Africa",
+          "type": "land"
+        },
+        {
+          "name": "Zambia",
+          "type": "land"
+        }
       ]
     },
     "Chad": {
       "continent": "Africa",
       "adjacent_to": [
-        "Cameroon",
-        "Central African Rep.",
-        "Libya",
-        "Niger"
+        {
+          "name": "Cameroon",
+          "type": "land"
+        },
+        {
+          "name": "Central African Rep.",
+          "type": "land"
+        },
+        {
+          "name": "Libya",
+          "type": "land"
+        },
+        {
+          "name": "Niger",
+          "type": "land"
+        },
+        {
+          "name": "Nigeria",
+          "type": "sea"
+        }
       ]
     },
     "Algeria": {
       "continent": "Africa",
       "adjacent_to": [
-        "Libya",
-        "Mali",
-        "Mauritania",
-        "Morocco",
-        "Niger",
-        "Tunisia",
-        "W. Sahara"
+        {
+          "name": "Libya",
+          "type": "land"
+        },
+        {
+          "name": "Mali",
+          "type": "land"
+        },
+        {
+          "name": "Mauritania",
+          "type": "land"
+        },
+        {
+          "name": "Morocco",
+          "type": "land"
+        },
+        {
+          "name": "Niger",
+          "type": "land"
+        },
+        {
+          "name": "Tunisia",
+          "type": "land"
+        },
+        {
+          "name": "W. Sahara",
+          "type": "land"
+        }
       ]
     },
     "Mozambique": {
       "continent": "Africa",
       "adjacent_to": [
-        "Malawi",
-        "South Africa",
-        "Tanzania",
-        "Zambia",
-        "Zimbabwe",
-        "eSwatini"
+        {
+          "name": "Malawi",
+          "type": "land"
+        },
+        {
+          "name": "South Africa",
+          "type": "land"
+        },
+        {
+          "name": "Tanzania",
+          "type": "land"
+        },
+        {
+          "name": "Zambia",
+          "type": "land"
+        },
+        {
+          "name": "Zimbabwe",
+          "type": "land"
+        },
+        {
+          "name": "eSwatini",
+          "type": "land"
+        }
       ]
     },
     "eSwatini": {
       "continent": "Africa",
       "adjacent_to": [
-        "Mozambique",
-        "South Africa"
+        {
+          "name": "Mozambique",
+          "type": "land"
+        },
+        {
+          "name": "South Africa",
+          "type": "land"
+        }
       ]
     },
     "Burundi": {
       "continent": "Africa",
       "adjacent_to": [
-        "Dem. Rep. Congo",
-        "Rwanda",
-        "Tanzania"
+        {
+          "name": "Dem. Rep. Congo",
+          "type": "land"
+        },
+        {
+          "name": "Rwanda",
+          "type": "land"
+        },
+        {
+          "name": "Tanzania",
+          "type": "land"
+        }
       ]
     },
     "Rwanda": {
       "continent": "Africa",
       "adjacent_to": [
-        "Burundi",
-        "Dem. Rep. Congo",
-        "Tanzania",
-        "Uganda"
+        {
+          "name": "Burundi",
+          "type": "land"
+        },
+        {
+          "name": "Dem. Rep. Congo",
+          "type": "land"
+        },
+        {
+          "name": "Tanzania",
+          "type": "land"
+        },
+        {
+          "name": "Uganda",
+          "type": "land"
+        }
       ]
     },
     "Uganda": {
       "continent": "Africa",
       "adjacent_to": [
-        "Dem. Rep. Congo",
-        "Kenya",
-        "Rwanda",
-        "S. Sudan",
-        "Tanzania"
+        {
+          "name": "Dem. Rep. Congo",
+          "type": "land"
+        },
+        {
+          "name": "Kenya",
+          "type": "land"
+        },
+        {
+          "name": "Rwanda",
+          "type": "land"
+        },
+        {
+          "name": "S. Sudan",
+          "type": "land"
+        },
+        {
+          "name": "Tanzania",
+          "type": "land"
+        }
       ]
     },
     "Lesotho": {
       "continent": "Africa",
       "adjacent_to": [
-        "South Africa"
+        {
+          "name": "South Africa",
+          "type": "land"
+        }
       ]
     },
     "Cameroon": {
       "continent": "Africa",
       "adjacent_to": [
-        "Central African Rep.",
-        "Chad",
-        "Congo",
-        "Eq. Guinea",
-        "Gabon",
-        "Niger",
-        "Nigeria"
+        {
+          "name": "Central African Rep.",
+          "type": "land"
+        },
+        {
+          "name": "Chad",
+          "type": "land"
+        },
+        {
+          "name": "Congo",
+          "type": "land"
+        },
+        {
+          "name": "Eq. Guinea",
+          "type": "land"
+        },
+        {
+          "name": "Gabon",
+          "type": "land"
+        },
+        {
+          "name": "Niger",
+          "type": "land"
+        },
+        {
+          "name": "Nigeria",
+          "type": "land"
+        }
       ]
     },
     "Gabon": {
       "continent": "Africa",
       "adjacent_to": [
-        "Cameroon",
-        "Congo",
-        "Eq. Guinea"
+        {
+          "name": "Cameroon",
+          "type": "land"
+        },
+        {
+          "name": "Congo",
+          "type": "land"
+        },
+        {
+          "name": "Eq. Guinea",
+          "type": "land"
+        }
       ]
     },
     "Niger": {
       "continent": "Africa",
       "adjacent_to": [
-        "Algeria",
-        "Benin",
-        "Burkina Faso",
-        "Cameroon",
-        "Chad",
-        "Libya",
-        "Mali",
-        "Nigeria"
+        {
+          "name": "Algeria",
+          "type": "land"
+        },
+        {
+          "name": "Benin",
+          "type": "land"
+        },
+        {
+          "name": "Burkina Faso",
+          "type": "land"
+        },
+        {
+          "name": "Cameroon",
+          "type": "land"
+        },
+        {
+          "name": "Chad",
+          "type": "land"
+        },
+        {
+          "name": "Libya",
+          "type": "land"
+        },
+        {
+          "name": "Mali",
+          "type": "land"
+        },
+        {
+          "name": "Nigeria",
+          "type": "land"
+        }
       ]
     },
     "Burkina Faso": {
       "continent": "Africa",
       "adjacent_to": [
-        "Benin",
-        "C\u00f4te d'Ivoire",
-        "Ghana",
-        "Mali",
-        "Niger",
-        "Togo"
+        {
+          "name": "Benin",
+          "type": "land"
+        },
+        {
+          "name": "C\u00f4te d'Ivoire",
+          "type": "land"
+        },
+        {
+          "name": "Ghana",
+          "type": "land"
+        },
+        {
+          "name": "Mali",
+          "type": "land"
+        },
+        {
+          "name": "Niger",
+          "type": "land"
+        },
+        {
+          "name": "Togo",
+          "type": "land"
+        }
       ]
     },
     "Togo": {
       "continent": "Africa",
       "adjacent_to": [
-        "Benin",
-        "Burkina Faso",
-        "Ghana"
+        {
+          "name": "Benin",
+          "type": "land"
+        },
+        {
+          "name": "Burkina Faso",
+          "type": "land"
+        },
+        {
+          "name": "Ghana",
+          "type": "land"
+        }
       ]
     },
     "Ghana": {
       "continent": "Africa",
       "adjacent_to": [
-        "Burkina Faso",
-        "C\u00f4te d'Ivoire",
-        "Togo"
+        {
+          "name": "Benin",
+          "type": "sea"
+        },
+        {
+          "name": "Burkina Faso",
+          "type": "land"
+        },
+        {
+          "name": "C\u00f4te d'Ivoire",
+          "type": "land"
+        },
+        {
+          "name": "Togo",
+          "type": "land"
+        }
       ]
     },
     "Guinea-Bissau": {
       "continent": "Africa",
       "adjacent_to": [
-        "Guinea",
-        "Senegal"
+        {
+          "name": "Guinea",
+          "type": "land"
+        },
+        {
+          "name": "Senegal",
+          "type": "land"
+        }
       ]
     },
     "Egypt": {
       "continent": "Africa",
       "adjacent_to": [
-        "Israel",
-        "Libya"
+        {
+          "name": "Israel",
+          "type": "land"
+        },
+        {
+          "name": "Jordan",
+          "type": "sea"
+        },
+        {
+          "name": "Libya",
+          "type": "land"
+        },
+        {
+          "name": "Saudi Arabia",
+          "type": "sea"
+        }
       ]
     },
     "Mauritania": {
       "continent": "Africa",
       "adjacent_to": [
-        "Algeria",
-        "Mali",
-        "Senegal",
-        "W. Sahara"
+        {
+          "name": "Algeria",
+          "type": "land"
+        },
+        {
+          "name": "Mali",
+          "type": "land"
+        },
+        {
+          "name": "Morocco",
+          "type": "sea"
+        },
+        {
+          "name": "Senegal",
+          "type": "land"
+        },
+        {
+          "name": "W. Sahara",
+          "type": "land"
+        }
       ]
     },
     "Eq. Guinea": {
       "continent": "Africa",
       "adjacent_to": [
-        "Cameroon",
-        "Gabon"
+        {
+          "name": "Cameroon",
+          "type": "land"
+        },
+        {
+          "name": "Gabon",
+          "type": "land"
+        }
       ]
     },
     "Gambia": {
       "continent": "Africa",
       "adjacent_to": [
-        "Senegal"
+        {
+          "name": "Senegal",
+          "type": "land"
+        }
       ]
     },
     "Madagascar": {
@@ -1300,359 +2856,951 @@
     "France": {
       "continent": "Europe",
       "adjacent_to": [
-        "Belgium",
-        "Brazil",
-        "Germany",
-        "Italy",
-        "Luxembourg",
-        "Spain",
-        "Suriname",
-        "Switzerland"
+        {
+          "name": "Belgium",
+          "type": "land"
+        },
+        {
+          "name": "Brazil",
+          "type": "land"
+        },
+        {
+          "name": "Germany",
+          "type": "land"
+        },
+        {
+          "name": "Italy",
+          "type": "land"
+        },
+        {
+          "name": "Luxembourg",
+          "type": "land"
+        },
+        {
+          "name": "Spain",
+          "type": "land"
+        },
+        {
+          "name": "Suriname",
+          "type": "land"
+        },
+        {
+          "name": "Switzerland",
+          "type": "land"
+        },
+        {
+          "name": "United Kingdom",
+          "type": "sea"
+        }
       ]
     },
     "Ukraine": {
       "continent": "Europe",
       "adjacent_to": [
-        "Belarus",
-        "Hungary",
-        "Moldova",
-        "Poland",
-        "Romania",
-        "Russia",
-        "Slovakia"
+        {
+          "name": "Belarus",
+          "type": "land"
+        },
+        {
+          "name": "Hungary",
+          "type": "land"
+        },
+        {
+          "name": "Moldova",
+          "type": "land"
+        },
+        {
+          "name": "Poland",
+          "type": "land"
+        },
+        {
+          "name": "Romania",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        },
+        {
+          "name": "Slovakia",
+          "type": "land"
+        }
       ]
     },
     "Belarus": {
       "continent": "Europe",
       "adjacent_to": [
-        "Latvia",
-        "Lithuania",
-        "Poland",
-        "Russia",
-        "Ukraine"
+        {
+          "name": "Latvia",
+          "type": "land"
+        },
+        {
+          "name": "Lithuania",
+          "type": "land"
+        },
+        {
+          "name": "Poland",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        },
+        {
+          "name": "Ukraine",
+          "type": "land"
+        }
       ]
     },
     "Lithuania": {
       "continent": "Europe",
       "adjacent_to": [
-        "Belarus",
-        "Latvia",
-        "Poland",
-        "Russia"
+        {
+          "name": "Belarus",
+          "type": "land"
+        },
+        {
+          "name": "Latvia",
+          "type": "land"
+        },
+        {
+          "name": "Poland",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        }
       ]
     },
     "Russia": {
       "continent": "Europe",
       "adjacent_to": [
-        "Azerbaijan",
-        "Belarus",
-        "China",
-        "Estonia",
-        "Finland",
-        "Georgia",
-        "Kazakhstan",
-        "Latvia",
-        "Lithuania",
-        "Mongolia",
-        "North Korea",
-        "Norway",
-        "Poland",
-        "Ukraine"
+        {
+          "name": "Azerbaijan",
+          "type": "land"
+        },
+        {
+          "name": "Belarus",
+          "type": "land"
+        },
+        {
+          "name": "China",
+          "type": "land"
+        },
+        {
+          "name": "Estonia",
+          "type": "land"
+        },
+        {
+          "name": "Finland",
+          "type": "land"
+        },
+        {
+          "name": "Georgia",
+          "type": "land"
+        },
+        {
+          "name": "India",
+          "type": "air"
+        },
+        {
+          "name": "Japan",
+          "type": "sea"
+        },
+        {
+          "name": "Kazakhstan",
+          "type": "land"
+        },
+        {
+          "name": "Latvia",
+          "type": "land"
+        },
+        {
+          "name": "Lithuania",
+          "type": "land"
+        },
+        {
+          "name": "Mongolia",
+          "type": "land"
+        },
+        {
+          "name": "North Korea",
+          "type": "land"
+        },
+        {
+          "name": "Norway",
+          "type": "land"
+        },
+        {
+          "name": "Poland",
+          "type": "land"
+        },
+        {
+          "name": "Saudi Arabia",
+          "type": "air"
+        },
+        {
+          "name": "Ukraine",
+          "type": "land"
+        },
+        {
+          "name": "United Kingdom",
+          "type": "air"
+        }
       ]
     },
     "Czechia": {
       "continent": "Europe",
       "adjacent_to": [
-        "Austria",
-        "Germany",
-        "Poland",
-        "Slovakia"
+        {
+          "name": "Austria",
+          "type": "land"
+        },
+        {
+          "name": "Germany",
+          "type": "land"
+        },
+        {
+          "name": "Hungary",
+          "type": "sea"
+        },
+        {
+          "name": "Poland",
+          "type": "land"
+        },
+        {
+          "name": "Slovakia",
+          "type": "land"
+        }
       ]
     },
     "Germany": {
       "continent": "Europe",
       "adjacent_to": [
-        "Austria",
-        "Belgium",
-        "Czechia",
-        "Denmark",
-        "France",
-        "Luxembourg",
-        "Netherlands",
-        "Poland",
-        "Switzerland"
+        {
+          "name": "Austria",
+          "type": "land"
+        },
+        {
+          "name": "Belgium",
+          "type": "land"
+        },
+        {
+          "name": "Czechia",
+          "type": "land"
+        },
+        {
+          "name": "Denmark",
+          "type": "land"
+        },
+        {
+          "name": "France",
+          "type": "land"
+        },
+        {
+          "name": "Italy",
+          "type": "sea"
+        },
+        {
+          "name": "Luxembourg",
+          "type": "land"
+        },
+        {
+          "name": "Netherlands",
+          "type": "land"
+        },
+        {
+          "name": "Poland",
+          "type": "land"
+        },
+        {
+          "name": "Switzerland",
+          "type": "land"
+        }
       ]
     },
     "Estonia": {
       "continent": "Europe",
       "adjacent_to": [
-        "Latvia",
-        "Russia"
+        {
+          "name": "Latvia",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        }
       ]
     },
     "Latvia": {
       "continent": "Europe",
       "adjacent_to": [
-        "Belarus",
-        "Estonia",
-        "Lithuania",
-        "Russia"
+        {
+          "name": "Belarus",
+          "type": "land"
+        },
+        {
+          "name": "Estonia",
+          "type": "land"
+        },
+        {
+          "name": "Lithuania",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        }
       ]
     },
     "Norway": {
       "continent": "Europe",
       "adjacent_to": [
-        "Finland",
-        "Russia",
-        "Sweden"
+        {
+          "name": "Finland",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        },
+        {
+          "name": "Sweden",
+          "type": "land"
+        }
       ]
     },
     "Sweden": {
       "continent": "Europe",
       "adjacent_to": [
-        "Finland",
-        "Norway"
+        {
+          "name": "Denmark",
+          "type": "sea"
+        },
+        {
+          "name": "Finland",
+          "type": "land"
+        },
+        {
+          "name": "Norway",
+          "type": "land"
+        }
       ]
     },
     "Finland": {
       "continent": "Europe",
       "adjacent_to": [
-        "Norway",
-        "Russia",
-        "Sweden"
+        {
+          "name": "Norway",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        },
+        {
+          "name": "Sweden",
+          "type": "land"
+        }
       ]
     },
     "Luxembourg": {
       "continent": "Europe",
       "adjacent_to": [
-        "Belgium",
-        "France",
-        "Germany"
+        {
+          "name": "Belgium",
+          "type": "land"
+        },
+        {
+          "name": "France",
+          "type": "land"
+        },
+        {
+          "name": "Germany",
+          "type": "land"
+        }
       ]
     },
     "Belgium": {
       "continent": "Europe",
       "adjacent_to": [
-        "France",
-        "Germany",
-        "Luxembourg",
-        "Netherlands"
+        {
+          "name": "France",
+          "type": "land"
+        },
+        {
+          "name": "Germany",
+          "type": "land"
+        },
+        {
+          "name": "Luxembourg",
+          "type": "land"
+        },
+        {
+          "name": "Netherlands",
+          "type": "land"
+        }
       ]
     },
     "North Macedonia": {
       "continent": "Europe",
       "adjacent_to": [
-        "Albania",
-        "Bulgaria",
-        "Greece",
-        "Kosovo",
-        "Serbia"
+        {
+          "name": "Albania",
+          "type": "land"
+        },
+        {
+          "name": "Bulgaria",
+          "type": "land"
+        },
+        {
+          "name": "Greece",
+          "type": "land"
+        },
+        {
+          "name": "Kosovo",
+          "type": "land"
+        },
+        {
+          "name": "Serbia",
+          "type": "land"
+        }
       ]
     },
     "Albania": {
       "continent": "Europe",
       "adjacent_to": [
-        "Greece",
-        "Kosovo",
-        "Montenegro",
-        "North Macedonia"
+        {
+          "name": "Greece",
+          "type": "land"
+        },
+        {
+          "name": "Kosovo",
+          "type": "land"
+        },
+        {
+          "name": "Montenegro",
+          "type": "land"
+        },
+        {
+          "name": "North Macedonia",
+          "type": "land"
+        },
+        {
+          "name": "Serbia",
+          "type": "sea"
+        }
       ]
     },
     "Kosovo": {
       "continent": "Europe",
       "adjacent_to": [
-        "Albania",
-        "Montenegro",
-        "North Macedonia",
-        "Serbia"
+        {
+          "name": "Albania",
+          "type": "land"
+        },
+        {
+          "name": "Montenegro",
+          "type": "land"
+        },
+        {
+          "name": "North Macedonia",
+          "type": "land"
+        },
+        {
+          "name": "Serbia",
+          "type": "land"
+        }
       ]
     },
     "Spain": {
       "continent": "Europe",
       "adjacent_to": [
-        "France",
-        "Portugal"
+        {
+          "name": "France",
+          "type": "land"
+        },
+        {
+          "name": "Morocco",
+          "type": "sea"
+        },
+        {
+          "name": "Portugal",
+          "type": "land"
+        }
       ]
     },
     "Denmark": {
       "continent": "Europe",
       "adjacent_to": [
-        "Germany"
+        {
+          "name": "Germany",
+          "type": "land"
+        },
+        {
+          "name": "Sweden",
+          "type": "sea"
+        }
       ]
     },
     "Romania": {
       "continent": "Europe",
       "adjacent_to": [
-        "Bulgaria",
-        "Hungary",
-        "Moldova",
-        "Serbia",
-        "Ukraine"
+        {
+          "name": "Bulgaria",
+          "type": "land"
+        },
+        {
+          "name": "Hungary",
+          "type": "land"
+        },
+        {
+          "name": "Moldova",
+          "type": "land"
+        },
+        {
+          "name": "Serbia",
+          "type": "land"
+        },
+        {
+          "name": "Ukraine",
+          "type": "land"
+        }
       ]
     },
     "Hungary": {
       "continent": "Europe",
       "adjacent_to": [
-        "Austria",
-        "Croatia",
-        "Romania",
-        "Serbia",
-        "Slovakia",
-        "Slovenia",
-        "Ukraine"
+        {
+          "name": "Austria",
+          "type": "land"
+        },
+        {
+          "name": "Croatia",
+          "type": "land"
+        },
+        {
+          "name": "Czechia",
+          "type": "sea"
+        },
+        {
+          "name": "Romania",
+          "type": "land"
+        },
+        {
+          "name": "Serbia",
+          "type": "land"
+        },
+        {
+          "name": "Slovakia",
+          "type": "land"
+        },
+        {
+          "name": "Slovenia",
+          "type": "land"
+        },
+        {
+          "name": "Ukraine",
+          "type": "land"
+        }
       ]
     },
     "Slovakia": {
       "continent": "Europe",
       "adjacent_to": [
-        "Austria",
-        "Czechia",
-        "Hungary",
-        "Poland",
-        "Ukraine"
+        {
+          "name": "Austria",
+          "type": "land"
+        },
+        {
+          "name": "Czechia",
+          "type": "land"
+        },
+        {
+          "name": "Hungary",
+          "type": "land"
+        },
+        {
+          "name": "Poland",
+          "type": "land"
+        },
+        {
+          "name": "Ukraine",
+          "type": "land"
+        }
       ]
     },
     "Poland": {
       "continent": "Europe",
       "adjacent_to": [
-        "Belarus",
-        "Czechia",
-        "Germany",
-        "Lithuania",
-        "Russia",
-        "Slovakia",
-        "Ukraine"
+        {
+          "name": "Belarus",
+          "type": "land"
+        },
+        {
+          "name": "Czechia",
+          "type": "land"
+        },
+        {
+          "name": "Germany",
+          "type": "land"
+        },
+        {
+          "name": "Lithuania",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "land"
+        },
+        {
+          "name": "Slovakia",
+          "type": "land"
+        },
+        {
+          "name": "Ukraine",
+          "type": "land"
+        }
       ]
     },
     "Ireland": {
       "continent": "Europe",
       "adjacent_to": [
-        "United Kingdom"
+        {
+          "name": "United Kingdom",
+          "type": "land"
+        }
       ]
     },
     "United Kingdom": {
       "continent": "Europe",
       "adjacent_to": [
-        "Ireland"
+        {
+          "name": "China",
+          "type": "air"
+        },
+        {
+          "name": "France",
+          "type": "sea"
+        },
+        {
+          "name": "Ireland",
+          "type": "land"
+        },
+        {
+          "name": "Russia",
+          "type": "air"
+        },
+        {
+          "name": "United States of America",
+          "type": "air"
+        }
       ]
     },
     "Greece": {
       "continent": "Europe",
       "adjacent_to": [
-        "Albania",
-        "Bulgaria",
-        "North Macedonia",
-        "Turkey"
+        {
+          "name": "Albania",
+          "type": "land"
+        },
+        {
+          "name": "Bulgaria",
+          "type": "land"
+        },
+        {
+          "name": "North Macedonia",
+          "type": "land"
+        },
+        {
+          "name": "Turkey",
+          "type": "land"
+        }
       ]
     },
     "Austria": {
       "continent": "Europe",
       "adjacent_to": [
-        "Czechia",
-        "Germany",
-        "Hungary",
-        "Italy",
-        "Slovakia",
-        "Slovenia",
-        "Switzerland"
+        {
+          "name": "Croatia",
+          "type": "sea"
+        },
+        {
+          "name": "Czechia",
+          "type": "land"
+        },
+        {
+          "name": "Germany",
+          "type": "land"
+        },
+        {
+          "name": "Hungary",
+          "type": "land"
+        },
+        {
+          "name": "Italy",
+          "type": "land"
+        },
+        {
+          "name": "Slovakia",
+          "type": "land"
+        },
+        {
+          "name": "Slovenia",
+          "type": "land"
+        },
+        {
+          "name": "Switzerland",
+          "type": "land"
+        }
       ]
     },
     "Italy": {
       "continent": "Europe",
       "adjacent_to": [
-        "Austria",
-        "France",
-        "Slovenia",
-        "Switzerland"
+        {
+          "name": "Austria",
+          "type": "land"
+        },
+        {
+          "name": "Croatia",
+          "type": "sea"
+        },
+        {
+          "name": "France",
+          "type": "land"
+        },
+        {
+          "name": "Germany",
+          "type": "sea"
+        },
+        {
+          "name": "Slovenia",
+          "type": "land"
+        },
+        {
+          "name": "Switzerland",
+          "type": "land"
+        }
       ]
     },
     "Switzerland": {
       "continent": "Europe",
       "adjacent_to": [
-        "Austria",
-        "France",
-        "Germany",
-        "Italy"
+        {
+          "name": "Austria",
+          "type": "land"
+        },
+        {
+          "name": "France",
+          "type": "land"
+        },
+        {
+          "name": "Germany",
+          "type": "land"
+        },
+        {
+          "name": "Italy",
+          "type": "land"
+        }
       ]
     },
     "Netherlands": {
       "continent": "Europe",
       "adjacent_to": [
-        "Belgium",
-        "Germany"
+        {
+          "name": "Belgium",
+          "type": "land"
+        },
+        {
+          "name": "Germany",
+          "type": "land"
+        }
       ]
     },
     "Serbia": {
       "continent": "Europe",
       "adjacent_to": [
-        "Bosnia and Herz.",
-        "Bulgaria",
-        "Croatia",
-        "Hungary",
-        "Kosovo",
-        "Montenegro",
-        "North Macedonia",
-        "Romania"
+        {
+          "name": "Albania",
+          "type": "sea"
+        },
+        {
+          "name": "Bosnia and Herz.",
+          "type": "land"
+        },
+        {
+          "name": "Bulgaria",
+          "type": "land"
+        },
+        {
+          "name": "Croatia",
+          "type": "land"
+        },
+        {
+          "name": "Hungary",
+          "type": "land"
+        },
+        {
+          "name": "Kosovo",
+          "type": "land"
+        },
+        {
+          "name": "Montenegro",
+          "type": "land"
+        },
+        {
+          "name": "North Macedonia",
+          "type": "land"
+        },
+        {
+          "name": "Romania",
+          "type": "land"
+        }
       ]
     },
     "Croatia": {
       "continent": "Europe",
       "adjacent_to": [
-        "Bosnia and Herz.",
-        "Hungary",
-        "Montenegro",
-        "Serbia",
-        "Slovenia"
+        {
+          "name": "Austria",
+          "type": "sea"
+        },
+        {
+          "name": "Bosnia and Herz.",
+          "type": "land"
+        },
+        {
+          "name": "Hungary",
+          "type": "land"
+        },
+        {
+          "name": "Italy",
+          "type": "sea"
+        },
+        {
+          "name": "Montenegro",
+          "type": "land"
+        },
+        {
+          "name": "Serbia",
+          "type": "land"
+        },
+        {
+          "name": "Slovenia",
+          "type": "land"
+        }
       ]
     },
     "Slovenia": {
       "continent": "Europe",
       "adjacent_to": [
-        "Austria",
-        "Croatia",
-        "Hungary",
-        "Italy"
+        {
+          "name": "Austria",
+          "type": "land"
+        },
+        {
+          "name": "Croatia",
+          "type": "land"
+        },
+        {
+          "name": "Hungary",
+          "type": "land"
+        },
+        {
+          "name": "Italy",
+          "type": "land"
+        }
       ]
     },
     "Bulgaria": {
       "continent": "Europe",
       "adjacent_to": [
-        "Greece",
-        "North Macedonia",
-        "Romania",
-        "Serbia",
-        "Turkey"
+        {
+          "name": "Greece",
+          "type": "land"
+        },
+        {
+          "name": "North Macedonia",
+          "type": "land"
+        },
+        {
+          "name": "Romania",
+          "type": "land"
+        },
+        {
+          "name": "Serbia",
+          "type": "land"
+        },
+        {
+          "name": "Turkey",
+          "type": "land"
+        }
       ]
     },
     "Montenegro": {
       "continent": "Europe",
       "adjacent_to": [
-        "Albania",
-        "Bosnia and Herz.",
-        "Croatia",
-        "Kosovo",
-        "Serbia"
+        {
+          "name": "Albania",
+          "type": "land"
+        },
+        {
+          "name": "Bosnia and Herz.",
+          "type": "land"
+        },
+        {
+          "name": "Croatia",
+          "type": "land"
+        },
+        {
+          "name": "Kosovo",
+          "type": "land"
+        },
+        {
+          "name": "Serbia",
+          "type": "land"
+        }
       ]
     },
     "Bosnia and Herz.": {
       "continent": "Europe",
       "adjacent_to": [
-        "Croatia",
-        "Montenegro",
-        "Serbia"
+        {
+          "name": "Croatia",
+          "type": "land"
+        },
+        {
+          "name": "Montenegro",
+          "type": "land"
+        },
+        {
+          "name": "Serbia",
+          "type": "land"
+        }
       ]
     },
     "Portugal": {
       "continent": "Europe",
       "adjacent_to": [
-        "Spain"
+        {
+          "name": "Spain",
+          "type": "land"
+        }
       ]
     },
     "Moldova": {
       "continent": "Europe",
       "adjacent_to": [
-        "Romania",
-        "Ukraine"
+        {
+          "name": "Romania",
+          "type": "land"
+        },
+        {
+          "name": "Ukraine",
+          "type": "land"
+        }
       ]
     },
     "Iceland": {
@@ -1662,7 +3810,10 @@
     "Papua New Guinea": {
       "continent": "Oceania",
       "adjacent_to": [
-        "Indonesia"
+        {
+          "name": "Indonesia",
+          "type": "land"
+        }
       ]
     },
     "Australia": {
