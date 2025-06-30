@@ -283,15 +283,105 @@ class GameEngine:
 
         gs.unclaimed_territory_names.clear() # All territories are now claimed by non-neutral players
 
+        # ---- START ARMY BALANCING ----
+        if successful_assignments > 0 and num_players > 0:
+            print("World Map Init: Initial territory and army assignment complete. Starting army balancing.")
+
+            # Calculate current total armies for each player
+            player_army_counts = {p.name: sum(t.army_count for t in p.territories) for p in non_neutral_players}
+
+            for p in non_neutral_players:
+                print(f"Pre-balance: Player {p.name} has {player_army_counts[p.name]} armies.")
+
+            total_armies_in_game = sum(player_army_counts.values())
+            target_armies_per_player_floor = total_armies_in_game // num_players
+            remaining_armies_to_distribute = total_armies_in_game % num_players
+
+            print(f"Total armies in game: {total_armies_in_game}, Target per player (floor): {target_armies_per_player_floor}, Remainder: {remaining_armies_to_distribute}")
+
+            # Phase 1: Reduce armies for over-supplied players
+            for player in non_neutral_players:
+                while player_army_counts[player.name] > target_armies_per_player_floor:
+                    # Find a territory to reduce armies from
+                    reducible_territories = [t for t in player.territories if t.army_count > 1]
+                    if not reducible_territories:
+                        # This player has too many armies but all are at 1. This implies an issue or very constrained scenario.
+                        # Break to avoid infinite loop. The remainder distribution might help, or some players will have more.
+                        print(f"Warning: Player {player.name} has {player_army_counts[player.name]} armies (target floor {target_armies_per_player_floor}) but no territories with >1 army to reduce.")
+                        break
+
+                    territory_to_reduce = random.choice(reducible_territories)
+                    territory_to_reduce.army_count -= 1
+                    player_army_counts[player.name] -= 1
+                    if player_army_counts[player.name] <= target_armies_per_player_floor:
+                        break
+
+            # Phase 2: Increase armies for under-supplied players
+            for player in non_neutral_players:
+                while player_army_counts[player.name] < target_armies_per_player_floor:
+                    if not player.territories: # Should not happen if player is in non_neutral_players and had assignments
+                        print(f"Warning: Player {player.name} has no territories to add armies to.")
+                        break
+                    territory_to_add_to = random.choice(player.territories)
+                    territory_to_add_to.army_count += 1
+                    player_army_counts[player.name] += 1
+                    if player_army_counts[player.name] >= target_armies_per_player_floor:
+                        break
+
+            # Phase 3: Distribute remaining armies
+            # Distribute remaining armies one by one to players, prioritizing those who might still be slightly below others
+            # or simply cycle through players.
+            # For simplicity, let's cycle through players based on original players_data_for_order
+
+            # Create a list of player objects in the order of players_data_for_order
+            ordered_players_for_remainder = []
+            if players_data_for_order:
+                for p_data in players_data_for_order:
+                    player_obj = next((p for p in non_neutral_players if p.name == p_data["name"]), None)
+                    if player_obj:
+                        ordered_players_for_remainder.append(player_obj)
+
+            # Fallback if players_data_for_order didn't provide a good list (e.g. names mismatch)
+            if not ordered_players_for_remainder or len(ordered_players_for_remainder) != len(non_neutral_players):
+                ordered_players_for_remainder = list(non_neutral_players) # Use the existing list, order might be arbitrary
+                random.shuffle(ordered_players_for_remainder) # Shuffle to make it fair if fallback
+
+            player_idx_for_remainder = 0
+            for _ in range(remaining_armies_to_distribute):
+                if not ordered_players_for_remainder: break # No players to give armies to
+
+                player_to_receive = ordered_players_for_remainder[player_idx_for_remainder % len(ordered_players_for_remainder)]
+                if not player_to_receive.territories:
+                    # Skip if player somehow has no territories; try next player
+                    player_idx_for_remainder += 1
+                    remaining_armies_to_distribute +=1 # Put army back to be distributed
+                    if player_idx_for_remainder > 2 * len(ordered_players_for_remainder): # Safety break
+                        print("Warning: Could not distribute all remainder armies due to players lacking territories.")
+                        break
+                    continue
+
+                territory_to_add_to = random.choice(player_to_receive.territories)
+                territory_to_add_to.army_count += 1
+                player_army_counts[player_to_receive.name] += 1
+                player_idx_for_remainder += 1
+
+            # Recalculate and update player's army pools based on final territory counts
+            for player in non_neutral_players:
+                final_army_count = sum(t.army_count for t in player.territories)
+                player.initial_armies_pool = final_army_count
+                player.armies_placed_in_setup = final_army_count # All armies are considered 'placed'
+                print(f"Post-balance: Player {player.name} has {final_army_count} armies. Territories: {len(player.territories)}")
+
+            print("Army balancing complete.")
+        # ---- END ARMY BALANCING ----
+
+
         if successful_assignments > 0:
-            print(f"World Map Init: Assigned {successful_assignments} countries among {num_players} players using power_index balancing. Armies assigned based on military ranking (default: {default_armies_if_not_ranked}).")
-            for p_name, total_power in player_power_totals.items():
-                # Find player object by name from gs.players list
-                player_obj = next((p for p in gs.players if p.name == p_name), None)
-                if player_obj:
-                    print(f"Player {p_name} total power_index: {total_power:.4f}, territories: {len(player_obj.territories)}")
-                else:
-                    print(f"Player {p_name} total power_index: {total_power:.4f}, territories: (Could not find player object to count)")
+            print(f"World Map Init: Assigned {successful_assignments} countries among {num_players} players using power_index balancing. Armies assigned based on military ranking (default: {default_armies_if_not_ranked}), then balanced.")
+            # Power totals are pre-balancing, army counts are post-balancing
+            for player in non_neutral_players:
+                 print(f"Player {player.name} final total power_index: {player_power_totals.get(player.name, 0.0):.4f}, final territories: {len(player.territories)}, final armies: {player.initial_armies_pool}")
+
             # Setup for the first turn
             gs.player_setup_order = [] # Not used in this mode for initial placement
             gs.current_setup_player_index = -1 # Not used
