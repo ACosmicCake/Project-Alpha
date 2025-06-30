@@ -16,7 +16,13 @@ class LlamaAgent(BaseAIAgent):
         self.api_base_url = "https://openrouter.ai/api/v1" # OpenRouter endpoint
 
         # Llama API (via OpenRouter, assuming similar compatibility to OpenAI for JSON)
-        self.base_system_prompt = f"You are an exceptionally intelligent AI player in the game of Risk, known as {self.player_name}. You are playing with the {self.player_color} pieces. Your goal is world conquest. Think step-by-step and make bold, calculated moves. Respond in JSON format with 'thought' and 'action' keys."
+        self.base_system_prompt = (
+            f"You are an exceptionally intelligent AI player in the game of Risk, known as {self.player_name}. "
+            f"You are playing with the {self.player_color} pieces. Your goal is world conquest. "
+            f"Think step-by-step and make bold, calculated moves. "
+            f"You MUST respond with a single valid JSON object. This JSON object must contain exactly two keys: "
+            f"'thought' (a string detailing your reasoning) and 'action' (a JSON object representing one of the provided valid actions)."
+        )
         # Optional headers for OpenRouter analytics
         self.http_referer = os.getenv("YOUR_SITE_URL", "http://localhost:8000") # Example URL
         self.x_title = os.getenv("YOUR_SITE_NAME", "LLM Risk Game") # Example Title
@@ -45,8 +51,10 @@ class LlamaAgent(BaseAIAgent):
             return {"thought": "No valid actions were provided to choose from.", "action": {"type": "END_TURN"}}
 
         system_prompt = self._construct_system_prompt(self.base_system_prompt, game_rules, system_prompt_addition)
-        if "Respond in JSON format" not in system_prompt: # Ensure JSON instruction
-             system_prompt += " You MUST respond with a single valid JSON object containing two keys: 'thought' (your reasoning) and 'action' (one of the provided valid actions)."
+        # The base_system_prompt already includes the detailed JSON instruction.
+        # We can add a reinforcement here if system_prompt_addition somehow overwrites it, though unlikely with _construct_system_prompt.
+        if "You MUST respond with a single valid JSON object" not in system_prompt: # Check for the more specific instruction
+             system_prompt += " Remember, your entire response must be a single JSON object, and the 'action' key within that JSON must also contain a JSON object representing your chosen action."
 
         user_prompt = self._construct_user_prompt_for_action(game_state_json, valid_actions)
 
@@ -78,31 +86,57 @@ class LlamaAgent(BaseAIAgent):
                 response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
 
                 response_data = response.json()
-                action_data_str = response_data["choices"][0]["message"]["content"]
-                action_data = json.loads(action_data_str) # This should be a dict with 'thought' and 'action'
+                action_data_str = response_data["choices"][0]["message"]["content"].strip()
+
+                if not action_data_str: # Handle empty string response
+                    raise ValueError("Received empty content from LLM.")
+
+                action_data = None
+                try:
+                    # Attempt to parse the entire response string as JSON first
+                    action_data = json.loads(action_data_str)
+                except json.JSONDecodeError as e_json:
+                    print(f"LlamaAgent ({self.player_name}): json.loads failed for initial response. Trying ast.literal_eval. Error: {e_json}")
+                    try:
+                        # Sanitize Python bools/None to JSON true/false/null for ast.literal_eval compatibility
+                        # and general robustness if ast.literal_eval were to expect more JSON-like structures
+                        # for some edge cases, though it primarily handles Python literals.
+                        sanitized_str = action_data_str.replace("True", "true").replace("False", "false").replace("None", "null")
+
+                        # ast.literal_eval can handle Python dicts with single quotes.
+                        action_data = ast.literal_eval(sanitized_str)
+                        if not isinstance(action_data, dict):
+                            raise ValueError(f"ast.literal_eval on main response produced type {type(action_data).__name__}, not a dictionary. Content: '{action_data_str}'")
+                        print(f"LlamaAgent ({self.player_name}): Successfully parsed initial response with ast.literal_eval after sanitization.")
+                    except (ValueError, SyntaxError) as e_ast:
+                        print(f"LlamaAgent ({self.player_name}): ast.literal_eval also failed for initial response. Error: {e_ast}. Content: '{action_data_str}'")
+                        raise e_json # Re-raise the original JSONDecodeError to be caught by the retry loop's handler
+
+                if action_data is None:
+                    raise ValueError(f"Failed to parse LLM response content into a dictionary using any method. Content: '{action_data_str}'")
 
                 if "thought" not in action_data or "action" not in action_data:
-                    raise ValueError("Response JSON must contain 'thought' and 'action' keys.")
+                    raise ValueError(f"Response JSON must contain 'thought' and 'action' keys. Received: {action_data}")
 
-                # --- ROBUST PARSING for 'action' field ---
+                # --- ROBUST PARSING for 'action' field (value of the "action" key) ---
                 action_field = action_data["action"]
                 action_dict_from_llm = None
                 if isinstance(action_field, str):
                     try:
-                        # First, try to parse as strict JSON
                         action_dict_from_llm = json.loads(action_field)
                     except json.JSONDecodeError:
-                        # If that fails, try to evaluate as a Python literal (handles single quotes)
                         try:
-                            action_dict_from_llm = ast.literal_eval(action_field)
+                            # Sanitize Python bools/None within the action string as well
+                            sanitized_action_str = action_field.replace("True", "true").replace("False", "false").replace("None", "null")
+                            action_dict_from_llm = ast.literal_eval(sanitized_action_str)
                             if not isinstance(action_dict_from_llm, dict):
-                                raise ValueError("ast.literal_eval did not produce a dictionary.")
+                                raise ValueError(f"ast.literal_eval on 'action' field produced type {type(action_dict_from_llm).__name__}, not a dictionary. Action field content: '{action_field}'")
                         except (ValueError, SyntaxError) as e_ast:
-                            raise ValueError(f"The 'action' field was a string but could not be parsed as JSON or a Python dict. Error: {e_ast}. Received: {action_field}")
+                            raise ValueError(f"The 'action' field string could not be parsed as JSON or Python dict. Error: {e_ast}. Action field content: '{action_field}'")
                 elif isinstance(action_field, dict):
-                    action_dict_from_llm = action_field # It's already a dict
+                    action_dict_from_llm = action_field
                 else:
-                    raise ValueError(f"The 'action' field is not a valid dictionary or a parseable string. Received type: {type(action_field)}, value: {action_field}")
+                    raise ValueError(f"The 'action' field is not a valid dictionary or a parseable string. Received type: {type(action_field).__name__}, value: '{action_field}'")
                 # --- END ROBUST PARSING ---
 
                 # Use the validation method from BaseAIAgent
