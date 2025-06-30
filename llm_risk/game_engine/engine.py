@@ -286,7 +286,12 @@ class GameEngine:
         if successful_assignments > 0:
             print(f"World Map Init: Assigned {successful_assignments} countries among {num_players} players using power_index balancing. Armies assigned based on military ranking (default: {default_armies_if_not_ranked}).")
             for p_name, total_power in player_power_totals.items():
-                print(f"Player {p_name} total power_index: {total_power:.4f}, territories: {len(gs.get_player_by_name(p_name).territories)}")
+                # Find player object by name from gs.players list
+                player_obj = next((p for p in gs.players if p.name == p_name), None)
+                if player_obj:
+                    print(f"Player {p_name} total power_index: {total_power:.4f}, territories: {len(player_obj.territories)}")
+                else:
+                    print(f"Player {p_name} total power_index: {total_power:.4f}, territories: (Could not find player object to count)")
             # Setup for the first turn
             gs.player_setup_order = [] # Not used in this mode for initial placement
             gs.current_setup_player_index = -1 # Not used
