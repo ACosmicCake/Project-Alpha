@@ -81,7 +81,7 @@ class GameGUI:
             self.font = pygame.font.SysFont(common_sans_serif_fonts, 24)
             self.large_font = pygame.font.SysFont(common_sans_serif_fonts, 36)
             self.tab_font = pygame.font.SysFont(common_sans_serif_fonts, TAB_FONT_SIZE)
-            print(f"Successfully loaded system font: {self.font.name}")
+            # print(f"Successfully loaded system font: {self.font.name}") # Removed: .name causes error
         except pygame.error:
             print(f"Warning: Could not find specified system fonts ({common_sans_serif_fonts}). Falling back to default.")
             self.font = pygame.font.SysFont(None, 24)
