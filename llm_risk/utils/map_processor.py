@@ -24,45 +24,70 @@ class MapProcessor:
 
     def _extract_country_data(self):
         """Extracts country name, geometry, and continent from GeoJSON features."""
+        print("MapProcessor: Starting _extract_country_data...")
         extracted_continent_names = set()
-        for feature in self.geojson_data.get("features", []):
+        processed_feature_count = 0
+        successful_extractions = 0
+
+        features = self.geojson_data.get("features", [])
+        print(f"MapProcessor: Found {len(features)} features in GeoJSON.")
+
+        for i, feature in enumerate(features):
+            processed_feature_count += 1
             properties = feature.get("properties", {})
+            geometry = feature.get("geometry")
+
+            # Detailed logging of raw properties
+            # print(f"MapProcessor: Processing feature {i+1}/{len(features)}. Properties: {properties}")
+
             name = properties.get("NAME")
             if not name:
                 name = properties.get("name")
 
-            # Prioritize "continent" key, fallback to "region_un" or "region_wb" if "continent" is missing/null
             continent_name = properties.get("continent")
-            if not continent_name: # If "continent" is None or empty string
-                continent_name = properties.get("CONTINENT") # Try all caps
-            if not continent_name:
-                continent_name = properties.get("region_un") # Fallback 1
-            if not continent_name:
-                continent_name = properties.get("region_wb") # Fallback 2
-            if not continent_name:
-                continent_name = "Unknown" # Default if no continent info found
+            if not continent_name: continent_name = properties.get("CONTINENT")
+            if not continent_name: continent_name = properties.get("region_un")
+            if not continent_name: continent_name = properties.get("region_wb")
+            if not continent_name: continent_name = "Unknown"
 
-            geometry = feature.get("geometry")
-            if name and geometry:
-                try:
-                    geom_shape = shape(geometry)
-                    if geom_shape.is_valid and not geom_shape.is_empty:
-                        self.countries.append({
-                            "name": name,
-                            "shape": geom_shape,
-                            "continent": continent_name, # Store extracted continent name
-                            "original_geojson_coords": geometry.get("coordinates")
-                        })
-                        self.country_shapes_for_adjacency[name] = geom_shape
-                        self.country_to_continent_map[name] = continent_name
-                        if continent_name != "Unknown":
-                             extracted_continent_names.add(continent_name)
-                    else:
-                        print(f"MapProcessor: Invalid or empty geometry for {name} during extraction. Skipping.")
-                except Exception as e:
-                    print(f"MapProcessor: Error processing geometry for {name}: {e}. Skipping.")
-        print(f"MapProcessor: Extracted {len(self.countries)} valid countries with shapes.")
-        print(f"MapProcessor: Found continents in GeoJSON: {list(extracted_continent_names)}")
+            if not name:
+                print(f"MapProcessor: Feature {i+1} missing 'NAME' or 'name' property. Skipping.")
+                continue
+            if not geometry:
+                print(f"MapProcessor: Feature {i+1} for '{name}' missing 'geometry'. Skipping.")
+                continue
+
+            try:
+                geom_shape = shape(geometry)
+                is_valid_shape = geom_shape.is_valid
+                is_empty_shape = geom_shape.is_empty
+
+                # print(f"MapProcessor: Feature '{name}': Extracted Name='{name}', Continent='{continent_name}'. Shape valid: {is_valid_shape}, Shape empty: {is_empty_shape}")
+
+                if is_valid_shape and not is_empty_shape:
+                    self.countries.append({
+                        "name": name,
+                        "shape": geom_shape,
+                        "continent": continent_name,
+                        "original_geojson_coords": geometry.get("coordinates") # Keep for potential debugging
+                    })
+                    self.country_shapes_for_adjacency[name] = geom_shape
+                    self.country_to_continent_map[name] = continent_name
+                    if continent_name != "Unknown":
+                         extracted_continent_names.add(continent_name)
+                    successful_extractions += 1
+                else:
+                    print(f"MapProcessor: Invalid or empty geometry for {name} (Valid: {is_valid_shape}, Empty: {is_empty_shape}). Skipping.")
+            except Exception as e:
+                print(f"MapProcessor: Error processing geometry for {name}: {e}. Skipping.")
+
+        print(f"MapProcessor: Processed {processed_feature_count} features.")
+        print(f"MapProcessor: Successfully extracted {successful_extractions} valid countries with shapes.")
+        self.countries.sort(key=lambda x: x["name"]) # Sort for consistent processing later if needed
+        print(f"MapProcessor: Found unique continents in GeoJSON: {sorted(list(extracted_continent_names))}")
+        if not self.countries:
+            print("MapProcessor: CRITICAL - No countries were extracted. Check GeoJSON structure and 'NAME'/'name' properties.")
+
 
     def _generate_continent_config(self, default_bonus: int = 3):
         """Generates the 'continents' part of map_config.json."""
@@ -100,6 +125,9 @@ class MapProcessor:
         # Convert dict to list of dicts for map_config.json format
         self.map_config["continents"] = [cont_data for cont_data in gs_continents.values()]
         print(f"MapProcessor: Generated continent configurations for {len(self.map_config['continents'])} continents.")
+        # Add a sample print:
+        if self.map_config["continents"]:
+            print(f"MapProcessor: Sample continent config: {json.dumps(self.map_config['continents'][0], indent=2)}")
 
 
     def _calculate_adjacencies(self):
@@ -108,18 +136,18 @@ class MapProcessor:
         country_names = list(self.country_shapes_for_adjacency.keys())
 
         # Initialize/ensure "countries" structure in map_config
-        if "countries" not in self.map_config:
+        if "countries" not in self.map_config: # Should be {"continents": [], "countries": {}}
             self.map_config["countries"] = {}
 
         for name in country_names:
-            if name not in self.map_config["countries"]:
+            if name not in self.map_config["countries"]: # If a country was valid for shape but not for continent processing (e.g. "Unknown" continent)
                 self.map_config["countries"][name] = {
-                    "continent": self.country_to_continent_map.get(name, "Unknown"), # Get from stored map
+                    "continent": self.country_to_continent_map.get(name, "Unknown"),
                     "adjacent_to": []
                 }
-            else: # Entry might exist from _generate_continent_config if it ran first (though order is changed)
-                 self.map_config["countries"][name]["continent"] = self.country_to_continent_map.get(name, "Unknown")
-                 if "adjacent_to" not in self.map_config["countries"][name]:
+            else: # Entry might exist if _generate_continent_config created it (though unlikely now with changed order)
+                 self.map_config["countries"][name]["continent"] = self.country_to_continent_map.get(name, "Unknown") # Ensure continent is set
+                 if "adjacent_to" not in self.map_config["countries"][name]: # Should always be true if this runs after _generate_continent_config
                       self.map_config["countries"][name]["adjacent_to"] = []
 
 
@@ -152,10 +180,18 @@ class MapProcessor:
                 except Exception as e:
                     print(f"MapProcessor: Error checking adjacency between {name1} and {name2}: {e}")
 
-        for name in country_names:
-            self.map_config["countries"][name]["adjacent_to"].sort() # Keep it tidy
+        for name in country_names: # Ensure all country entries exist even if no adjacencies
+            if name in self.map_config["countries"]:
+                 self.map_config["countries"][name]["adjacent_to"].sort()
+            else: # Should not happen if initialization above is correct
+                 print(f"MapProcessor: Warning - country {name} was in shapes but not in map_config['countries'] for adjacency sort.")
+
 
         print(f"MapProcessor: Adjacency calculation complete. Example for {country_names[0] if country_names else 'N/A'}: {self.map_config['countries'].get(country_names[0] if country_names else '', {}).get('adjacent_to')}")
+        # Add a sample print for the "countries" structure
+        if country_names:
+            sample_country_name = country_names[0]
+            print(f"MapProcessor: Sample country config for '{sample_country_name}': {json.dumps(self.map_config['countries'].get(sample_country_name, {}), indent=2)}")
 
 
     def _normalize_and_scale_polygons(self):
