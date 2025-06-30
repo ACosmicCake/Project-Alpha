@@ -298,8 +298,21 @@ class GameGUI:
             screen_y1 = (coords1_orig[1] * self.zoom_level) + self.camera_offset_y
             coords1 = (screen_x1, screen_y1)
 
-            for adj_territory_object in territory_obj.adjacent_territories:
-                adj_name = adj_territory_object.name
+            for adj_info in territory_obj.adjacent_territories:
+                # adj_info is expected to be a dict like {'name': 'TerritoryName', 'type': 'land'}
+                # as per engine.py loading logic.
+                if not isinstance(adj_info, dict) or "name" not in adj_info:
+                    # Fallback or warning if structure is not as expected
+                    # This might happen if old data structures are mixed in or error in loading
+                    if hasattr(adj_info, 'name'): # Check if it's an actual Territory object (legacy)
+                        adj_name = adj_info.name
+                        # print(f"DEBUG: adj_info for {terr_name} was Territory object: {adj_name}")
+                    else:
+                        # print(f"DEBUG: Skipping malformed adj_info: {adj_info} for {terr_name} in _draw_standard_map_circles")
+                        continue
+                else:
+                    adj_name = adj_info["name"]
+
                 adj_pair = tuple(sorted((terr_name, adj_name)))
                 if adj_pair in drawn_adjacencies: continue
                 coords2_orig = self.territory_coordinates.get(adj_name)
