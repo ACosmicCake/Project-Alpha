@@ -112,28 +112,12 @@ class GameOrchestrator:
         self.current_ai_context: dict | None = None # Context for the current AI call
         self.has_logged_ai_is_thinking_for_current_action: bool = False
         self.has_logged_current_turn_player_phase: bool = False # For logging headers
-
+        # self.gui is initialized after engine and player setup
         self.gui = None
-        self.setup_gui() # This will now use self.map_display_config_to_load
 
+        # AI agents and player_map are initialized after players are loaded by _load_player_setup
         self.ai_agents: dict[str, BaseAIAgent] = {}
-        self.player_map: dict[GamePlayer, BaseAIAgent] = {} # Maps GamePlayer objects to their AI agents
-        self.is_two_player_mode: bool = False # Will be set in _load_player_setup
-
-        # Attributes for asynchronous AI calls - INITIALIZE THEM HERE
-        self.ai_is_thinking: bool = False
-        self.current_ai_thread: threading.Thread | None = None
-        self.ai_action_result: dict | None = None
-        self.active_ai_player_name: str | None = None # Name of the player whose AI is thinking
-        self.current_ai_context: dict | None = None # Context for the current AI call
-        self.has_logged_ai_is_thinking_for_current_action: bool = False
-        self.has_logged_current_turn_player_phase: bool = False # For logging headers
-
-        self.gui = None
-        self.setup_gui() # This will now use self.map_display_config_to_load
-
-        self.ai_agents: dict[str, BaseAIAgent] = {}
-        self.player_map: dict[GamePlayer, BaseAIAgent] = {} # Maps GamePlayer objects to their AI agents
+        self.player_map: dict[GamePlayer, BaseAIAgent] = {}
         self.is_two_player_mode: bool = False # Will be set in _load_player_setup
 
 
@@ -156,6 +140,9 @@ class GameOrchestrator:
         # After engine initializes players (including Neutral if 2P), map all to AI agents
         # The Neutral player won't have an AI agent in self.ai_agents, so player_map will skip it.
         self._map_game_players_to_ai_agents()
+
+        # Initialize GUI now that engine and players are fully set up
+        self.setup_gui() # Moved the single call here
 
         self.game_rules = GAME_RULES_SNIPPET
         self.turn_action_log = []
