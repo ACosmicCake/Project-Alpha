@@ -249,49 +249,130 @@ class GameEngine:
 
         # Sort territories by power_index in descending order
         # Territories should have power_index assigned from the previous step.
-        all_territories_list.sort(key=lambda t: t.power_index, reverse=True)
+        # all_territories_list.sort(key=lambda t: t.power_index, reverse=True) # No longer sorting by power_index for initial distribution
 
-        player_power_totals = {player.name: 0.0 for player in non_neutral_players}
+        # player_power_totals = {player.name: 0.0 for player in non_neutral_players} # Power totals not used for initial assignment
 
-        # Clear existing player territories before re-assigning (if any were assigned before this point by mistake)
+        # Clear existing player territories before re-assigning
         for player in non_neutral_players:
             player.territories.clear()
-            player.initial_armies_pool = 0 # Reset pool, will be summed by actual armies
+            player.initial_armies_pool = 0
             player.armies_placed_in_setup = 0
 
+        gs.unclaimed_territory_names.clear() # Will be repopulated and then emptied
 
-        successful_assignments = 0
-        for territory in all_territories_list:
-            # Find the player with the lowest current power total among non-neutral players
-            min_power_player = min(non_neutral_players, key=lambda p: player_power_totals[p.name])
+        # --- NEW TERRITORY ASSIGNMENT LOGIC ---
+        print("World Map Init: Starting new territory assignment strategy.")
 
-            # Assign the territory to that player
-            territory.owner = min_power_player
-            min_power_player.territories.append(territory)
+        # Step 1: Identify and sort high-ranked countries
+        # power_ranking_data_for_armies is the list of dicts: [{"country": "USA", "rank": 1, ...}, ...]
+        # We need to ensure these exist as territories in the game.
+        valid_ranked_territories_data = [
+            item for item in power_ranking_data_for_armies
+            if item["country"] in gs.territories
+        ]
+        # Sort by rank (ascending)
+        valid_ranked_territories_data.sort(key=lambda x: x.get("rank", float('inf')))
 
-            # Update the player's power total (use 0.0 if power_index is somehow None)
-            player_power_totals[min_power_player.name] += territory.power_index if territory.power_index is not None else 0.0
+        high_ranked_countries_to_assign_names = [item["country"] for item in valid_ranked_territories_data]
 
-            # Assign initial armies based on power ranking (using the 'power_map' for armies)
-            # 'power_map' was created earlier from 'power_ranking_data_for_armies'
-            initial_armies = power_map.get(territory.name, default_armies_if_not_ranked)
-            territory.army_count = max(1, initial_armies) # Ensure at least 1 army
+        print(f"Found {len(high_ranked_countries_to_assign_names)} valid high-ranked countries from power ranking file.")
 
-            min_power_player.initial_armies_pool += territory.army_count
-            min_power_player.armies_placed_in_setup += territory.army_count
-            successful_assignments +=1
+        # Shuffle players to make high-ranked assignment random if not using players_data_for_order
+        # For now, let's use players_data_for_order to determine who gets priority for ranked countries
+        # If players_data_for_order is shorter than non_neutral_players, others get random picks later.
 
-        gs.unclaimed_territory_names.clear() # All territories are now claimed by non-neutral players
+        players_in_assignment_order = []
+        assigned_hr_country_to_player = {} # To track who got what
 
-        # ---- START ARMY BALANCING ----
-        if successful_assignments > 0 and num_players > 0:
-            print("World Map Init: Initial territory and army assignment complete. Starting army balancing.")
+        if players_data_for_order:
+            for p_data in players_data_for_order:
+                player_obj = next((p for p in non_neutral_players if p.name == p_data["name"]), None)
+                if player_obj and player_obj not in players_in_assignment_order:
+                    players_in_assignment_order.append(player_obj)
+        # Add any remaining non_neutral_players not in players_data_for_order (shuffled for fairness)
+        remaining_players_for_order = [p for p in non_neutral_players if p not in players_in_assignment_order]
+        random.shuffle(remaining_players_for_order)
+        players_in_assignment_order.extend(remaining_players_for_order)
 
-            # Calculate current total armies for each player
+
+        # Step 2: Assign one high-ranked country to each player (up to num_players or num_ranked_countries)
+        num_hr_assigned = 0
+        available_high_ranked_territory_names = list(high_ranked_countries_to_assign_names) # Copy to modify
+
+        for i in range(min(len(players_in_assignment_order), len(available_high_ranked_territory_names))):
+            player_to_assign = players_in_assignment_order[i]
+            if not available_high_ranked_territory_names: break # No more HR countries
+
+            hr_territory_name = available_high_ranked_territory_names.pop(0) # Get the top one
+            hr_territory_obj = gs.territories.get(hr_territory_name)
+
+            if hr_territory_obj and hr_territory_obj.owner is None: # Ensure it's actually available
+                hr_territory_obj.owner = player_to_assign
+                player_to_assign.territories.append(hr_territory_obj)
+                # player_power_totals[player_to_assign.name] += hr_territory_obj.power_index # If we were tracking power
+                assigned_hr_country_to_player[player_to_assign.name] = hr_territory_name
+                num_hr_assigned += 1
+                print(f"Assigned high-ranked '{hr_territory_name}' to player '{player_to_assign.name}'.")
+            else:
+                # This HR territory was already taken or doesn't exist; try to give next available HR to this player slot
+                # This case should be rare if all_territories_list was the source and gs.territories is correct
+                print(f"Warning: High-ranked territory '{hr_territory_name}' was unavailable or already owned during HR assignment.")
+                if available_high_ranked_territory_names: # If there are more HR countries, give the next one
+                     hr_territory_name_fallback = available_high_ranked_territory_names.pop(0)
+                     hr_territory_obj_fallback = gs.territories.get(hr_territory_name_fallback)
+                     if hr_territory_obj_fallback and hr_territory_obj_fallback.owner is None:
+                         hr_territory_obj_fallback.owner = player_to_assign
+                         player_to_assign.territories.append(hr_territory_obj_fallback)
+                         assigned_hr_country_to_player[player_to_assign.name] = hr_territory_name_fallback
+                         num_hr_assigned +=1
+                         print(f"Assigned fallback high-ranked '{hr_territory_name_fallback}' to player '{player_to_assign.name}'.")
+
+
+        # Step 3: Distribute remaining territories equally
+        all_territory_names = list(gs.territories.keys())
+        assigned_territory_names = set(t.name for p in non_neutral_players for t in p.territories)
+
+        remaining_unassigned_territory_names = [name for name in all_territory_names if name not in assigned_territory_names]
+        random.shuffle(remaining_unassigned_territory_names) # Shuffle for random distribution
+
+        print(f"Distributing {len(remaining_unassigned_territory_names)} remaining territories among {num_players} players.")
+
+        player_idx_for_remaining_dist = 0
+        for terr_name in remaining_unassigned_territory_names:
+            player_to_assign = players_in_assignment_order[player_idx_for_remaining_dist % num_players]
+            territory_obj = gs.territories.get(terr_name)
+            if territory_obj and territory_obj.owner is None: # Should always be true
+                territory_obj.owner = player_to_assign
+                player_to_assign.territories.append(territory_obj)
+            player_idx_for_remaining_dist += 1
+
+        # Verify territory counts
+        for player in non_neutral_players:
+            print(f"Player {player.name} received {len(player.territories)} territories in total. HR: {assigned_hr_country_to_player.get(player.name, 'None')}")
+
+        # Step 4: Assign initial armies to ALL territories
+        successful_assignments = 0 # Re-count for this new method
+        for player in non_neutral_players:
+            current_player_army_total = 0
+            for territory in player.territories:
+                initial_armies = power_map.get(territory.name, default_armies_if_not_ranked)
+                territory.army_count = max(1, initial_armies) # Ensure at least 1 army
+                current_player_army_total += territory.army_count
+                successful_assignments +=1 # Counts each territory army assignment
+            # These will be correctly set after balancing
+            # player.initial_armies_pool = current_player_army_total
+            # player.armies_placed_in_setup = current_player_army_total
+
+        gs.unclaimed_territory_names.clear() # All territories should be claimed now.
+
+        # ---- START ARMY BALANCING (using previously implemented logic) ----
+        if successful_assignments > 0 and num_players > 0: # successful_assignments now means territories got armies
+            print("World Map Init: Initial territory and army assignment (post new strategy) complete. Starting army balancing.")
+
             player_army_counts = {p.name: sum(t.army_count for t in p.territories) for p in non_neutral_players}
-
             for p in non_neutral_players:
-                print(f"Pre-balance: Player {p.name} has {player_army_counts[p.name]} armies.")
+                 print(f"Pre-balance: Player {p.name} has {player_army_counts[p.name]} armies.")
 
             total_armies_in_game = sum(player_army_counts.values())
             target_armies_per_player_floor = total_armies_in_game // num_players
