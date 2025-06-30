@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import json # Added for potential use if action is a string that needs parsing, though Gemini part handles it.
 
 class BaseAIAgent(ABC):
-    DEBUG_VALIDATION = False # Class-level toggle for validation debug messages
+    DEBUG_VALIDATION = True # Class-level toggle for validation debug messages - ENABLED FOR DEVELOPMENT
 
     def __init__(self, player_name: str, player_color: str):
         self.player_name = player_name
@@ -183,67 +183,113 @@ class BaseAIAgent(ABC):
         for template in matching_type_actions:
             if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Comparing action {action_dict} with template {template}")
 
-            # Check if action_dict contains all keys from template and non-numeric/non-bool values match
+            # Check if action_dict conforms to the template, allowing for specific key substitutions and value checks.
             params_match = True
-            for key, template_value in template.items():
-                if key not in action_dict:
-                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Key '{key}' from template missing in action.")
+            # Define a mapping for keys that the AI replaces (e.g., 'max_armies' in template becomes 'num_armies' in AI action)
+            # And also the original template key that holds the constraint value.
+            replaceable_keys_map = {
+                "max_armies": "num_armies",  # For DEPLOY
+                "max_armies_for_attack": "num_armies", # For ATTACK
+                "max_armies_to_move": "num_armies", # For FORTIFY
+                "min_armies": "num_armies", # For POST_ATTACK_FORTIFY (min constraint)
+                # Note: POST_ATTACK_FORTIFY also has 'max_armies' in its template from get_valid_actions,
+                # so 'max_armies' will also map to 'num_armies' for it.
+            }
+            # For POST_ATTACK_FORTIFY, the template has min_armies and max_armies.
+            # The AI provides 'num_armies'. We need to check 'num_armies' against both.
+
+            # Check fixed parameters from template against action_dict
+            for template_key, template_value in template.items():
+                # Skip replaceable keys for now; they are handled by specific 'num_armies' checks later.
+                if template_key in replaceable_keys_map or template_key == "max_armies" and llm_action_type == "POST_ATTACK_FORTIFY": # max_armies for PAF
+                    continue
+
+                if template_key not in action_dict:
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Key '{template_key}' from template missing in action {action_dict}.")
                     params_match = False
                     break
-                # For non-fillable fields (not numbers/booleans that AI would set, but strings like territory names)
-                if not isinstance(template_value, (int, float, bool)):
-                    if action_dict[key] != template_value:
-                        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Value mismatch for key '{key}'. Template: '{template_value}', Action: '{action_dict[key]}'.")
-                        params_match = False
-                        break
+
+                # For non-fillable fields (like territory names, type, etc.)
+                if action_dict[template_key] != template_value:
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Value mismatch for template key '{template_key}'. Template: '{template_value}', Action: '{action_dict[template_key]}'. Action: {action_dict}")
+                    params_match = False
+                    break
+
             if not params_match:
-                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Template non-fillable fields mismatch. Trying next template.")
+                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Template fixed fields mismatch. Trying next template.")
                 continue
 
-            # Check if action_dict has extra keys not in template (ignoring numeric/bool keys AI might add)
-            # This is to prevent AI from adding arbitrary non-expected string keys, for example.
+            # Check if action_dict has extra keys not in template (ignoring the AI's 'num_armies' or other expected numeric/bool fields)
+            # AI is allowed to add 'num_armies'. Other unexpected keys are problematic.
+            expected_ai_numeric_key = "num_armies" # Common key AI adds
+
             extra_keys_invalid = False
-            for key, action_value in action_dict.items():
-                if key not in template: # If a key is in action_dict but not in template
-                    # AI is allowed to add numeric/boolean fields (like 'num_armies' or a flag)
-                    if not isinstance(action_value, (int, float, bool)):
-                        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action has extra non-numeric/bool key '{key}' not in template '{template}'.")
+            for action_key, action_value in action_dict.items():
+                # If action_key is not in template AND it's not the expected AI numeric key (like 'num_armies')
+                # AND it's not a boolean/numeric value (which AI might add for some reason, though less common for this structure)
+                if action_key not in template and action_key != expected_ai_numeric_key:
+                    if not isinstance(action_value, (int, float, bool)): # AI should not add arbitrary string keys
+                        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action {action_dict} has extra non-numeric/bool key '{action_key}' not in template '{template}' and not '{expected_ai_numeric_key}'.")
                         extra_keys_invalid = True
                         break
             if extra_keys_invalid:
                 if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action has unexpected extra non-numeric/bool keys. Trying next template.")
                 continue
 
-            # If template fields match and no unexpected extra fields, check type-specific required numeric fields
+            # If template fixed fields match and no unexpected extra fields, check type-specific numeric fields (like 'num_armies')
             type_specific_checks_pass = True
-            if llm_action_type == "ATTACK":
-                if not (isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", 0) > 0):
-                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - ATTACK): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
-                    type_specific_checks_pass = False
-            elif llm_action_type == "DEPLOY":
-                if not (isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", 0) > 0):
-                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - DEPLOY): 'num_armies' missing, not int, or not >0. Value: {action_dict.get('num_armies')}")
-                    type_specific_checks_pass = False
-            elif llm_action_type == "FORTIFY":
-                if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >= 0): # Allow 0
-                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - FORTIFY): 'num_armies' missing, not int, or <0. Value: {action_dict.get('num_armies')}")
-                    type_specific_checks_pass = False
-            elif llm_action_type == "POST_ATTACK_FORTIFY":
-                 if not ("num_armies" in action_dict and isinstance(action_dict.get("num_armies"), int) and action_dict.get("num_armies", -1) >= 0):
-                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - POST_ATTACK_FORTIFY): 'num_armies' missing, not int or <0. Value: {action_dict.get('num_armies')}")
+            ai_num_armies = action_dict.get("num_armies")
+
+            if not (isinstance(ai_num_armies, int) and ai_num_armies >= 0): # General check: must be int >= 0 if present
+                if llm_action_type in ["ATTACK", "DEPLOY", "FORTIFY", "POST_ATTACK_FORTIFY"]: # These types require num_armies
+                    if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - {llm_action_type}): 'num_armies' is missing, not an int, or < 0. Value: {ai_num_armies}. Action: {action_dict}")
                     type_specific_checks_pass = False
 
-            if type_specific_checks_pass:
-                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Complex Match): Action {action_dict} conforms to template {template} with type checks.")
+            if type_specific_checks_pass and isinstance(ai_num_armies, int): # Proceed if num_armies is a valid number type
+                if llm_action_type == "ATTACK":
+                    max_armies_constraint = template.get("max_armies_for_attack")
+                    if not (ai_num_armies > 0 and (max_armies_constraint is None or ai_num_armies <= max_armies_constraint)):
+                        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - ATTACK): 'num_armies' ({ai_num_armies}) not > 0 or exceeds max_armies_for_attack ({max_armies_constraint}). Action: {action_dict}")
+                        type_specific_checks_pass = False
+                elif llm_action_type == "DEPLOY":
+                    max_armies_constraint = template.get("max_armies")
+                    if not (ai_num_armies > 0 and (max_armies_constraint is None or ai_num_armies <= max_armies_constraint)):
+                        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - DEPLOY): 'num_armies' ({ai_num_armies}) not > 0 or exceeds max_armies ({max_armies_constraint}). Action: {action_dict}")
+                        type_specific_checks_pass = False
+                elif llm_action_type == "FORTIFY":
+                    # Fortify can be 0 armies (effectively a pass on fortify if action generated)
+                    max_armies_constraint = template.get("max_armies_to_move")
+                    if not (ai_num_armies >= 0 and (max_armies_constraint is None or ai_num_armies <= max_armies_constraint)):
+                        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - FORTIFY): 'num_armies' ({ai_num_armies}) < 0 or exceeds max_armies_to_move ({max_armies_constraint}). Action: {action_dict}")
+                        type_specific_checks_pass = False
+                elif llm_action_type == "POST_ATTACK_FORTIFY":
+                    min_constraint = template.get("min_armies")
+                    max_constraint = template.get("max_armies")
+                    valid_num_armies = True
+                    if min_constraint is not None and ai_num_armies < min_constraint:
+                        valid_num_armies = False
+                        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - POST_ATTACK_FORTIFY): 'num_armies' ({ai_num_armies}) is less than min_armies ({min_constraint}). Action: {action_dict}")
+                    if max_constraint is not None and ai_num_armies > max_constraint: # max_constraint is from template's "max_armies"
+                        valid_num_armies = False
+                        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Generic - POST_ATTACK_FORTIFY): 'num_armies' ({ai_num_armies}) is greater than max_armies ({max_constraint}). Action: {action_dict}")
+                    if not valid_num_armies:
+                        type_specific_checks_pass = False
+
+            # If all checks related to this template pass (fixed fields, no invalid extra keys, and type-specific numeric checks)
+            if type_specific_checks_pass: # This variable is true if all prior checks including numeric constraints passed
+                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] SUCCESS (Generic - Complex Match): Action {action_dict} conforms to template {template} with all checks passing.")
                 return True
             else:
-                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action {action_dict} matched template {template} on fixed fields, but failed type-specific checks (e.g. num_armies).")
-                # This means this template was the right one, but the AI filled something incorrectly.
-                # We should return False here as it matched the template type but failed specific content.
+                # This path is taken if params_match was true, extra_keys_invalid was false, but type_specific_checks_pass was false.
+                # This means the AI chose the correct template structure (e.g., correct territories for ATTACK)
+                # but failed a specific constraint (e.g., num_armies too high/low).
+                if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] (Generic) Action {action_dict} matched template {template} on fixed fields, but failed type-specific numeric/constraint checks (e.g. num_armies).")
+                # Since it matched a template but failed its constraints, this is a definitive fail for this action.
                 return False
+                # No need to try other templates if it structurally matched one but failed its value constraints.
 
-
-        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Fallback): Action {action_dict} (type: {llm_action_type}) did not conform to any valid action templates in {matching_type_actions} or failed its type-specific checks.")
+        # If the loop completes without returning True, it means the action_dict did not conform to any template.
+        if BaseAIAgent.DEBUG_VALIDATION: print(f"[VALIDATE_ACTION_DEBUG] FAIL (Fallback): Action {action_dict} (type: {llm_action_type}) did not conform to any valid action templates in {matching_type_actions} after all checks.")
         return False
 
     def _construct_user_prompt_for_private_chat(self, history: list[dict], game_state_json: str, recipient_name: str) -> str:
