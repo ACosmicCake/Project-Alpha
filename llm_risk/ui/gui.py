@@ -324,7 +324,7 @@ class GameGUI:
             # self.territory_polygons and self.territory_coordinates are now expected to be
             # pre-scaled screen coordinates from MapProcessor's output.
 
-        processed_first_territory_for_debug = False # Debug flag
+            processed_first_territory_for_debug = False # Debug flag
 
         # Draw polygons
         for terr_name, territory_obj in gs_to_draw.territories.items():
