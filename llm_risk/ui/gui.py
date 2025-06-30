@@ -385,18 +385,40 @@ class GameGUI:
             screen_y1 = (coords1_orig[1] * self.zoom_level) + self.camera_offset_y
             coords1 = (screen_x1, screen_y1)
 
-            for adj_territory_object in territory_obj_adj.adjacent_territories:
-                adj_name = adj_territory_object.name
+            # territory_obj_adj.adjacent_territories is now a list of dicts
+            for adj_info in territory_obj_adj.adjacent_territories:
+                if not (isinstance(adj_info, dict) and "name" in adj_info):
+                    # print(f"DEBUG: Skipping malformed adj_info: {adj_info} for {terr_name_adj}")
+                    continue
+
+                adj_name = adj_info["name"]
+                adj_type = adj_info.get("type", "unknown") # Get type for potential different line styles
+
                 adj_pair = tuple(sorted((terr_name_adj, adj_name)))
                 if adj_pair in drawn_adjacencies: continue
+
                 coords2_orig = self.territory_coordinates.get(adj_name)
                 if not coords2_orig:
+                    # print(f"DEBUG: Centroid not found for adjacent territory {adj_name} of {terr_name_adj}")
                     continue
+
                 # Apply zoom and offset
                 screen_x2 = (coords2_orig[0] * self.zoom_level) + self.camera_offset_x
                 screen_y2 = (coords2_orig[1] * self.zoom_level) + self.camera_offset_y
                 coords2 = (screen_x2, screen_y2)
-                pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 1) # Thinner line
+
+                line_color = ADJACENCY_LINE_COLOR
+                line_thickness = 1
+                # Example: differentiate line types (optional)
+                if adj_type == "sea":
+                    line_color = (100, 100, 200) # Light blue for sea routes
+                    line_thickness = 1
+                elif adj_type == "air":
+                    line_color = (150, 150, 150) # Light grey for air routes
+                    line_thickness = 1
+                    # Could also draw dashed lines for air, but that's more complex with pygame.draw.line
+
+                pygame.draw.line(self.screen, line_color, coords1, coords2, line_thickness)
                 drawn_adjacencies.add(adj_pair)
 
         # --- First Pass: Draw all territory polygons and their borders ---
