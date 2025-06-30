@@ -46,27 +46,32 @@ TAB_FONT_SIZE = 20
 
 
 class GameGUI:
-    def __init__(self, engine: GameEngine, orchestrator):
+    def __init__(self, engine: GameEngine, orchestrator, map_display_config_file: str = "map_display_config.json", game_mode: str = "standard"): # Added parameters
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("LLM Risk Game")
+        pygame.display.set_caption(f"LLM Risk Game - {game_mode.replace('_', ' ').title()} Mode") # Update caption
         self.font = pygame.font.SysFont(None, 24)
         self.large_font = pygame.font.SysFont(None, 36)
         self.tab_font = pygame.font.SysFont(None, TAB_FONT_SIZE)
-        # self.map_image = None # No longer using map_image
-        self.ocean_color = OCEAN_BLUE # Set ocean color
+        self.ocean_color = OCEAN_BLUE
         self.clock = pygame.time.Clock()
-        print("Pygame GUI Initialized for procedural map")
 
         self.engine = engine
         self.orchestrator = orchestrator
-        self.current_game_state: GameState = engine.game_state # Initial state
+        self.game_mode = game_mode # Store the game mode
+        print(f"DEBUG: GameGUI.__init__ - Received game_mode: '{self.game_mode}', map_display_config_file: '{map_display_config_file}'")
+        print(f"DEBUG: GameGUI.__init__ - Engine's map_file_path: '{engine.map_file_path if engine else 'N/A'}'") # Corrected attribute access
+
+        self.current_game_state: GameState = engine.game_state
         self.global_chat_messages: list[dict] = []
         self.private_chat_conversations_map: dict[str, list[dict]] = {}
 
 
         self.territory_coordinates: dict[str, tuple[int, int]] = {}
-        self._load_map_config()
+        self.territory_polygons: dict[str, list[tuple[int,int]]] = {} # For world_map mode
+
+        # Use the passed map_display_config_file
+        self._load_map_display_config(map_display_config_file)
 
         self.action_log: list[str] = ["Game Started."]
         self.ai_thoughts: dict[str, str] = {}
@@ -81,19 +86,86 @@ class GameGUI:
         self.running = False
         self.colors = DEFAULT_PLAYER_COLORS
 
-    def _load_map_config(self, config_file: str = "map_display_config.json"): # Removed map_image_path
-        # No longer loading a map image. The background will be drawn procedurally.
-        # self.map_image is no longer used.
-        print(f"Attempting to load territory coordinates from '{config_file}'")
+    def _load_map_display_config(self, config_file: str):
+        print(f"DEBUG: GameGUI._load_map_display_config - Attempting to load display config from '{config_file}' for game_mode '{self.game_mode}'.")
         try:
-            with open(config_file, 'r') as f: self.territory_coordinates = json.load(f)
-            print(f"Successfully loaded territory coordinates from '{config_file}'.")
-        except FileNotFoundError:
-            print(f"Warning: Map display config file '{config_file}' not found. Creating dummy coordinates.")
-            self._create_dummy_coordinates(config_file)
-        except json.JSONDecodeError: print(f"Error decoding JSON from '{config_file}'.")
+            with open(config_file, 'r') as f:
+                content_for_debug = f.read()
+                print(f"DEBUG: GameGUI._load_map_display_config - First 500 chars of '{config_file}':\n{content_for_debug[:500]}...")
+                f.seek(0) # Reset file pointer to read JSON
+                display_data = json.load(f)
 
-    def _create_dummy_coordinates(self, config_file: str):
+            if self.game_mode == "world_map":
+                self.territory_polygons = display_data.get("territory_polygons", {})
+                self.territory_coordinates = display_data.get("territory_centroids", {})
+
+                print(f"DEBUG: GameGUI._load_map_display_config - Loaded for 'world_map'.")
+                print(f"DEBUG: GameGUI._load_map_display_config - Number of polygon entries: {len(self.territory_polygons)}")
+                print(f"DEBUG: GameGUI._load_map_display_config - Number of centroid entries: {len(self.territory_coordinates)}")
+
+                if not isinstance(self.territory_polygons, dict) or not isinstance(self.territory_coordinates, dict):
+                    print(f"DEBUG: GameGUI._load_map_display_config - WARNING: World map display config '{config_file}' has unexpected structure. Creating dummy data.")
+                    self._create_dummy_world_map_display_data(config_file)
+                    return
+
+                # Log a sample for verification
+                if self.territory_polygons:
+                    sample_terr_name = next(iter(self.territory_polygons))
+                    print(f"DEBUG: GameGUI._load_map_display_config - Sample polygon for '{sample_terr_name}': {str(self.territory_polygons[sample_terr_name])[:200]}...")
+                if self.territory_coordinates:
+                    sample_cent_name = next(iter(self.territory_coordinates))
+                    print(f"DEBUG: GameGUI._load_map_display_config - Sample centroid for '{sample_cent_name}': {self.territory_coordinates[sample_cent_name]}")
+
+                valid_polygons_format = True
+                for name, poly_parts in self.territory_polygons.items():
+                    if not isinstance(poly_parts, list): valid_polygons_format = False; break
+                    for part in poly_parts:
+                        if not isinstance(part, list) or not all(isinstance(pt, (list, tuple)) and len(pt) == 2 and all(isinstance(coord_val, (int, float)) for coord_val in pt) for pt in part):
+                            valid_polygons_format = False; print(f"DEBUG: Format error in polygon part for {name}: {part}"); break
+                    if not valid_polygons_format: break
+
+                valid_centroids_format = all(isinstance(coord, (list, tuple)) and len(coord) == 2 and all(isinstance(val, (int, float)) for val in coord) for coord in self.territory_coordinates.values())
+
+                if not valid_polygons_format:
+                    print(f"DEBUG: GameGUI._load_map_display_config - WARNING: Polygon data format error in '{config_file}'.")
+                if not valid_centroids_format:
+                    print(f"DEBUG: GameGUI._load_map_display_config - WARNING: Centroid data format error in '{config_file}'.")
+
+                if not valid_polygons_format or not valid_centroids_format:
+                    print(f"DEBUG: GameGUI._load_map_display_config - Triggering dummy data due to format errors.")
+                    self._create_dummy_world_map_display_data(config_file)
+                    return
+
+                if not self.territory_polygons and not self.territory_coordinates:
+                    print(f"DEBUG: GameGUI._load_map_display_config - WARNING: World map display config '{config_file}' is empty. Creating dummy data.")
+                    self._create_dummy_world_map_display_data(config_file)
+
+            else: # Standard mode
+                self.territory_coordinates = display_data
+                print(f"DEBUG: GameGUI._load_map_display_config - Loaded for 'standard' mode. Number of territories: {len(self.territory_coordinates)}")
+                if not isinstance(self.territory_coordinates, dict):
+                    print(f"Warning: Standard map display config '{config_file}' is not a dictionary. Creating dummy data.")
+                    self._create_dummy_standard_map_coordinates(config_file)
+                    return
+                print(f"Successfully loaded standard territory coordinates from '{config_file}'.")
+                if not self.territory_coordinates:
+                     self._create_dummy_standard_map_coordinates(config_file) # Renamed for clarity
+
+        except FileNotFoundError:
+            print(f"Warning: Map display config file '{config_file}' not found.")
+            if self.game_mode == "world_map":
+                self._create_dummy_world_map_display_data(config_file)
+            else:
+                self._create_dummy_standard_map_coordinates(config_file)
+        except json.JSONDecodeError:
+            print(f"Error decoding JSON from '{config_file}'.")
+            # Fallback to dummy data based on mode
+            if self.game_mode == "world_map":
+                self._create_dummy_world_map_display_data(config_file)
+            else:
+                self._create_dummy_standard_map_coordinates(config_file)
+
+    def _create_dummy_standard_map_coordinates(self, config_file: str): # Renamed
         if not self.engine.game_state.territories: return
         dummy_coords = {}
         x_offset, y_offset = 50, 50
@@ -102,7 +174,41 @@ class GameGUI:
         self.territory_coordinates = dummy_coords
         try:
             with open(config_file, 'w') as f: json.dump(self.territory_coordinates, f, indent=2)
-        except IOError: print(f"Could not write dummy coords to '{config_file}'.")
+            print(f"Created dummy standard map coordinates file '{config_file}'.")
+        except IOError: print(f"Could not write dummy standard map coords to '{config_file}'.")
+
+    def _create_dummy_world_map_display_data(self, config_file: str):
+        # For world map, we'd ideally have polygons. For dummy, just use centroids like standard.
+        if not self.engine.game_state.territories: return
+        dummy_centroids = {}
+        dummy_polygons = {} # Will be empty for this dummy version
+        x_offset, y_offset = 50, 50
+
+        # This part assumes territories are already loaded in engine for the world map
+        # which might not be true if world_map_config.json isn't created yet.
+        # For now, it will create an empty config if territories aren't there.
+        territory_names = list(self.engine.game_state.territories.keys())
+        if not territory_names: # If no territories (e.g. world_map_config.json not yet processed)
+            print("GUI: No territories in engine to create dummy world map display data. Config will be empty.")
+
+        for i, name in enumerate(territory_names):
+            dummy_centroids[name] = (x_offset + (i % 8) * 100, y_offset + (i // 8) * 70) # Adjust layout
+            # Dummy polygon (a small square around the centroid)
+            cx, cy = dummy_centroids[name]
+            dummy_polygons[name] = [(cx-10, cy-10), (cx+10, cy-10), (cx+10, cy+10), (cx-10, cy+10)]
+
+
+        self.territory_coordinates = dummy_centroids
+        self.territory_polygons = dummy_polygons
+
+        data_to_save = {
+            "territory_centroids": self.territory_coordinates,
+            "territory_polygons": self.territory_polygons
+        }
+        try:
+            with open(config_file, 'w') as f: json.dump(data_to_save, f, indent=2)
+            print(f"Created dummy world map display data file '{config_file}'.")
+        except IOError: print(f"Could not write dummy world map display data to '{config_file}'.")
 
     def update(self, game_state: GameState, global_chat_log: list[dict], private_chat_conversations: dict):
         self.current_game_state = game_state
@@ -119,71 +225,160 @@ class GameGUI:
 
 
     def draw_map(self, game_state: GameState):
+        # ... (ocean background) ...
+        # Force re-check from orchestrator to be absolutely sure, though this indicates a deeper issue if needed.
+        # current_mode_from_orchestrator = self.orchestrator.game_mode # This might be too coupled.
+        # print(f"DEBUG: GameGUI.draw_map - self.game_mode: '{self.game_mode}', Orchestrator game_mode: '{current_mode_from_orchestrator}'")
+
+        if hasattr(self, 'game_mode') and self.game_mode == "world_map":
+            # print("DEBUG: GameGUI.draw_map - Path taken: world_map")
+            self._draw_world_map_polygons(game_state)
+        else:
+            print(f"DEBUG: GameGUI.draw_map - Path taken: standard_map_circles. self.game_mode is '{getattr(self, 'game_mode', 'NOT SET')}'")
+            self._draw_standard_map_circles(game_state)
+
+    def _draw_standard_map_circles(self, game_state: GameState):
+        # This is the original draw_map logic for circles
+        # print("DEBUG: GameGUI._draw_standard_map_circles - Method called.") # More accurate location for this print
         gs_to_draw = game_state
         if not gs_to_draw: gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
 
-        # Draw the ocean background for the map area
         map_area_rect = pygame.Rect(0, 0, MAP_AREA_WIDTH, SCREEN_HEIGHT)
-        self.screen.fill(self.ocean_color, map_area_rect)
+        self.screen.fill(self.ocean_color, map_area_rect) # Ensure map area is cleared
 
         if not gs_to_draw or not gs_to_draw.territories:
-            # Optionally draw a message if no game state or territories
             no_map_text = self.large_font.render("Map Data Unavailable", True, WHITE)
             self.screen.blit(no_map_text, no_map_text.get_rect(center=map_area_rect.center))
             return
 
-        # Draw adjacency lines first, so they are behind territories
-        drawn_adjacencies = set() # To avoid drawing a line from A to B and then B to A
+        drawn_adjacencies = set()
         for terr_name, territory_obj in gs_to_draw.territories.items():
             coords1 = self.territory_coordinates.get(terr_name)
-            if not coords1:
-                # print(f"Warning: No coordinates for territory {terr_name} for adjacency lines.")
-                continue
-
-            # Correctly access the list of adjacent Territory objects and then their names
+            if not coords1: continue
             for adj_territory_object in territory_obj.adjacent_territories:
-                adj_name = adj_territory_object.name # Get name from the Territory object
-
-                # Ensure pair is unique (e.g. (A,B) is same as (B,A))
+                adj_name = adj_territory_object.name
                 adj_pair = tuple(sorted((terr_name, adj_name)))
-                if adj_pair in drawn_adjacencies:
-                    continue
-
+                if adj_pair in drawn_adjacencies: continue
                 coords2 = self.territory_coordinates.get(adj_name)
-                if not coords2:
-                    # print(f"Warning: No coordinates for adjacent territory {adj_name} (from {terr_name}).")
-                    continue
-
+                if not coords2: continue
                 pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 2)
                 drawn_adjacencies.add(adj_pair)
 
-        # Draw territories
         for terr_name, territory_obj in gs_to_draw.territories.items():
             coords = self.territory_coordinates.get(terr_name)
-            if not coords:
-                # print(f"Warning: No coordinates for territory {terr_name}. Skipping draw.")
-                continue # Skip if no coordinates
-
-            owner_color = GREY # Default color if no owner or owner color not found
+            if not coords: continue
+            owner_color = GREY
             if territory_obj.owner and territory_obj.owner.color:
                 owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
-
-            # Draw territory circle
-            pygame.draw.circle(self.screen, owner_color, coords, 20) # Main color
-            pygame.draw.circle(self.screen, BLACK, coords, 20, 2)    # Black border
-
-            # Draw army count
-            army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE # Contrast for text
+            pygame.draw.circle(self.screen, owner_color, coords, 20)
+            pygame.draw.circle(self.screen, BLACK, coords, 20, 2)
+            army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
             army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
             self.screen.blit(army_text, army_text.get_rect(center=coords))
-
-            # Draw territory name slightly above the circle
-            name_surf = self.font.render(terr_name, True, WHITE) # White name for visibility on blue
-            name_rect = name_surf.get_rect(center=(coords[0], coords[1] - 30)) # Adjusted y-offset
-            # Simple background for name text for better readability
+            name_surf = self.font.render(terr_name, True, WHITE)
+            name_rect = name_surf.get_rect(center=(coords[0], coords[1] - 30))
             name_bg_rect = name_rect.inflate(4, 4)
             pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
             self.screen.blit(name_surf, name_rect)
+
+    def _draw_world_map_polygons(self, game_state: GameState):
+        gs_to_draw = game_state
+        if not gs_to_draw: gs_to_draw = getattr(self, 'current_game_state', self.engine.game_state)
+
+        map_area_rect = pygame.Rect(0, 0, MAP_AREA_WIDTH, SCREEN_HEIGHT)
+        self.screen.fill(self.ocean_color, map_area_rect) # Ensure map area is cleared
+
+        if not gs_to_draw or not gs_to_draw.territories:
+            print("DEBUG: GameGUI._draw_world_map_polygons - No game_state or territories to draw.")
+            no_map_text = self.large_font.render("World Map Data Unavailable", True, WHITE)
+            self.screen.blit(no_map_text, no_map_text.get_rect(center=map_area_rect.center))
+            return
+
+        print(f"DEBUG: GameGUI._draw_world_map_polygons - Number of territories to draw: {len(gs_to_draw.territories)}")
+        if not self.territory_polygons:
+            print("DEBUG: GameGUI._draw_world_map_polygons - self.territory_polygons is empty. Cannot draw polygons.")
+            # Potentially draw circles as a fallback if centroids exist? Or just the error message.
+            # For now, if no polygons, it will just draw adjacency lines and then text if centroids exist.
+            # This might be a reason why circles appear if this path is hit and then standard drawing is later invoked.
+
+        # Adjacency lines for world map (can be complex, for now use centroids if polygons are too complex for simple line drawing)
+        drawn_adjacencies = set()
+        for terr_name_adj, territory_obj_adj in gs_to_draw.territories.items(): # Use different var names to avoid clash
+            coords1 = self.territory_coordinates.get(terr_name_adj) # Use centroid for line start/end
+            if not coords1:
+                # print(f"DEBUG: Adjacency - Missing centroid for {terr_name_adj}")
+                continue
+            for adj_territory_object in territory_obj_adj.adjacent_territories:
+                adj_name = adj_territory_object.name
+                adj_pair = tuple(sorted((terr_name_adj, adj_name)))
+                if adj_pair in drawn_adjacencies: continue
+                coords2 = self.territory_coordinates.get(adj_name)
+                if not coords2:
+                    # print(f"DEBUG: Adjacency - Missing centroid for adjacent {adj_name}")
+                    continue
+                pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 1) # Thinner line
+                drawn_adjacencies.add(adj_pair)
+
+        # Draw polygons
+        for terr_name, territory_obj in gs_to_draw.territories.items():
+            # self.territory_polygons and self.territory_coordinates are now expected to be
+            # pre-scaled screen coordinates from MapProcessor's output.
+
+            processed_first_territory_for_debug = False # Debug flag
+
+        # Draw polygons
+        for terr_name, territory_obj in gs_to_draw.territories.items():
+            list_of_screen_polygon_points = self.territory_polygons.get(terr_name)
+            screen_centroid_coords = self.territory_coordinates.get(terr_name)
+
+            if not processed_first_territory_for_debug: # Log details for the first territory
+                print(f"DEBUG: _draw_world_map_polygons - Processing territory: '{terr_name}'")
+                if list_of_screen_polygon_points:
+                    print(f"DEBUG: _draw_world_map_polygons -   Polygons for '{terr_name}' (first part, first 5 points): {str(list_of_screen_polygon_points[0][:5]) if list_of_screen_polygon_points else 'No polygon data'}")
+                else:
+                    print(f"DEBUG: _draw_world_map_polygons -   No polygon data for '{terr_name}'.")
+                print(f"DEBUG: _draw_world_map_polygons -   Centroid for '{terr_name}': {screen_centroid_coords}")
+                processed_first_territory_for_debug = True
+
+            owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY) if territory_obj.owner and territory_obj.owner.color else GREY
+
+            if list_of_screen_polygon_points:
+                # print(f"DEBUG: Drawing polygons for {terr_name}") # Can be too verbose
+                for i, screen_polygon_part_points in enumerate(list_of_screen_polygon_points):
+                    if screen_polygon_part_points and len(screen_polygon_part_points) >= 3:
+                        try:
+                            pygame.draw.polygon(self.screen, owner_color, screen_polygon_part_points)
+                            pygame.draw.polygon(self.screen, BLACK, screen_polygon_part_points, 1) # Border
+                        except TypeError as e:
+                            print(f"DEBUG: GameGUI._draw_world_map_polygons - Error drawing polygon part {i} for {terr_name}: {e}. Screen points: {screen_polygon_part_points}")
+                            if screen_centroid_coords: # Fallback for this specific part
+                                pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, 5, 0)
+                    # else:
+                        # print(f"DEBUG: GameGUI._draw_world_map_polygons - Invalid or empty screen polygon part {i} for {terr_name}")
+            elif screen_centroid_coords:
+                print(f"DEBUG: GameGUI._draw_world_map_polygons - No polygons for '{terr_name}', drawing circle at centroid {screen_centroid_coords}.")
+                pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, 10)
+                pygame.draw.circle(self.screen, BLACK, screen_centroid_coords, 10, 1)
+            # else:
+                # print(f"DEBUG: GameGUI._draw_world_map_polygons - No display data (polygon or centroid) for territory {terr_name}. Skipping draw.")
+
+
+            # Draw army count and name at the screen_centroid_coords (if available)
+            if screen_centroid_coords:
+                army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
+                army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
+
+                army_text_rect = army_text.get_rect(center=screen_centroid_coords)
+                army_bg_rect = army_text_rect.inflate(4,2)
+                pygame.draw.rect(self.screen, owner_color, army_bg_rect, border_radius=3)
+                pygame.draw.rect(self.screen, BLACK, army_bg_rect, 1, border_radius=3)
+                self.screen.blit(army_text, army_text_rect)
+
+                name_surf = self.font.render(terr_name, True, WHITE)
+                name_rect = name_surf.get_rect(center=(screen_centroid_coords[0], screen_centroid_coords[1] + 15)) # Offset below
+                name_bg_rect = name_rect.inflate(4,2)
+                pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
+                self.screen.blit(name_surf, name_rect)
 
     def draw_player_info_panel(self, game_state: GameState):
         panel_rect = pygame.Rect(MAP_AREA_WIDTH, SCREEN_HEIGHT - PLAYER_INFO_PANEL_HEIGHT, SIDE_PANEL_WIDTH, PLAYER_INFO_PANEL_HEIGHT)

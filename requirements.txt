@@ -11,3 +11,6 @@ pygame
 
 # For data validation and settings management (used in GeminiAgent for response schema)
 pydantic
+
+# For GeoJSON processing and geometric operations
+shapely
