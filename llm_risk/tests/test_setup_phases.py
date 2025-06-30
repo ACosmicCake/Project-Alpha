@@ -296,7 +296,7 @@ class TestSetupPhases(unittest.TestCase):
         self.assertTrue(neutral_p.armies_placed_in_setup <= neutral_p.initial_armies_pool)
 
 
-        self.assertEqual(len(gs.deck), 42 + 2) # Wild cards added back
+        self.assertEqual(len(gs.deck), 2) # Deck was emptied, then 2 wild cards added back
         self.assertIsNotNone(gs.get_current_player())
         self.assertFalse(gs.get_current_player().is_neutral)
         self.assertGreater(gs.get_current_player().armies_to_deploy, 0)

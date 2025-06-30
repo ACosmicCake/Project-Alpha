@@ -26,15 +26,93 @@ class GameOrchestrator:
                  player_configs_override: list | None = None,
                  default_player_setup_file: str = "player_config.json",
                  game_mode: str = "standard",
-                 geojson_data_str: str | None = None): # Added geojson_data_str
+                 geojson_data_str: str | None = None,
+                 map_file_path_override: str | None = None): # Added for testability
 
         self.game_mode = game_mode
         print(f"DEBUG: GameOrchestrator.__init__ - Received game_mode: {self.game_mode}")
 
-        map_file_to_load = "map_config.json" # Default for standard
-        self.map_display_config_to_load = "map_display_config.json" # Default for standard
+        map_file_to_load = map_file_path_override if map_file_path_override else "map_config.json"
+        if map_file_path_override:
+            print(f"DEBUG: GameOrchestrator.__init__ - Using map_file_path_override: {map_file_path_override}")
+
+        self.map_display_config_to_load = "map_display_config.json" # Default for standard, can be overridden if needed later
 
         if self.game_mode == "world_map":
+            if map_file_path_override:
+                # If world_map and override is given, it implies the map processor step is skipped
+                # and these override paths point to pre-generated world map configs.
+                print(f"DEBUG: GameOrchestrator.__init__ - World_map mode with map_file_path_override: {map_file_path_override}. Map processing step will be skipped.")
+                map_file_to_load = map_file_path_override
+                # Display config might also need an override mechanism if tests require specific display for world_map.
+                # For now, assume if map_file_path_override is for world_map_config.json, then map_display_config.json is its pair.
+                # This logic might need refinement if tests provide world_map display overrides.
+                if "world_map_config.json" in map_file_to_load:
+                    self.map_display_config_to_load = map_file_to_load.replace("world_map_config.json", "world_map_display_config.json")
+                # Else, it keeps the default "map_display_config.json", which might be fine if not used.
+            else:
+                # Standard world_map processing (generates files)
+                if not geojson_data_str:
+                    # This case should ideally be caught by main.py if world_map is chosen without data.
+                    print("ERROR: GameOrchestrator - GeoJSON data string MUST be provided for 'world_map' mode but was None. Attempting to load default.")
+                    # Fallback to try and load the default polygon file directly if main.py somehow missed it.
+                    # This is a safeguard, main.py should prevent this.
+                    default_geojson_path = "map_display_config_polygons.json"
+                    if os.path.exists(default_geojson_path):
+                        try:
+                            with open(default_geojson_path, 'r', encoding='utf-8') as f:
+                                geojson_data_str = f.read()
+                            print(f"DEBUG: GameOrchestrator - Fallback: Loaded GeoJSON from {default_geojson_path}")
+                        except Exception as e:
+                            raise ValueError(f"Fallback load of {default_geojson_path} failed: {e}")
+                    else:
+                        raise ValueError(f"GeoJSON data string must be provided for 'world_map' mode and default '{default_geojson_path}' not found.")
+
+                # Define paths for generated config files
+                generated_map_dir = "generated_maps"
+                os.makedirs(generated_map_dir, exist_ok=True) # Ensure directory exists
+                map_file_to_load = os.path.join(generated_map_dir, "world_map_config.json") # Will be generated
+                self.map_display_config_to_load = os.path.join(generated_map_dir, "world_map_display_config.json") # Will be generated
+                print(f"DEBUG: GameOrchestrator.__init__ - world_map mode: map_file_to_load set to '{map_file_to_load}', map_display_config_to_load set to '{self.map_display_config_to_load}' for generation.")
+
+                print(f"Initializing World Map game mode. Processing GeoJSON...")
+                try:
+                    geojson_data = json.loads(geojson_data_str)
+                    from .utils.map_processor import MapProcessor # Import here
+                    MAP_AREA_WIDTH_FOR_PROCESSING = 900
+                    MAP_AREA_HEIGHT_FOR_PROCESSING = 720
+                    processor = MapProcessor(geojson_data, MAP_AREA_WIDTH_FOR_PROCESSING, MAP_AREA_HEIGHT_FOR_PROCESSING)
+                    processor.save_configs(map_file_to_load, self.map_display_config_to_load)
+                    print(f"World map configurations generated: {map_file_to_load}, {self.map_display_config_to_load}")
+                    # DEBUG: Inspect content of the generated display config
+                    try:
+                        with open(self.map_display_config_to_load, 'r') as f_inspect:
+                            f_inspect.seek(0)
+                            loaded_json_for_debug = json.load(f_inspect)
+                            if isinstance(loaded_json_for_debug, dict):
+                                print(f"DEBUG: GameOrchestrator - Generated display config keys: {list(loaded_json_for_debug.keys())}")
+                                if "territory_polygons" in loaded_json_for_debug:
+                                    print(f"DEBUG: GameOrchestrator - 'territory_polygons' has {len(loaded_json_for_debug['territory_polygons'])} entries.")
+                                if "territory_centroids" in loaded_json_for_debug:
+                                    print(f"DEBUG: GameOrchestrator - 'territory_centroids' has {len(loaded_json_for_debug['territory_centroids'])} entries.")
+                            else:
+                                print(f"DEBUG: GameOrchestrator - Generated display config is not a dictionary. Type: {type(loaded_json_for_debug)}")
+
+                    except Exception as e_inspect:
+                        print(f"DEBUG: GameOrchestrator - Error inspecting generated display config: {e_inspect}")
+
+                except json.JSONDecodeError:
+                    raise ValueError("Invalid GeoJSON data string provided.")
+                except ImportError:
+                    raise ImportError("MapProcessor utility not found. Ensure llm_risk/utils/map_processor.py exists.")
+                except Exception as e:
+                    raise RuntimeError(f"Error processing GeoJSON for world map: {e}")
+        else: # Standard mode (or any mode other than world_map that doesn't have specific map_file_to_load logic yet)
+            # If map_file_path_override was provided, it's already set in map_file_to_load.
+            # Otherwise, map_file_to_load is "map_config.json".
+            print(f"Initializing Standard/Other game mode. Map file to load: {map_file_to_load}")
+
+        self.engine = GameEngine(map_file_path=map_file_to_load)
             if not geojson_data_str:
                 # This case should ideally be caught by main.py if world_map is chosen without data.
                 print("ERROR: GameOrchestrator - GeoJSON data string MUST be provided for 'world_map' mode but was None. Attempting to load default.")

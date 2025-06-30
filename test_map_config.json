@@ -1,0 +1,54 @@
+{
+  "continents": [
+    {
+      "name": "Test Continent A",
+      "bonus_armies": 3
+    },
+    {
+      "name": "Test Continent B",
+      "bonus_armies": 2
+    }
+  ],
+  "territories": {
+    "Territory1": {
+      "continent": "Test Continent A",
+      "adjacent_to": [
+        "Territory2"
+      ]
+    },
+    "Territory2": {
+      "continent": "Test Continent A",
+      "adjacent_to": [
+        "Territory1",
+        "Territory3"
+      ]
+    },
+    "Territory3": {
+      "continent": "Test Continent A",
+      "adjacent_to": [
+        "Territory2",
+        "Territory4"
+      ]
+    },
+    "Territory4": {
+      "continent": "Test Continent B",
+      "adjacent_to": [
+        "Territory3",
+        "Territory5"
+      ]
+    },
+    "Territory5": {
+      "continent": "Test Continent B",
+      "adjacent_to": [
+        "Territory4",
+        "Territory6"
+      ]
+    },
+    "Territory6": {
+      "continent": "Test Continent B",
+      "adjacent_to": [
+        "Territory5"
+      ]
+    }
+  }
+}

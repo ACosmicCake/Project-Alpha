@@ -60,7 +60,7 @@ class TestFortifyPhase(unittest.TestCase):
 
         # Patch the AI agent instantiation in the orchestrator
         # For simplicity in this test, we'll manually replace agents after orchestrator init
-        self.orchestrator = GameOrchestrator(map_file=self.test_map_file, player_configs_override=self.player_configs)
+        self.orchestrator = GameOrchestrator(map_file_path_override=self.test_map_file, player_configs_override=self.player_configs)
 
         # Replace AI agents with our mock agents
         self.mock_agent_p1 = MockAIAgent("Player1", "Red")

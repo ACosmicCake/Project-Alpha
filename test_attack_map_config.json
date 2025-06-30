@@ -1,0 +1,1 @@
+{"continents": [{"name": "TestContinent", "bonus_armies": 3}], "territories": {"A": {"continent": "TestContinent", "adjacent_to": ["C", "B"]}, "B": {"continent": "TestContinent", "adjacent_to": ["D", "A"]}, "C": {"continent": "TestContinent", "adjacent_to": ["A"]}, "D": {"continent": "TestContinent", "adjacent_to": ["B"]}}}

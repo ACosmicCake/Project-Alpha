@@ -184,12 +184,87 @@ class MapProcessor:
             else: # Should not happen if initialization above is correct
                  print(f"MapProcessor: Warning - country {name} was in shapes but not in map_config['countries'] for adjacency sort.")
 
+        # Add sea and air adjacencies
+        # Note: self.country_shapes_for_adjacency contains Shapely objects
+        # self.map_config["countries"][name]["adjacent_to"] is currently a list of names.
+        # It needs to become a list of dicts like {"name": other_name, "type": "land/sea/air"}
+        # We need to convert existing land adjacencies first.
 
-        print(f"MapProcessor: Adjacency calculation complete. Example for {country_names[0] if country_names else 'N/A'}: {self.map_config['countries'].get(country_names[0] if country_names else '', {}).get('adjacent_to')}")
+        for name_key in self.map_config["countries"]:
+            current_adj_list = self.map_config["countries"][name_key]["adjacent_to"]
+            typed_adj_list = []
+            for adj_item in current_adj_list:
+                if isinstance(adj_item, str): # If it's still a string, convert to dict
+                    typed_adj_list.append({"name": adj_item, "type": "land"})
+                elif isinstance(adj_item, dict): # If already a dict (e.g., from previous run or manual edit)
+                    typed_adj_list.append(adj_item)
+            self.map_config["countries"][name_key]["adjacent_to"] = typed_adj_list
+
+
+        for name, shape_info in self.country_shapes_for_adjacency.items():
+            # Sea Adjacencies (example: within a certain distance)
+            for other_name, other_shape_info in self.country_shapes_for_adjacency.items():
+                if name != other_name:
+                    # Check if already adjacent by land
+                    is_land_adjacent = any(adj["name"] == other_name and adj["type"] == "land" for adj in self.map_config["countries"][name]["adjacent_to"])
+                    if not is_land_adjacent:
+                        # Check if already adjacent by sea (to avoid duplicates if this runs multiple times)
+                        is_sea_adjacent = any(adj["name"] == other_name and adj["type"] == "sea" for adj in self.map_config["countries"][name]["adjacent_to"])
+                        if not is_sea_adjacent:
+                            try:
+                                # distance() for Shapely objects gives Cartesian distance.
+                                # For geographic data, this is not true distance unless projected.
+                                # Assuming these are already in a suitable projection or this is a simplified distance.
+                                if shape_info.is_valid and other_shape_info.is_valid:
+                                    if shape_info.distance(other_shape_info) < 0.5: # Adjust distance threshold as needed
+                                        self.map_config["countries"][name]["adjacent_to"].append({
+                                            "name": other_name,
+                                            "type": "sea"
+                                        })
+                                        # Also add the reverse adjacency
+                                        if not any(adj["name"] == name and adj["type"] == "sea" for adj in self.map_config["countries"][other_name]["adjacent_to"]):
+                                            self.map_config["countries"][other_name]["adjacent_to"].append({
+                                                "name": name,
+                                                "type": "sea"
+                                            })
+                            except Exception as e:
+                                print(f"MapProcessor: Error calculating sea distance between {name} and {other_name}: {e}")
+
+            # Air Adjacencies (example: connecting specific strategic points)
+            # These are often manually defined or based on specific criteria (e.g., major powers)
+            strategic_powers_for_air = ["United States of America", "China", "Russia"]
+            target_powers_for_air = ["United Kingdom", "India", "Saudi Arabia"] # Example targets
+
+            if name in strategic_powers_for_air:
+                for target_power in target_powers_for_air:
+                    if target_power != name and target_power in self.map_config["countries"]: # Ensure target exists
+                        # Check if not already adjacent by land, sea, or air
+                        is_already_adjacent = any(adj["name"] == target_power for adj in self.map_config["countries"][name]["adjacent_to"])
+                        if not is_already_adjacent:
+                            self.map_config["countries"][name]["adjacent_to"].append({
+                                "name": target_power,
+                                "type": "air"
+                            })
+                            # Also add the reverse air adjacency
+                            if not any(adj["name"] == name and adj["type"] == "air" for adj in self.map_config["countries"][target_power]["adjacent_to"]):
+                                self.map_config["countries"][target_power]["adjacent_to"].append({
+                                    "name": name,
+                                    "type": "air"
+                                })
+
+        # Sort all adjacency lists by name for consistency after adding new types
+        for name_key in self.map_config["countries"]:
+            self.map_config["countries"][name_key]["adjacent_to"].sort(key=lambda x: x["name"])
+
+
+        print(f"MapProcessor: Adjacency calculation complete (including sea/air). Example for {country_names[0] if country_names else 'N/A'}: {self.map_config['countries'].get(country_names[0] if country_names else '', {}).get('adjacent_to')}")
         # Add a sample print for the "countries" structure
         if country_names:
             sample_country_name = country_names[0]
+            # Find a country with more adjacencies for a better sample if possible
+            if "United States of America" in self.map_config["countries"]: sample_country_name = "United States of America"
             print(f"MapProcessor: Sample country config for '{sample_country_name}': {json.dumps(self.map_config['countries'].get(sample_country_name, {}), indent=2)}")
+
 
 
     def _normalize_and_scale_polygons(self):

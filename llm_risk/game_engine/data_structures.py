@@ -1,12 +1,13 @@
 import json
 
 class Territory:
-    def __init__(self, name: str, continent: 'Continent' = None, owner: 'Player' = None, army_count: int = 0):
+    def __init__(self, name: str, continent: 'Continent' = None, owner: 'Player' = None, army_count: int = 0, power_index: float = 0.0):
         self.name = name
         self.continent = continent
         self.owner = owner
         self.army_count = army_count
         self.adjacent_territories: list['Territory'] = []
+        self.power_index = power_index # Add this line
 
     def __repr__(self):
         return f"Territory({self.name}, Armies: {self.army_count}, Owner: {self.owner.name if self.owner else 'None'})"

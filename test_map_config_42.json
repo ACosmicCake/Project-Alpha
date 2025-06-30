@@ -1,0 +1,202 @@
+{
+  "continents": [
+    {
+      "name": "ContinentA",
+      "bonus_armies": 2
+    },
+    {
+      "name": "ContinentB",
+      "bonus_armies": 2
+    },
+    {
+      "name": "ContinentC",
+      "bonus_armies": 2
+    },
+    {
+      "name": "ContinentD",
+      "bonus_armies": 2
+    },
+    {
+      "name": "ContinentE",
+      "bonus_armies": 2
+    },
+    {
+      "name": "ContinentF",
+      "bonus_armies": 2
+    },
+    {
+      "name": "ContinentG",
+      "bonus_armies": 2
+    }
+  ],
+  "territories": {
+    "T1": {
+      "continent": "ContinentA",
+      "adjacent_to": []
+    },
+    "T2": {
+      "continent": "ContinentA",
+      "adjacent_to": []
+    },
+    "T3": {
+      "continent": "ContinentA",
+      "adjacent_to": []
+    },
+    "T4": {
+      "continent": "ContinentA",
+      "adjacent_to": []
+    },
+    "T5": {
+      "continent": "ContinentA",
+      "adjacent_to": []
+    },
+    "T6": {
+      "continent": "ContinentA",
+      "adjacent_to": []
+    },
+    "T7": {
+      "continent": "ContinentB",
+      "adjacent_to": []
+    },
+    "T8": {
+      "continent": "ContinentB",
+      "adjacent_to": []
+    },
+    "T9": {
+      "continent": "ContinentB",
+      "adjacent_to": []
+    },
+    "T10": {
+      "continent": "ContinentB",
+      "adjacent_to": []
+    },
+    "T11": {
+      "continent": "ContinentB",
+      "adjacent_to": []
+    },
+    "T12": {
+      "continent": "ContinentB",
+      "adjacent_to": []
+    },
+    "T13": {
+      "continent": "ContinentC",
+      "adjacent_to": []
+    },
+    "T14": {
+      "continent": "ContinentC",
+      "adjacent_to": []
+    },
+    "T15": {
+      "continent": "ContinentC",
+      "adjacent_to": []
+    },
+    "T16": {
+      "continent": "ContinentC",
+      "adjacent_to": []
+    },
+    "T17": {
+      "continent": "ContinentC",
+      "adjacent_to": []
+    },
+    "T18": {
+      "continent": "ContinentC",
+      "adjacent_to": []
+    },
+    "T19": {
+      "continent": "ContinentD",
+      "adjacent_to": []
+    },
+    "T20": {
+      "continent": "ContinentD",
+      "adjacent_to": []
+    },
+    "T21": {
+      "continent": "ContinentD",
+      "adjacent_to": []
+    },
+    "T22": {
+      "continent": "ContinentD",
+      "adjacent_to": []
+    },
+    "T23": {
+      "continent": "ContinentD",
+      "adjacent_to": []
+    },
+    "T24": {
+      "continent": "ContinentD",
+      "adjacent_to": []
+    },
+    "T25": {
+      "continent": "ContinentE",
+      "adjacent_to": []
+    },
+    "T26": {
+      "continent": "ContinentE",
+      "adjacent_to": []
+    },
+    "T27": {
+      "continent": "ContinentE",
+      "adjacent_to": []
+    },
+    "T28": {
+      "continent": "ContinentE",
+      "adjacent_to": []
+    },
+    "T29": {
+      "continent": "ContinentE",
+      "adjacent_to": []
+    },
+    "T30": {
+      "continent": "ContinentE",
+      "adjacent_to": []
+    },
+    "T31": {
+      "continent": "ContinentF",
+      "adjacent_to": []
+    },
+    "T32": {
+      "continent": "ContinentF",
+      "adjacent_to": []
+    },
+    "T33": {
+      "continent": "ContinentF",
+      "adjacent_to": []
+    },
+    "T34": {
+      "continent": "ContinentF",
+      "adjacent_to": []
+    },
+    "T35": {
+      "continent": "ContinentF",
+      "adjacent_to": []
+    },
+    "T36": {
+      "continent": "ContinentF",
+      "adjacent_to": []
+    },
+    "T37": {
+      "continent": "ContinentG",
+      "adjacent_to": []
+    },
+    "T38": {
+      "continent": "ContinentG",
+      "adjacent_to": []
+    },
+    "T39": {
+      "continent": "ContinentG",
+      "adjacent_to": []
+    },
+    "T40": {
+      "continent": "ContinentG",
+      "adjacent_to": []
+    },
+    "T41": {
+      "continent": "ContinentG",
+      "adjacent_to": []
+    },
+    "T42": {
+      "continent": "ContinentG",
+      "adjacent_to": []
+    }
+  }
+}

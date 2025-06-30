@@ -75,12 +75,26 @@ class GameEngine:
             territory = gs.territories.get(terr_name)
             if territory:
                 territory.adjacent_territories.clear()
-                for adj_name in terr_data.get("adjacent_to", []):
-                    adj_territory = gs.territories.get(adj_name)
-                    if adj_territory:
-                        territory.adjacent_territories.append(adj_territory)
+                # terr_data.get("adjacent_to", []) is now a list of dicts, e.g., [{"name": "Alaska", "type": "sea"}, ...]
+                for adj_info in terr_data.get("adjacent_to", []):
+                    if isinstance(adj_info, dict) and "name" in adj_info:
+                        # Store the dictionary itself, which includes name and type.
+                        # The actual Territory object can be retrieved when needed using adj_info["name"].
+                        # We also need to ensure the target territory actually exists.
+                        if adj_info["name"] in gs.territories:
+                            territory.adjacent_territories.append(adj_info)
+                        else:
+                            print(f"Warning: Adjacent territory name '{adj_info['name']}' for '{terr_name}' (type: {adj_info.get('type')}) not found in game state territories during linking.")
+                    elif isinstance(adj_info, str): # Handle old format gracefully if map file is mixed by mistake
+                        adj_territory_obj = gs.territories.get(adj_info)
+                        if adj_territory_obj:
+                            # Convert to new format assuming 'land' if only string is given
+                            territory.adjacent_territories.append({"name": adj_info, "type": "land"})
+                            print(f"Warning: Adjacency for '{terr_name}' to '{adj_info}' was string-only. Converted to land type.")
+                        else:
+                            print(f"Warning: Adjacent territory string '{adj_info}' for '{terr_name}' not found during linking.")
                     else:
-                        print(f"Warning: Adjacent territory '{adj_name}' for '{terr_name}' not found during linking.")
+                        print(f"Warning: Malformed adjacency data for '{terr_name}': {adj_info}")
 
 
         # 4. Create Players
@@ -160,20 +174,59 @@ class GameEngine:
         gs = self.game_state
         print("Engine: Initializing world map territories based on military power.")
 
+        # Step 1: Load military power rankings for enriching Territory objects with power_index.
+        # This is an enhancement and if it fails, warnings are printed but the core army assignment logic below will still run.
+        power_rankings_source_list = [] # Will hold the list of dicts from the JSON file
+        power_rankings_map_for_index = {} # Will map country name to its full data item for power_index
         try:
             with open("military_power_ranking.json", 'r', encoding='utf-8') as f:
-                power_ranking_data = json.load(f)
+                power_rankings_source_list = json.load(f) # Load the list of dicts
+                power_rankings_map_for_index = {item['country']: item for item in power_rankings_source_list}
+                print(f"Successfully loaded military_power_ranking.json for power_index assignment. Found rankings for {len(power_rankings_map_for_index)} countries.")
         except FileNotFoundError:
-            print("Error: military_power_ranking.json not found. Initializing with fallback.")
+            print("Warning: military_power_ranking.json not found when attempting to load for territory.power_index. Territories will use default power_index (0.0).")
+        except json.JSONDecodeError as e:
+            print(f"Warning: Could not decode military_power_ranking.json for power_index assignment. Territories will use default power_index (0.0). Error: {e}")
+        except KeyError as e:
+            print(f"Warning: military_power_ranking.json is malformed (missing 'country' key in an item). Territories will use default power_index (0.0). Error: {e}")
+
+
+        # Update territory.power_index for all territories.
+        # Territories are already created in initialize_game_from_map with a default power_index (0.0).
+        for terr_name, territory_obj in gs.territories.items():
+            if terr_name in power_rankings_map_for_index:
+                territory_obj.power_index = power_rankings_map_for_index[terr_name].get("power_index", 0.0)
+            else:
+                territory_obj.power_index = 0.0 # Explicitly set/confirm default if not in ranking file
+
+        # Step 2: Proceed with the original logic for assigning initial armies.
+        # This part uses its own loading of the ranking file because its absence is critical
+        # and triggers a fallback for the entire world map initialization.
+        # The 'power_map' here is specifically for initial_armies.
+
+        # The variable 'power_ranking_data' from the original code block corresponds to 'power_rankings_source_list' if loaded above.
+        # However, to maintain the exact structure of the original critical path for army assignment including its try-catch:
+        try:
+            with open("military_power_ranking.json", 'r', encoding='utf-8') as f:
+                power_ranking_data_for_armies = json.load(f) # This is the list of dicts for army assignment
+        except FileNotFoundError:
+            print("Error: military_power_ranking.json not found (CRITICAL for army assignment). Initializing with fallback.")
             self._fallback_world_map_initialization(players_data_for_order)
             return
         except json.JSONDecodeError:
-            print("Error: Could not decode military_power_ranking.json. Initializing with fallback.")
+            print("Error: Could not decode military_power_ranking.json (CRITICAL for army assignment). Initializing with fallback.")
             self._fallback_world_map_initialization(players_data_for_order)
             return
 
-        # Create a lookup for faster access
-        power_map = {item["country"]: item["initial_armies"] for item in power_ranking_data}
+        # Create a lookup for 'initial_armies' from the successfully loaded data for armies
+        # This 'power_map' is what the original code used for initial armies.
+        try:
+            power_map = {item["country"]: item["initial_armies"] for item in power_ranking_data_for_armies}
+        except KeyError:
+             print("Error: military_power_ranking.json is malformed (missing 'country' or 'initial_armies' key in an item for army assignment). Initializing with fallback.")
+             self._fallback_world_map_initialization(players_data_for_order)
+             return
+
         default_armies_if_not_ranked = 3
 
         non_neutral_players = [p for p in gs.players if not p.is_neutral]
@@ -190,30 +243,50 @@ class GameEngine:
             gs.current_game_phase = "ERROR"
             return
 
-        random.shuffle(territory_list) # Shuffle for initial assignment fairness
+        # Territory balancing and assignment
+        # Players are already in gs.players (non-neutral ones are in non_neutral_players)
+        all_territories_list = list(self.game_state.territories.values())
 
-        # Assign territories and armies
+        # Sort territories by power_index in descending order
+        # Territories should have power_index assigned from the previous step.
+        all_territories_list.sort(key=lambda t: t.power_index, reverse=True)
+
+        player_power_totals = {player.name: 0.0 for player in non_neutral_players}
+
+        # Clear existing player territories before re-assigning (if any were assigned before this point by mistake)
+        for player in non_neutral_players:
+            player.territories.clear()
+            player.initial_armies_pool = 0 # Reset pool, will be summed by actual armies
+            player.armies_placed_in_setup = 0
+
+
         successful_assignments = 0
-        for i, territory in enumerate(territory_list):
-            player_to_assign = non_neutral_players[i % num_players]
-            territory.owner = player_to_assign
+        for territory in all_territories_list:
+            # Find the player with the lowest current power total among non-neutral players
+            min_power_player = min(non_neutral_players, key=lambda p: player_power_totals[p.name])
 
+            # Assign the territory to that player
+            territory.owner = min_power_player
+            min_power_player.territories.append(territory)
+
+            # Update the player's power total (use 0.0 if power_index is somehow None)
+            player_power_totals[min_power_player.name] += territory.power_index if territory.power_index is not None else 0.0
+
+            # Assign initial armies based on power ranking (using the 'power_map' for armies)
+            # 'power_map' was created earlier from 'power_ranking_data_for_armies'
             initial_armies = power_map.get(territory.name, default_armies_if_not_ranked)
-            # Ensure a minimum, e.g. 1 army even if data suggests 0 or less
-            territory.army_count = max(1, initial_armies)
+            territory.army_count = max(1, initial_armies) # Ensure at least 1 army
 
-            player_to_assign.territories.append(territory)
-            # In this mode, initial_armies_pool and armies_placed_in_setup might not be used
-            # as armies are directly assigned. Or, we could sum them up.
-            # For now, let's assume they are not the primary mechanism for setup in this mode.
-            player_to_assign.initial_armies_pool += territory.army_count
-            player_to_assign.armies_placed_in_setup += territory.army_count
+            min_power_player.initial_armies_pool += territory.army_count
+            min_power_player.armies_placed_in_setup += territory.army_count
             successful_assignments +=1
 
-        gs.unclaimed_territory_names.clear() # All territories are now claimed
+        gs.unclaimed_territory_names.clear() # All territories are now claimed by non-neutral players
 
-        if successful_assignments > 0 :
-            print(f"World Map Init: Assigned {successful_assignments} countries among {num_players} players with armies based on military ranking (default: {default_armies_if_not_ranked}).")
+        if successful_assignments > 0:
+            print(f"World Map Init: Assigned {successful_assignments} countries among {num_players} players using power_index balancing. Armies assigned based on military ranking (default: {default_armies_if_not_ranked}).")
+            for p_name, total_power in player_power_totals.items():
+                print(f"Player {p_name} total power_index: {total_power:.4f}, territories: {len(gs.get_player_by_name(p_name).territories)}")
             # Setup for the first turn
             gs.player_setup_order = [] # Not used in this mode for initial placement
             gs.current_setup_player_index = -1 # Not used
@@ -418,10 +491,19 @@ class GameEngine:
             log["message"] = f"Cannot place 2P initial armies in current state (is_2p: {gs.is_two_player_game}, phase: {gs.current_game_phase})."
             return log
 
-        acting_player = gs.get_current_player() # player_setup_order should contain the two human players
-        if not acting_player or acting_player.name != acting_player_name or acting_player.is_neutral:
-            log["message"] = f"Invalid acting player '{acting_player_name}' or not their turn."
+        # During SETUP_2P_PLACE_REMAINING, the turn order is dictated by player_setup_order and current_setup_player_index
+        if not gs.player_setup_order or gs.current_setup_player_index < 0 or gs.current_setup_player_index >= len(gs.player_setup_order):
+            log["message"] = "Player setup order not correctly initialized for 2P remaining army placement."
             return log
+
+        expected_acting_player = gs.player_setup_order[gs.current_setup_player_index]
+
+        if not expected_acting_player or expected_acting_player.name != acting_player_name or expected_acting_player.is_neutral:
+            log["message"] = f"Invalid acting player '{acting_player_name}' or not their turn. Expected: '{expected_acting_player.name if expected_acting_player else 'None'}'."
+            return log
+
+        # Use expected_acting_player for the rest of the function
+        acting_player = expected_acting_player
 
         neutral_player = next((p for p in gs.players if p.is_neutral), None)
         if not neutral_player: # Should exist in 2p mode
@@ -520,7 +602,8 @@ class GameEngine:
 
             first_active_player = gs.get_current_player()
             if first_active_player and not first_active_player.is_neutral:
-                first_active_player.armies_to_deploy = self.calculate_reinforcements(first_active_player)
+                reinforcements, _ = self.calculate_reinforcements(first_active_player)
+                first_active_player.armies_to_deploy = reinforcements
                 log["message"] += f" Game setup complete. First turn: {first_active_player.name}. Reinforcements: {first_active_player.armies_to_deploy}."
             else: # Should not happen if first_player_of_game is set correctly to a human
                  log["message"] += " Game setup complete. Error finding first non-neutral player."
@@ -680,7 +763,8 @@ class GameEngine:
 
             first_player_for_turn = gs.get_current_player()
             if first_player_for_turn:
-                first_player_for_turn.armies_to_deploy = self.calculate_reinforcements(first_player_for_turn)
+                reinforcements, _ = self.calculate_reinforcements(first_player_for_turn)
+                first_player_for_turn.armies_to_deploy = reinforcements
                 log["message"] += f" All initial armies placed. Game starts! First turn: {first_player_for_turn.name}. Reinforcements: {first_player_for_turn.armies_to_deploy}."
                 print(f"All initial armies placed. Phase: REINFORCE. First player: {first_player_for_turn.name}")
             else: # Should not happen
@@ -918,9 +1002,27 @@ class GameEngine:
         if attacker_player == defender_player: # Also covers attacking own neutral territories if that were possible
             log["error"] = "Cannot attack your own territory."
             return log
-        if defender_territory not in attacker_territory.adjacent_territories:
-            log["error"] = f"{defender_territory.name} is not adjacent to {attacker_territory.name}."
+
+        # Check for adjacency using the new format
+        # attacker_territory.adjacent_territories now stores list of dicts: e.g., {"name": "OtherTerr", "type": "land"}
+        is_adjacent = False
+        adjacency_type = None
+        for adj_info in attacker_territory.adjacent_territories:
+            if isinstance(adj_info, dict) and adj_info.get("name") == defender_territory.name:
+                is_adjacent = True
+                adjacency_type = adj_info.get("type", "unknown")
+                break
+            elif adj_info == defender_territory: # Fallback for old format
+                is_adjacent = True
+                adjacency_type = "land (assumed from old format)"
+                print(f"Warning: perform_attack found direct Territory object for {defender_territory.name} in {attacker_territory.name}.adjacent_territories. Assuming land connection for attack.")
+                break
+
+        if not is_adjacent:
+            log["error"] = f"{defender_territory.name} is not adjacent to {attacker_territory.name} (no valid link found)."
             return log
+        log["adjacency_type_used_for_attack"] = adjacency_type # Log the type of connection
+
         if attacker_territory.army_count <= 1:
             log["error"] = f"{attacker_territory.name} must have more than 1 army to attack."
             return log
@@ -1281,9 +1383,20 @@ class GameEngine:
         if start_territory.owner != player or end_territory.owner != player:
             return False # Should be pre-filtered by caller, but good check
 
-        # Check for direct adjacency
-        if end_territory in start_territory.adjacent_territories:
-            return True
+        # Check for direct 'land' adjacency
+        # start_territory.adjacent_territories now stores list of dicts: e.g., {"name": "OtherTerr", "type": "land"}
+        for adj_info in start_territory.adjacent_territories:
+            if isinstance(adj_info, dict) and adj_info.get("name") == end_territory.name:
+                if adj_info.get("type") == "land": # Fortification typically only over land
+                    return True
+
+        # Fallback for old format if somehow present (though initialize_game_from_map should convert)
+        # This part might be removable if map loading guarantees new format.
+        if end_territory in start_territory.adjacent_territories: # This checks if Territory object is directly in list
+             # This implies an old format was loaded. Assume it's a land connection.
+             print(f"Warning: _are_territories_connected found direct Territory object for {end_territory.name} in {start_territory.name}.adjacent_territories. Assuming land connection.")
+             return True
+
 
         return False
 

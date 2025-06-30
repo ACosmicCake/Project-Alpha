@@ -35,7 +35,7 @@ class TestAttackPhase(unittest.TestCase):
             {"name": "DefenderPlayer", "color": "Blue", "ai_type": "mock"}
         ]
 
-        self.orchestrator = GameOrchestrator(map_file=self.test_map_file, player_configs_override=self.player_configs)
+        self.orchestrator = GameOrchestrator(map_file_path_override=self.test_map_file, player_configs_override=self.player_configs)
 
         self.attacker_agent = MockAIAgent("AttackerPlayer", "Red")
         self.defender_agent = MockAIAgent("DefenderPlayer", "Blue")

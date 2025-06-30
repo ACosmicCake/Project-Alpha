@@ -92,11 +92,11 @@ class TestGameVariations(unittest.TestCase):
         neutral_p = next(p for p in gs.players if p.is_neutral)
 
         # P1 has 14 territories -> 14/3 = 4 armies (min 3)
-        self.assertEqual(self.engine.calculate_reinforcements(p1), 4)
+        self.assertEqual(self.engine.calculate_reinforcements(p1)[0], 4)
         # P2 has 14 territories -> 4 armies
-        self.assertEqual(self.engine.calculate_reinforcements(p2), 4)
+        self.assertEqual(self.engine.calculate_reinforcements(p2)[0], 4)
         # Neutral player gets 0
-        self.assertEqual(self.engine.calculate_reinforcements(neutral_p), 0)
+        self.assertEqual(self.engine.calculate_reinforcements(neutral_p)[0], 0)
 
     def test_2p_next_turn(self):
         gs = self._setup_basic_2p_game_post_territory_claim()
