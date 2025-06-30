@@ -32,14 +32,14 @@ DEFAULT_PLAYER_COLORS = {
     "Purple": (128, 0, 128), "Orange": (255, 165, 0), "Black": BLACK, "White": WHITE # White might be hard to see
 }
 
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 720
-MAP_AREA_WIDTH = 900
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
+MAP_AREA_WIDTH = 1300
 SIDE_PANEL_WIDTH = SCREEN_WIDTH - MAP_AREA_WIDTH
-ACTION_LOG_HEIGHT = 150 # Adjusted
-THOUGHT_PANEL_HEIGHT = 200 # Adjusted
-CHAT_PANEL_HEIGHT = SCREEN_HEIGHT - ACTION_LOG_HEIGHT - THOUGHT_PANEL_HEIGHT - 50 # Adjusted for player info
-PLAYER_INFO_PANEL_HEIGHT = 50 # New panel
+ACTION_LOG_HEIGHT = 200 # Adjusted
+THOUGHT_PANEL_HEIGHT = 380 # Adjusted
+CHAT_PANEL_HEIGHT = SCREEN_HEIGHT - ACTION_LOG_HEIGHT - THOUGHT_PANEL_HEIGHT - 60 # Adjusted for player info and new screen height
+PLAYER_INFO_PANEL_HEIGHT = 60 # New panel
 
 TAB_HEIGHT = 30
 TAB_FONT_SIZE = 20
@@ -85,6 +85,18 @@ class GameGUI:
         self.fps = 30
         self.running = False
         self.colors = DEFAULT_PLAYER_COLORS
+
+        # Camera and panning attributes
+        self.camera_offset_x = 0
+        self.camera_offset_y = 0
+        self.panning_active = False
+        self.last_mouse_pos = None
+
+        # Zoom attributes
+        self.zoom_level = 1.0
+        self.min_zoom = 0.2
+        self.max_zoom = 3.0  # Adjusted max zoom to a more reasonable level initially
+        self.zoom_increment = 0.1
 
     def _load_map_display_config(self, config_file: str):
         print(f"DEBUG: GameGUI._load_map_display_config - Attempting to load display config from '{config_file}' for game_mode '{self.game_mode}'.")
@@ -253,30 +265,50 @@ class GameGUI:
 
         drawn_adjacencies = set()
         for terr_name, territory_obj in gs_to_draw.territories.items():
-            coords1 = self.territory_coordinates.get(terr_name)
-            if not coords1: continue
+            coords1_orig = self.territory_coordinates.get(terr_name)
+            if not coords1_orig: continue
+            # Apply zoom and offset
+            screen_x1 = (coords1_orig[0] * self.zoom_level) + self.camera_offset_x
+            screen_y1 = (coords1_orig[1] * self.zoom_level) + self.camera_offset_y
+            coords1 = (screen_x1, screen_y1)
+
             for adj_territory_object in territory_obj.adjacent_territories:
                 adj_name = adj_territory_object.name
                 adj_pair = tuple(sorted((terr_name, adj_name)))
                 if adj_pair in drawn_adjacencies: continue
-                coords2 = self.territory_coordinates.get(adj_name)
-                if not coords2: continue
+                coords2_orig = self.territory_coordinates.get(adj_name)
+                if not coords2_orig: continue
+                # Apply zoom and offset
+                screen_x2 = (coords2_orig[0] * self.zoom_level) + self.camera_offset_x
+                screen_y2 = (coords2_orig[1] * self.zoom_level) + self.camera_offset_y
+                coords2 = (screen_x2, screen_y2)
                 pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 2)
                 drawn_adjacencies.add(adj_pair)
 
         for terr_name, territory_obj in gs_to_draw.territories.items():
-            coords = self.territory_coordinates.get(terr_name)
-            if not coords: continue
+            coords_orig = self.territory_coordinates.get(terr_name)
+            if not coords_orig: continue
+            # Apply zoom and offset
+            screen_x = (coords_orig[0] * self.zoom_level) + self.camera_offset_x
+            screen_y = (coords_orig[1] * self.zoom_level) + self.camera_offset_y
+            coords = (screen_x, screen_y)
+
+            radius = max(5, int(20 * self.zoom_level)) # Scale radius, with a minimum size
+
             owner_color = GREY
             if territory_obj.owner and territory_obj.owner.color:
                 owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY)
-            pygame.draw.circle(self.screen, owner_color, coords, 20)
-            pygame.draw.circle(self.screen, BLACK, coords, 20, 2)
+            pygame.draw.circle(self.screen, owner_color, coords, radius)
+            pygame.draw.circle(self.screen, BLACK, coords, radius, 2) # Border thickness constant for now
+
             army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
-            army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
+            army_text = self.font.render(str(territory_obj.army_count), True, army_text_color) # Font size constant
             self.screen.blit(army_text, army_text.get_rect(center=coords))
-            name_surf = self.font.render(terr_name, True, WHITE)
-            name_rect = name_surf.get_rect(center=(coords[0], coords[1] - 30))
+
+            name_surf = self.font.render(terr_name, True, WHITE) # Font size constant
+            name_rect_center_x = coords[0]
+            name_rect_center_y = coords[1] - int(30 * self.zoom_level) # Scale offset for name
+            name_rect = name_surf.get_rect(center=(name_rect_center_x, name_rect_center_y))
             name_bg_rect = name_rect.inflate(4, 4)
             pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
             self.screen.blit(name_surf, name_rect)
@@ -304,78 +336,90 @@ class GameGUI:
         # Adjacency lines for world map (can be complex, for now use centroids if polygons are too complex for simple line drawing)
         drawn_adjacencies = set()
         for terr_name_adj, territory_obj_adj in gs_to_draw.territories.items(): # Use different var names to avoid clash
-            coords1 = self.territory_coordinates.get(terr_name_adj) # Use centroid for line start/end
-            if not coords1:
-                # print(f"DEBUG: Adjacency - Missing centroid for {terr_name_adj}")
+            coords1_orig = self.territory_coordinates.get(terr_name_adj) # Use centroid for line start/end
+            if not coords1_orig:
                 continue
+            # Apply zoom and offset
+            screen_x1 = (coords1_orig[0] * self.zoom_level) + self.camera_offset_x
+            screen_y1 = (coords1_orig[1] * self.zoom_level) + self.camera_offset_y
+            coords1 = (screen_x1, screen_y1)
+
             for adj_territory_object in territory_obj_adj.adjacent_territories:
                 adj_name = adj_territory_object.name
                 adj_pair = tuple(sorted((terr_name_adj, adj_name)))
                 if adj_pair in drawn_adjacencies: continue
-                coords2 = self.territory_coordinates.get(adj_name)
-                if not coords2:
-                    # print(f"DEBUG: Adjacency - Missing centroid for adjacent {adj_name}")
+                coords2_orig = self.territory_coordinates.get(adj_name)
+                if not coords2_orig:
                     continue
+                # Apply zoom and offset
+                screen_x2 = (coords2_orig[0] * self.zoom_level) + self.camera_offset_x
+                screen_y2 = (coords2_orig[1] * self.zoom_level) + self.camera_offset_y
+                coords2 = (screen_x2, screen_y2)
                 pygame.draw.line(self.screen, ADJACENCY_LINE_COLOR, coords1, coords2, 1) # Thinner line
                 drawn_adjacencies.add(adj_pair)
 
         # Draw polygons
-        for terr_name, territory_obj in gs_to_draw.territories.items():
-            # self.territory_polygons and self.territory_coordinates are now expected to be
-            # pre-scaled screen coordinates from MapProcessor's output.
+        processed_first_territory_for_debug = False # Debug flag
 
-            processed_first_territory_for_debug = False # Debug flag
-
-        # Draw polygons
         for terr_name, territory_obj in gs_to_draw.territories.items():
-            list_of_screen_polygon_points = self.territory_polygons.get(terr_name)
-            screen_centroid_coords = self.territory_coordinates.get(terr_name)
+            list_of_original_polygon_points = self.territory_polygons.get(terr_name)
+            original_centroid_coords = self.territory_coordinates.get(terr_name)
+
+            # Apply zoom and camera offset to centroid first
+            screen_centroid_coords = None
+            if original_centroid_coords:
+                screen_centroid_coords = ( (original_centroid_coords[0] * self.zoom_level) + self.camera_offset_x,
+                                           (original_centroid_coords[1] * self.zoom_level) + self.camera_offset_y )
 
             if not processed_first_territory_for_debug: # Log details for the first territory
-                print(f"DEBUG: _draw_world_map_polygons - Processing territory: '{terr_name}'")
-                if list_of_screen_polygon_points:
-                    print(f"DEBUG: _draw_world_map_polygons -   Polygons for '{terr_name}' (first part, first 5 points): {str(list_of_screen_polygon_points[0][:5]) if list_of_screen_polygon_points else 'No polygon data'}")
-                else:
-                    print(f"DEBUG: _draw_world_map_polygons -   No polygon data for '{terr_name}'.")
-                print(f"DEBUG: _draw_world_map_polygons -   Centroid for '{terr_name}': {screen_centroid_coords}")
+                # print(f"DEBUG: _draw_world_map_polygons - Processing territory: '{terr_name}'")
+                # if list_of_original_polygon_points:
+                #     print(f"DEBUG: _draw_world_map_polygons -   Original Polygons for '{terr_name}' (first part, first 5 points): {str(list_of_original_polygon_points[0][:5]) if list_of_original_polygon_points else 'No polygon data'}")
+                # else:
+                #     print(f"DEBUG: _draw_world_map_polygons -   No original polygon data for '{terr_name}'.")
+                # print(f"DEBUG: _draw_world_map_polygons -   Original Centroid for '{terr_name}': {original_centroid_coords}")
+                # print(f"DEBUG: _draw_world_map_polygons -   Screen Centroid for '{terr_name}': {screen_centroid_coords}")
                 processed_first_territory_for_debug = True
 
             owner_color = DEFAULT_PLAYER_COLORS.get(territory_obj.owner.color, GREY) if territory_obj.owner and territory_obj.owner.color else GREY
 
-            if list_of_screen_polygon_points:
-                # print(f"DEBUG: Drawing polygons for {terr_name}") # Can be too verbose
-                for i, screen_polygon_part_points in enumerate(list_of_screen_polygon_points):
-                    if screen_polygon_part_points and len(screen_polygon_part_points) >= 3:
+            if list_of_original_polygon_points:
+                for i, original_polygon_part_points in enumerate(list_of_original_polygon_points):
+                    if original_polygon_part_points and len(original_polygon_part_points) >= 3:
+                        # Apply zoom and camera offset to polygon points
+                        screen_polygon_part_points = [
+                            ( (pt[0] * self.zoom_level) + self.camera_offset_x,
+                              (pt[1] * self.zoom_level) + self.camera_offset_y)
+                            for pt in original_polygon_part_points
+                        ]
                         try:
                             pygame.draw.polygon(self.screen, owner_color, screen_polygon_part_points)
                             pygame.draw.polygon(self.screen, BLACK, screen_polygon_part_points, 1) # Border
                         except TypeError as e:
                             print(f"DEBUG: GameGUI._draw_world_map_polygons - Error drawing polygon part {i} for {terr_name}: {e}. Screen points: {screen_polygon_part_points}")
-                            if screen_centroid_coords: # Fallback for this specific part
-                                pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, 5, 0)
-                    # else:
-                        # print(f"DEBUG: GameGUI._draw_world_map_polygons - Invalid or empty screen polygon part {i} for {terr_name}")
-            elif screen_centroid_coords:
-                print(f"DEBUG: GameGUI._draw_world_map_polygons - No polygons for '{terr_name}', drawing circle at centroid {screen_centroid_coords}.")
-                pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, 10)
-                pygame.draw.circle(self.screen, BLACK, screen_centroid_coords, 10, 1)
-            # else:
-                # print(f"DEBUG: GameGUI._draw_world_map_polygons - No display data (polygon or centroid) for territory {terr_name}. Skipping draw.")
-
+                            if screen_centroid_coords: # Fallback for this specific part if centroid exists
+                                pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, max(2, int(5 * self.zoom_level)), 0)
+            elif screen_centroid_coords: # If no polygons, but centroid exists
+                # print(f"DEBUG: GameGUI._draw_world_map_polygons - No polygons for '{terr_name}', drawing circle at offset centroid {screen_centroid_coords}.")
+                radius = max(3, int(10 * self.zoom_level))
+                pygame.draw.circle(self.screen, owner_color, screen_centroid_coords, radius)
+                pygame.draw.circle(self.screen, BLACK, screen_centroid_coords, radius, 1)
 
             # Draw army count and name at the screen_centroid_coords (if available)
             if screen_centroid_coords:
                 army_text_color = BLACK if sum(owner_color) / 3 > 128 else WHITE
-                army_text = self.font.render(str(territory_obj.army_count), True, army_text_color)
+                army_text = self.font.render(str(territory_obj.army_count), True, army_text_color) # Font size constant
 
                 army_text_rect = army_text.get_rect(center=screen_centroid_coords)
-                army_bg_rect = army_text_rect.inflate(4,2)
+                army_bg_rect = army_text_rect.inflate(4,2) # Keep padding constant for now
                 pygame.draw.rect(self.screen, owner_color, army_bg_rect, border_radius=3)
                 pygame.draw.rect(self.screen, BLACK, army_bg_rect, 1, border_radius=3)
                 self.screen.blit(army_text, army_text_rect)
 
-                name_surf = self.font.render(terr_name, True, WHITE)
-                name_rect = name_surf.get_rect(center=(screen_centroid_coords[0], screen_centroid_coords[1] + 15)) # Offset below
+                name_surf = self.font.render(terr_name, True, WHITE) # Font size constant
+                name_rect_center_x = screen_centroid_coords[0]
+                name_rect_center_y = screen_centroid_coords[1] + int(15 * self.zoom_level) # Scale offset
+                name_rect = name_surf.get_rect(center=(name_rect_center_x, name_rect_center_y))
                 name_bg_rect = name_rect.inflate(4,2)
                 pygame.draw.rect(self.screen, DARK_GREY, name_bg_rect, border_radius=3)
                 self.screen.blit(name_surf, name_rect)
@@ -589,8 +633,44 @@ class GameGUI:
                 if event.type == pygame.QUIT:
                     self.running = False
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 1:
+                    if event.button == 1: # Left click
                         mouse_click_pos = event.pos
+                    elif event.button == 2: # Middle mouse button for panning
+                        self.panning_active = True
+                        self.last_mouse_pos = event.pos
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 2: # Middle mouse button
+                        self.panning_active = False
+                        self.last_mouse_pos = None
+                elif event.type == pygame.MOUSEMOTION:
+                    if self.panning_active and self.last_mouse_pos:
+                        dx = event.pos[0] - self.last_mouse_pos[0]
+                        dy = event.pos[1] - self.last_mouse_pos[1]
+                        self.camera_offset_x += dx
+                        self.camera_offset_y += dy
+                        self.last_mouse_pos = event.pos
+                elif event.type == pygame.MOUSEWHEEL:
+                    mouse_x, mouse_y = pygame.mouse.get_pos()
+                    # Ensure zoom is applied only to map area
+                    if mouse_x < MAP_AREA_WIDTH:
+                        old_zoom_level = self.zoom_level
+
+                        if event.y > 0: # Scroll up
+                            self.zoom_level += self.zoom_increment
+                        elif event.y < 0: # Scroll down
+                            self.zoom_level -= self.zoom_increment
+
+                        self.zoom_level = max(self.min_zoom, min(self.max_zoom, self.zoom_level))
+
+                        # Adjust camera offset to zoom towards the mouse cursor
+                        # World coordinates of the mouse pointer before zoom
+                        world_x_before_zoom = (mouse_x - self.camera_offset_x) / old_zoom_level
+                        world_y_before_zoom = (mouse_y - self.camera_offset_y) / old_zoom_level
+
+                        # New camera offset to keep the world coordinates at the same screen position
+                        self.camera_offset_x = mouse_x - (world_x_before_zoom * self.zoom_level)
+                        self.camera_offset_y = mouse_y - (world_y_before_zoom * self.zoom_level)
+
 
             if self.orchestrator and self.running:
                 if not self.orchestrator.advance_game_turn():
